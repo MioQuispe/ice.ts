@@ -1,0 +1,109 @@
+type AppInfo = record {
+  app_id : text;
+  current_version : Version;
+  latest_version : Version;
+  wallet_id : opt principal;
+};
+type BackupExportFormat = variant { JSON; BINARY };
+type BackupInfo = record {
+  state : BackupStatus;
+  last_backup : nat64;
+  recent_backup : opt nat64;
+};
+type BackupJob = record { name : text; amount : nat64 };
+type BackupStatus = variant { MAINTAINING; RUNNING };
+type ByteReadResponse = record { data : vec nat8; hash : text; name : text };
+type ByteWriteRequest = record {
+  end : nat64;
+  data : vec nat8;
+  hash : text;
+  name : text;
+  start : nat64;
+  format : opt BackupExportFormat;
+};
+type CycleInfo = record {
+  records : vec CycleRecord;
+  estimate_remaining : nat64;
+};
+type CycleRecord = record { ts : nat64; balance : nat };
+type DeviceType = variant {
+  IdentityProvider;
+  RecoveryPhrase;
+  SecurityDevice;
+  Google;
+  EthereumMetaMask;
+};
+type LogEntry = record { ts : nat64; msg : text; kind : text };
+type MeError = record { msg : text; code : nat16 };
+type Result = variant { Ok; Err : text };
+type Result_1 = variant { Ok : BackupInfo; Err : text };
+type Result_10 = variant {
+  Ok : opt vec record { principal; text };
+  Err : text;
+};
+type Result_11 = variant { Ok : opt ByteReadResponse; Err : text };
+type Result_12 = variant { Ok; Err : MeError };
+type Result_2 = variant { Ok : vec BackupJob; Err : text };
+type Result_3 = variant { Ok : nat; Err : text };
+type Result_4 = variant { Ok : AppInfo; Err : text };
+type Result_5 = variant { Ok : vec record { text; vec principal }; Err : text };
+type Result_6 = variant { Ok : vec CycleRecord; Err : text };
+type Result_7 = variant { Ok : CycleInfo; Err : text };
+type Result_8 = variant { Ok : bool; Err : text };
+type Result_9 = variant { Ok : vec LogEntry; Err : text };
+type Version = record { major : nat32; minor : nat32; patch : nat32 };
+service : () -> {
+  backup_change_status : (BackupStatus) -> (Result);
+  backup_info_get : () -> (Result_1);
+  backup_job_list : () -> (Result_2);
+  balance_get : () -> (Result_3) query;
+  ego_app_info_get : () -> (Result_4) query;
+  ego_app_info_update : (opt principal, text, Version) -> ();
+  ego_app_version_check : () -> (Result_4);
+  ego_canister_add : (text, principal) -> (Result);
+  ego_canister_delete : () -> (Result);
+  ego_canister_list : () -> (Result_5);
+  ego_canister_remove : (text, principal) -> (Result);
+  ego_canister_track : () -> (Result);
+  ego_canister_untrack : () -> (Result);
+  ego_canister_upgrade : () -> (Result);
+  ego_controller_add : (principal) -> (Result);
+  ego_controller_remove : (principal) -> (Result);
+  ego_controller_set : (vec principal) -> (Result);
+  ego_cycle_check : () -> (Result);
+  ego_cycle_estimate_set : (nat64) -> (Result);
+  ego_cycle_history : () -> (Result_6);
+  ego_cycle_info : () -> (Result_7);
+  ego_cycle_recharge : (nat) -> (Result);
+  ego_cycle_threshold_get : () -> (Result_3);
+  ego_is_op : () -> (Result_8) query;
+  ego_is_owner : () -> (Result_8) query;
+  ego_is_user : () -> (Result_8) query;
+  ego_log_list : (nat64) -> (Result_9) query;
+  ego_op_add : (principal) -> (Result);
+  ego_op_list : () -> (Result_10);
+  ego_op_remove : (principal) -> (Result);
+  ego_owner_add : (principal) -> (Result);
+  ego_owner_add_with_name : (text, principal) -> (Result);
+  ego_owner_list : () -> (Result_10);
+  ego_owner_remove : (principal) -> (Result);
+  ego_owner_set : (vec principal) -> (Result);
+  ego_runtime_cycle_threshold_get : () -> (Result_3);
+  ego_user_add : (principal) -> (Result);
+  ego_user_list : () -> (Result_10);
+  ego_user_remove : (principal) -> (Result);
+  ego_user_set : (vec principal) -> (Result);
+  finish_backup : () -> ();
+  finish_restore : () -> ();
+  job_data_export : (text, nat64, nat64, opt BackupExportFormat, opt nat64) -> (
+      Result_11,
+    );
+  job_data_import : (ByteWriteRequest) -> (Result_8);
+  job_data_read : (text, nat64, nat64) -> (Result_8);
+  job_data_write : (text, nat64, nat64, bool) -> (Result_8);
+  start_backup : () -> ();
+  start_restore : (vec BackupJob) -> ();
+  token_main_add : (text, text, DeviceType, text) -> (Result_12);
+  token_main_remove : (text, text, DeviceType) -> (Result_12);
+  user_main_get : (DeviceType, text) -> (opt record { text; text }) query;
+}

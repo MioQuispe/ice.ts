@@ -1,0 +1,16 @@
+{
+  "name": "ic-app-vanilla",
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^2.9.13"
+  },
+  "dependencies": {
+    "buffer": "^6.0.3",
+    "@dfinity/agent": "^0.11.3"
+  }
+}

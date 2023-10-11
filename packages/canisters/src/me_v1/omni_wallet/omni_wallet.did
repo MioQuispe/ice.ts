@@ -1,0 +1,21 @@
+type ECDSAPublicKeyPayload = record {
+  public_key : vec nat8;
+  chain_code : vec nat8;
+};
+type Result = variant { Ok : vec vec nat8; Err : text };
+type Result_1 = variant { Ok : ECDSAPublicKeyPayload; Err : text };
+type Result_2 = variant { Ok; Err : text };
+type Result_3 = variant { Ok : SignatureReply; Err : text };
+type SignatureReply = record { signature : vec nat8 };
+service : () -> {
+  getDeriveBytes : (text) -> (Result) query;
+  getPublicKey : (text) -> (Result_1);
+  role_owner_add : (principal) -> (Result_2);
+  role_owner_remove : (principal) -> (Result_2);
+  role_owner_set : (vec principal) -> (Result_2);
+  role_user_add : (principal) -> (Result_2);
+  role_user_remove : (principal) -> (Result_2);
+  role_user_set : (vec principal) -> (Result_2);
+  sign : (text, vec nat8) -> (Result_3);
+  sign_recoverable : (text, vec nat8) -> (Result_3);
+}

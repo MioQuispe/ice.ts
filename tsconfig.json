@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "allowJs": false,
+    "declaration": true,
+    "target": "esnext",
+    "module": "commonjs",
+    "lib": [
+      "esnext",
+      "dom"
+    ],
+    "strict": true,
+    "jsx": "react-jsx",
+    "noImplicitAny": false,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "packages/react/src/*",
+    "packages/svelte/src/*",
+    "packages/client/src/*",
+    "packages/client/src/providers/*"
+  ],
+  "exclude": ["node_modules", "**/dist/**", "**/node_modules/**"],
+  "ts-node": {
+    "transpileOnly": true,
+    "transpiler": "ts-node/transpilers/swc-experimental"
+  }
+}
