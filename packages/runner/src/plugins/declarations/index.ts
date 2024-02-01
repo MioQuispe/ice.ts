@@ -2,7 +2,8 @@ import { DfxJson } from "../../schema"
 import url from "url"
 import fs from "fs"
 import path from "path"
-import { getCanisterIds } from "../../dfx"
+import { getCanisterIds } from "../../"
+import Handlebars from "handlebars"
 
 const appDirectory = fs.realpathSync(process.cwd())
 const fromAppDir = (path) => `${appDirectory}/${path}`
@@ -23,7 +24,6 @@ export const generateDeclarations = async (dfxConfig: DfxJson) => {
       canister_idl_factory_path: `../.dfx/local/canisters/${canisterName}/service.did.js`,
       service_type_param: "<_SERVICE>",
     })
-    console.log(canisterResult)
     try {
       // TODO: check if dir exists
       fs.writeFileSync(fromAppDir(`declarations/${canisterName}.ts`), canisterResult)
@@ -34,10 +34,11 @@ export const generateDeclarations = async (dfxConfig: DfxJson) => {
   const canistersTemplateString = fs.readFileSync(path.resolve(__dirname, "./templates/canisters.hbs"), "utf8")
   const canistersTemplate = Handlebars.compile(canistersTemplateString)
   const canistersResult = canistersTemplate({ canisters: Object.keys(canisterIds) })
-  console.log(canistersResult)
   try {
     fs.writeFileSync(fromAppDir(`declarations/canisters.ts`), canistersResult)
   } catch (e) {
     console.log(e)
   }
 }
+
+// TODO: extend task?

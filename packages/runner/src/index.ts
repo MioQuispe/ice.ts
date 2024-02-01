@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import { spawn as spawnCommand } from "child_process"
 import { IDL } from "@dfinity/candid"
 import { Principal } from "@dfinity/principal"
@@ -10,7 +8,7 @@ import fs from "fs"
 import crc from "crc"
 import { Actor, ActorSubclass, HttpAgent, Identity } from "@dfinity/agent"
 // import { ManagementActor } from "./canisters/management"
-import { idlFactory } from "./canisters/management_new/management.did"
+import { idlFactory } from "./canisters/management_new/management.did.js"
 import open from "open"
 import express from "express"
 import path from "path"
@@ -19,7 +17,6 @@ import { Ed25519KeyIdentity } from "@dfinity/identity"
 import url from "url"
 import { Repeater } from "@repeaterjs/repeater"
 import * as os from "os"
-import Handlebars from "handlebars"
 import find from "find-process"
 
 type ManagementActor = import("@dfinity/agent").ActorSubclass<import("./canisters/management_new/management.types")._SERVICE>
@@ -419,24 +416,10 @@ export const deployCanister = async (canisterConfig) => {
   // return canisterId
 }
 
-const execTasks = async (dfxConfig, taskStream) => {
-  let clonedDfxConfig = JSON.parse(JSON.stringify(dfxConfig))
-  clonedDfxConfig.canisters = Object.keys(clonedDfxConfig.canisters).reduce((acc, canisterName) => {
-    return {
-      ...acc,
-      [canisterName]: {
-        ...clonedDfxConfig.canisters[canisterName].config,
-      },
-    }
-  }, {})
-  // let clonedDfxConfig2 = JSON.parse(JSON.stringify(dfxConfig))
-  // // TODO: write all canisters to dfx.json first
-  // await writeConfig(clonedDfxConfig2)
+const execTasks = async (taskStream) => {
   for await (const { taskName: fullName, taskConfig } of taskStream) {
     const [taskType, taskName] = fullName.split(":")
     console.log(`Running ${taskType} ${taskName}`)
-    // TODO: fix. breaks if you run one script
-    await writeConfig(clonedDfxConfig)
     if (taskType === "canisters") {
       try {
         // await deployCanister(taskName, taskConfig)
@@ -546,25 +529,21 @@ const getDeps = (dfxConfig, tasks) => {
   return allDeps
 }
 
-// TODO: use
-const removeDfxConfig = async () => {
-  fs.rmSync(`${appDirectory}/.dfx.json`)
-}
-
-export const runTasks = async (dfxConfig: DfxJson, tasks: Array<string>) => {
-  const allDeps = getDeps(dfxConfig, tasks)
-  const allTasks = [...new Set([...allDeps, ...tasks.map(t => transformWildcards(dfxConfig, t)).flat()])]
-  const taskStream = createTaskStream(dfxConfig, allTasks)
-  await execTasks(dfxConfig, taskStream)
+export const runTasks = async (tasks: Array<string>) => {
+  console.log(".................Generated config............:\n", config)
+  const allDeps = getDeps(config, tasks)
+  const allTasks = [...new Set([...allDeps, ...tasks.map(t => transformWildcards(config, t)).flat()])]
+  const taskStream = createTaskStream(config, allTasks)
+  await execTasks(taskStream)
   // TODO: return OK?
   return getCanisterIds()
 }
 
 const fromAppDir = (path) => `${appDirectory}/${path}`
 
-export const getDfxConfig = async (configPath: string = "dfx.ts") => {
+export const getDfxConfig = async (configPath: string = "hydra.config.ts") => {
   const appDirectory = fs.realpathSync(process.cwd())
-  const { default: dfxConfig } = await import(await path.resolve(appDirectory, configPath))
+  const { default: dfxConfig } = await import(path.resolve(appDirectory, configPath))
   return dfxConfig
 }
 
@@ -653,6 +632,23 @@ export const createActors = async (
     }
   }
   return actors
+}
+
+// TODO: ........ no top level await
+// TODO: clone. make immutable?
+// const userConfig = await getDfxConfig()
+const userConfig = {}
+// let config = JSON.parse(JSON.stringify(userConfig))
+// let config
+// const getConfig = async () => config ? JSON.parse(JSON.stringify(config)) : await getDfxConfig()
+type ConfigFn = (config: DfxTs<any>, userConfig: DfxTs<any>) => void
+export const extendConfig = (fn: ConfigFn) => {
+  // TODO: let plugins call this function to extend config
+  fn(config, JSON.parse(JSON.stringify(userConfig)))
+}
+
+export const task = (name, description, fn) => {
+
 }
 
 // TODO: use dfx identity export ?
@@ -850,13 +846,6 @@ export const dfxDefaults: DfxJson = {
     },
   },
   version: 1,
-}
-
-const cleanStartDfx = async () => {
-  await killDfx()
-  await removeDfxConfig()
-  // fs.rmdirSync(`${appDirectory}/.dfx`, { recursive: true })
-  await startDfx()
 }
 
 const killDfx = async () => {

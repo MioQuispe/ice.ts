@@ -1,36 +1,37 @@
 {
-  "name": "@hydra.icp/builder",
+  "name": "@hydra.icp/runner",
   "type": "module",
   "version": "0.0.1",
-  "main": "dist/index.js",
+  "main": "dist/index.mjs",
   "source": "src",
   "files": [
     "dist",
     "bin"
   ],
   "bin": {
-    "hydra": "./bin/index.js"
+    "hydra": "./bin/cli.mjs"
   },
   "scripts": {
     "build": "tsc",
     "dev": "tsc -w"
   },
   "dependencies": {
-    "@dfinity/agent": "^0.15.1",
-    "@dfinity/candid": "^0.15.1",
-    "@dfinity/identity": "^0.15.1",
-    "@dfinity/identity-secp256k1": "^0.15.1",
-    "@dfinity/principal": "^0.15.1",
+    "@dfinity/agent": "^0.19.3",
+    "@dfinity/candid": "^0.19.3",
+    "@dfinity/identity": "^0.19.3",
+    "@dfinity/identity-secp256k1": "^0.19.3",
+    "@dfinity/principal": "^0.19.3",
+    "@hydra.icp/canisters": "*",
     "@noble/secp256k1": "^1.7.1",
     "@repeaterjs/repeater": "^3.0.4",
-    "crc": "^4.2.0",
+    "crc": "^4.3.2",
     "event-e3": "^8.1.3",
     "express": "^4.18.2",
     "express-static": "^1.2.6",
     "find-process": "^1.4.7",
     "handlebars": "^4.7.7",
     "handlebars-esm": "^1.0.0",
-    "js-sha256": "^0.9.0",
+    "js-sha256": "^0.10.1",
     "minimist": "^1.2.7",
     "neverthrow": "^6.0.0",
     "open": "^8.4.0",
@@ -40,9 +41,10 @@
   },
   "devDependencies": {
     "@types/node": "^17.0.34",
+    "pkgroll": "^2.0.1",
     "vitest": "^0.13.1"
   },
   "peerDependencies": {
-    "tsx": "^3.12.2"
+    "tsx": "^3.14.0"
   }
 }
