@@ -1,7 +1,7 @@
 import { Opt } from "../types"
 import * as url from "url"
 import path from "path"
-import type { ExtendedCanisterConfiguration } from "@dfx-js/core"
+import type { ExtendedCanisterConfiguration } from "@hydra.icp/runner"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 // const __dirname = url.fileURLToPath(import.meta.url)

@@ -1,10 +1,10 @@
 import path from "path"
 import { Opt } from "../types"
 import * as url from "url"
-import { Actor, HttpAgent } from "@dfinity/agent"
+import { Actor, HttpAgent, ActorSubclass } from "@dfinity/agent"
 import { idlFactory } from "./internet_identity.did"
 import { CreateProps } from "../types"
-import type { ExtendedCanisterConfiguration } from "@dfx-js/core"
+import type { ExtendedCanisterConfiguration } from "@hydra.icp/runner"
 
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
@@ -49,4 +49,4 @@ InternetIdentity.idlFactory = idlFactory
 
 InternetIdentity.scripts = {}
 
-export type InternetIdentityActor = import("@dfinity/agent").ActorSubclass<import("./internet_identity.types")._SERVICE>
+export type InternetIdentityActor = ActorSubclass<import("./internet_identity.types")._SERVICE>

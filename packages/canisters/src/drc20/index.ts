@@ -2,7 +2,7 @@ import path from "path"
 import { Opt } from "../types"
 import * as url from "url"
 import fs from "fs"
-import type { ExtendedCanisterConfiguration } from "@dfx-js/core"
+import type { ExtendedCanisterConfiguration } from "@hydra.icp/runner"
 
 const appDirectory = fs.realpathSync(process.cwd())
 // const __dirname = url.fileURLToPath(new URL(".", import.meta.url))

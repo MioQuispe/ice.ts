@@ -1,7 +1,7 @@
 import path from "path"
 import { Opt } from "../types"
 import * as url from "url"
-import type { ExtendedCanisterConfiguration } from "@dfx-js/core"
+import type { ExtendedCanisterConfiguration } from "@hydra.icp/runner"
 
 export type {
   SnsInitPayload,

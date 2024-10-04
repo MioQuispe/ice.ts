@@ -3,7 +3,8 @@ import { idlFactory as capBucketIdlFactory } from "./cap-bucket/cap-bucket.did.j
 import { idlFactory as capRootIdlFactory } from "./cap-root/cap-root.did.js"
 import { idlFactory as capRouterIdlFactory } from "./cap-router/cap-router.did.js"
 import { idlFactory as capRouterTestIdlFactory } from "./cap-router-test/cap-router-test.did.js"
-import type { ExtendedCanisterConfiguration } from "@dfx-js/core"
+import type { ExtendedCanisterConfiguration } from "@hydra.icp/runner"
+
 import { Principal } from "@dfinity/principal"
 import * as url from "url"
 

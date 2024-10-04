@@ -1,8 +1,8 @@
-import { DfxJson } from "../../schema"
+import { DfxJson } from "../../schema.js"
 import url from "url"
 import fs from "fs"
 import path from "path"
-import { getCanisterIds } from "../../"
+import { getCanisterIds } from "../../index.js"
 import Handlebars from "handlebars"
 
 const appDirectory = fs.realpathSync(process.cwd())

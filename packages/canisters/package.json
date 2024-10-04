@@ -3,6 +3,9 @@
   "type": "module",
   "version": "0.0.1",
   "main": "dist/bundle.js",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "rollup -c",
     "dev": "rollup -c -w"
@@ -11,7 +14,6 @@
     "@dfinity/agent": "0.12.1",
     "@dfinity/candid": "0.12.1",
     "@dfinity/principal": "^0.12.1",
-    "@dfx-js/core": "*",
     "minimist": "^1.2.6",
     "neverthrow": "^4.4.2"
   },

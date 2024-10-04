@@ -1,13 +1,19 @@
 import { spawn as spawnCommand } from "child_process"
 import { IDL } from "@dfinity/candid"
 import { Principal } from "@dfinity/principal"
-import type { DfxJson } from "./schema"
-import { CanisterConfiguration, ConfigDefaults, ConfigNetwork, DfxVersion, Profile } from "./schema"
-import { sha224 } from "js-sha256"
+import type { DfxJson } from "./schema.js"
+import {
+  AssetSpecificProperties,
+  CanisterConfiguration,
+  ConfigDefaults,
+  ConfigNetwork,
+  DfxVersion,
+  MotokoSpecificProperties,
+  Profile,
+  RustSpecificProperties,
+} from "./schema.js"
 import fs from "fs"
-import crc from "crc"
 import { Actor, ActorSubclass, HttpAgent, Identity } from "@dfinity/agent"
-// import { ManagementActor } from "./canisters/management"
 import { idlFactory } from "./canisters/management_new/management.did.js"
 import open from "open"
 import express from "express"
@@ -18,10 +24,24 @@ import url from "url"
 import { Repeater } from "@repeaterjs/repeater"
 import * as os from "os"
 import find from "find-process"
+import { principalToAccountId } from "./utils"
 
-type ManagementActor = import("@dfinity/agent").ActorSubclass<import("./canisters/management_new/management.types")._SERVICE>
+type ManagementActor = import("@dfinity/agent").ActorSubclass<import("./canisters/management_new/management.types.js")._SERVICE>
 
-export type ExtendedCanisterConfiguration = CanisterConfiguration & {
+type Deps<C, S, D> = {
+  [K in keyof C]: {
+    // actor: ActorSubclass<C[K]["idlFactory"]>
+    // canisterId: C[K]["canisterId"]
+    canisterId: string
+    actor: ActorSubclass<any>
+    // setControllers: (controllers: Array<string>) => Promise<void>,
+    // addControllers: (controllers: Array<string>) => Promise<void>
+  }
+}
+
+export type ExtendedCanisterConfiguration =
+  (CanisterConfiguration | RustSpecificProperties | MotokoSpecificProperties | AssetSpecificProperties)
+  & {
   _metadata?: { standard?: string; }; dfx_js?: {
     args?: any[];
     canister_id?: {
@@ -30,30 +50,26 @@ export type ExtendedCanisterConfiguration = CanisterConfiguration & {
   }
 }
 
-export type TaskCanisterConfiguration<Canisters, Scripts> = {
-  dependencies?: Array<`scripts:${keyof Scripts & string}` & `canisters:${keyof Canisters & string}`> // TODO: check task exists
-  config: ExtendedCanisterConfiguration | ((deps: Canisters & {
-    // [S in keyof Scripts]: Scripts[S] extends TaskScriptConfiguration<Canisters, Scripts> ? ReturnType<Scripts[S]["fn"]> : ReturnType<Scripts[S]> // TODO:
-    // [S in keyof Scripts]: ReturnType<Scripts[S] extends TaskScriptConfiguration<Canisters, Scripts> ? Scripts[S]["fn"] : Scripts[S] extends ((any) => any) ? Scripts[S] : ((any) => any)> // TODO:
-  }) => ExtendedCanisterConfiguration)
+// Define a more specific type for canister configurations
+export type TaskCanisterConfiguration<T = ExtendedCanisterConfiguration> = ExtendedCanisterConfiguration & T
+
+// export type TaskCanisterConfiguration = ExtendedCanisterConfiguration
+
+export type TaskScriptConfiguration<
+  C,
+  S,
+  D = Array<`canisters:${keyof C}` | `scripts:${keyof S}` | "canisters:*" | "scripts:*">,
+> = {
+  dependencies?: D
+  fn: (deps: Deps<C, S, D>) => any | Promise<void>
 }
 
-export type TaskScriptConfiguration<Canisters, Scripts> = {
-  dependencies?: Array<keyof Scripts & keyof Canisters> // TODO: check task exists
-  // fn: (deps: Canisters) => Promise<any> | any
-  fn: ((deps: Canisters & {
-    // [S in keyof Scripts]: ReturnType<Scripts[S] extends TaskScriptConfiguration<Canisters, Scripts> ? Scripts[S]["fn"] : Scripts[S] extends ((any) => any) ? Scripts[S] : ((any) => any)> // TODO:
-  }) => any)
-}
-
-export type DfxTs<Canisters> = {
-  canisters?: {
-    [k: string]: TaskCanisterConfiguration<Canisters, DfxTs<Canisters>["scripts"]>
-  }
-  scripts?: {
-    [k: string]: TaskScriptConfiguration<Canisters, DfxTs<Canisters>["scripts"]> | ((deps: Canisters) => any)
-    // [k: string]: ((deps: Canisters) => any)
-  }
+export type DfxTs<
+  C extends Record<string, TaskCanisterConfiguration>,
+  S extends Record<string, TaskScriptConfiguration<C, S>>,
+> = {
+  canisters: C
+  scripts: S
   Defaults?: ConfigDefaults | null
   dfx?: DfxVersion
   /**
@@ -67,46 +83,15 @@ export type DfxTs<Canisters> = {
    * Used to keep track of dfx.json versions.
    */
   version?: number | null
-
-  [k: string]: unknown
 }
 
-const adminName = "eight-admin"
-
-const calculateCrc32 = (bytes: Uint8Array): Uint8Array => {
-  const checksumArrayBuf = new ArrayBuffer(4)
-  const view = new DataView(checksumArrayBuf)
-  view.setUint32(0, crc.crc32(Buffer.from(bytes)), false)
-  return Buffer.from(checksumArrayBuf)
+export const defineConfig = <
+  C extends Record<string, TaskCanisterConfiguration>,
+  S extends Record<string, TaskScriptConfiguration<C, S>>,
+>(config: DfxTs<C, S>) => {
+  return config
 }
 
-
-const asciiStringToByteArray = (text: string): Array<number> => {
-  return Array.from(text).map(c => c.charCodeAt(0))
-}
-
-export function toHexString(bytes: ArrayBuffer): string {
-  return new Uint8Array(bytes).reduce((str, byte) => str + byte.toString(16).padStart(2, "0"), "")
-}
-
-export const principalToAccountId = (principal: Principal | string, subAccount?: Uint8Array): string => {
-  // Hash (sha224) the principal, the subAccount and some padding
-  if (!(principal instanceof Principal)) {
-    principal = Principal.fromText(principal)
-  }
-  const padding = asciiStringToByteArray("\x0Aaccount-id")
-
-  const shaObj = sha224.create()
-  shaObj.update([...padding, ...principal.toUint8Array(), ...(subAccount ?? Array(32).fill(0))])
-  const hash = new Uint8Array(shaObj.array())
-
-  // Prepend the checksum of the hash and convert to a hex string
-  const checksum = calculateCrc32(hash)
-  const bytes = new Uint8Array([...checksum, ...hash])
-  return toHexString(bytes)
-}
-
-// const argv = minimist(process.argv.slice(2))
 const appDirectory = fs.realpathSync(process.cwd())
 
 export const Opt = <T>(value?): [T] | [] => {
@@ -120,21 +105,16 @@ const spawn = ({
                }) => {
   return new Promise((resolve, reject) => {
     const child = spawnCommand(command, args)
-
     // @ts-ignore
     child.stdin.setEncoding("utf-8")
     child.stdin.write("yes\n")
-
     child.stdout.on("data", (data) => {
       if (stdout) {
         stdout(`${data}`)
         return
       }
-
-      // console.log(`${data}`)
     })
     child.stderr.on("data", (data) => console.error(`${data}`))
-
     child.on("close", (code) => resolve(code))
     child.on("error", (err) => reject(err))
   })
@@ -164,30 +144,6 @@ export const getCurrentIdentity = async (): Promise<string> => {
   })
 }
 
-function buf2hex(buffer) {
-  return [...new Uint8Array(buffer)]
-    .map(x => x.toString(16).padStart(2, "0"))
-    .join("")
-}
-
-export const writeConfig = async (configValue) => {
-  // TODO: handle if file doesnt exist?
-  await new Promise<void>((resolve, reject) => {
-    fs.writeFile(path.resolve(appDirectory, "dfx.json"), JSON.stringify(configValue), "utf-8", (err) => {
-      if (!err) {
-        resolve()
-      }
-    })
-  })
-}
-
-type CanisterIds = {
-  [id: string]: {
-    "local": string
-    ic?: string
-  }
-}
-
 const emitter = new Emitter()
 
 const waitFor = async (taskName) => {
@@ -196,125 +152,16 @@ const waitFor = async (taskName) => {
   })
 }
 
-export const create = async (dfxConfig: DfxJson, canisters: Array<string> = Object.keys(dfxConfig.canisters)): Promise<CanisterIds> => {
-  // TODO: move out?
-  let clonedDfxConfig = JSON.parse(JSON.stringify(dfxConfig))
-  for (let [canisterName, canisterConfig] of Object.entries(clonedDfxConfig.canisters)) {
-    delete clonedDfxConfig.canisters[canisterName].dfx_js
-  }
-
-  // Write dfx.json first
-  await writeConfig(clonedDfxConfig)
-
-  for (let canisterName of canisters) {
-    await spawn({
-      command: "dfx",
-      args: ["canister", "create", canisterName],
-      stdout: (data) => {
-      },
-    })
-    await spawn({
-      command: "dfx",
-      args: ["build", canisterName],
-      stdout: (data) => {
-      },
-    })
-  }
-
-  const canisterIds = getCanisterIds()
-  return canisterIds
-}
-
-const init = async (canisterName, canisterConfig) => {
-  const { identity } = await getIdentity()
-  const mgmt = Actor.createActor<ManagementActor>(idlFactory, {
-    canisterId: "aaaaa-aa",
-    agent: new HttpAgent({
-      host: "http://0.0.0.0:8080",
-      identity,
-    }),
-  })
-  // TODO: create random principal
-  const specified_id = canisterConfig.dfx_js?.canister_id?.local
-  const { canister_id } = await mgmt.provisional_create_canister_with_cycles({
-    settings: [{
-      compute_allocation: Opt<bigint>(),
-      // compute_allocation: Opt<bigint>(100n),
-      memory_allocation: Opt<bigint>(), // 8gb
-      // memory_allocation: Opt<bigint>(8_000_000_000n), // 8gb
-      freezing_threshold: Opt<bigint>(), // 30 days in seconds
-      // freezing_threshold: Opt<bigint>(3600n * 24n * 30n), // 30 days in seconds
-      controllers: Opt<Principal[]>([
-        // TODO: add more
-        identity.getPrincipal(),
-      ]),
-    }],
-    // amount: Opt<bigint>(1_000_000_000_000n),
-    amount: Opt<bigint>(),
-    specified_id: Opt<Principal>(specified_id ?? undefined), // TODO: add custom_id
-    sender_canister_version: Opt<bigint>(), // TODO: ??
-    // sender_canister_version: Opt<bigint>(0n), // TODO: ??
-    // settings: [] | [canister_settings];   specified_id: [] | [Principal];   amount: [] | [bigint];   sender_canister_version: [] | [bigint];
-  })
-  // const installMode = InstallMode.reinstall
-  let mode: { install: null } | { reinstall: null } | { upgrade: null } = { reinstall: null }
-  // switch (installMode) {
-  //   case InstallMode.install:
-  //     mode = { install: null };
-  //     break;
-  //   case InstallMode.reinstall:
-  //     mode = { reinstall: null };
-  //     break;
-  //   case InstallMode.upgrade:
-  //     mode = { upgrade: null };
-  //     break;
-  //   default:
-  //     mode = { install: null };
-  //     break;
-  // }
-  await mgmt.install_code({
-    arg: [] as number[],
-    canister_id,
-    sender_canister_version: Opt<bigint>(),
-    // TODO: ?
-    // wasm_module: Uint8Array.from(fs.readFileSync(`${appDirectory}/.dfx/local/canisters/${canisterName}/${canisterName}.wasm`)),
-    // TODO: read from config
-    wasm_module: Array.from(new Uint8Array(fs.readFileSync(`${appDirectory}/.dfx/local/canisters/${canisterName}/${canisterName}.wasm`))),
-    mode,
-  })
-  // const args = [
-  //   ...(canisterConfig.dfx_js?.canister_id ? [
-  //     // TODO: network selection?
-  //     "--specified-id", canisterConfig.dfx_js?.canister_id.local,
-  //   ] : []),
-  //   // "--mode", "reinstall"
-  // ]
-  // await spawn({
-  //   command: "dfx",
-  //   // TODO: get canisters
-  //   args: ["canister", "create", canisterName, ...args],
-  //   stdout: (data) => {
-  //   },
-  // })
-
-  // await spawn({
-  //   command: "dfx",
-  //   // TODO: get canisters
-  //   args: ["build", canisterName],
-  //   stdout: (data) => {
-  //   },
-  // })
-}
-
 enum InstallMode {
   install,
   reinstall,
   upgrade,
 }
 
-export const deployCanister = async (canisterConfig) => {
+export const deployCanister = async (canisterName: string, canisterConfig) => {
   // const installMode = InstallMode.reinstall
   let mode: { install: null } | { reinstall: null } | { upgrade: null } = { install: null }
+  mode = { reinstall: null }
   // switch (installMode) {
   //   case InstallMode.install:
   //     mode = { install: null };
@@ -329,27 +176,15 @@ export const deployCanister = async (canisterConfig) => {
   //     mode = { install: null };
   //     break;
   // }
-  const { identity } = await getIdentity()
-  const agent = new HttpAgent({
-    host: "http://0.0.0.0:8080",
-    identity,
-  })
-  // TODO:
-  await agent.fetchRootKey()
+  const { agent, identity } = await getEnv()
   const mgmt = Actor.createActor<ManagementActor>(idlFactory, {
     canisterId: "aaaaa-aa",
     agent,
   })
-  // const canisterIds = getCanisterIds()
   // TODO: use didc?
+  console.log("Deploying canister with config:", canisterConfig)
   const didPath = canisterConfig.candid + ".js"
   const wasmPath = canisterConfig.wasm
-  // const didPath = `${appDirectory}/.dfx/local/canisters/${canisterName}/service.did.js`
-  // TODO: better way of checking?
-  // const canisterExists = canisterIds[canisterName]
-  // if (!canisterExists) {
-  //   await initCustom(canisterName, canisterConfig)
-  // }
   const canisterDID = await import(didPath)
   // TODO: add args to schema
   let encodedArgs
@@ -358,15 +193,7 @@ export const deployCanister = async (canisterConfig) => {
   } catch (e) {
     console.log("Failed to encode args: ", e)
   }
-  // ??
-  // shell.exec()
-  // TODO: use management actor?
-  // TODO:
-  // mgmt = Actor.createActor(ManagementCanisterIdl, {
-  //
-  // })
-  // const mgmt = getManagementCanister({})
-  // TODO: create random principal
+  // TODO: create random principal?
   let canister_id = canisterConfig.dfx_js?.canister_id?.local
   try {
     // const specified_id = canisterConfig.dfx_js?.canister_id?.local
@@ -389,11 +216,11 @@ export const deployCanister = async (canisterConfig) => {
       sender_canister_version: Opt<bigint>(0n), // TODO: ??
       // sender_canister_version: Opt<bigint>(0n), // TODO: ??
       // settings: [] | [canister_settings];   specified_id: [] | [Principal];   amount: [] | [bigint];   sender_canister_version: [] | [bigint];
-    })).canister_id
-    console.log(`Created ${canisterConfig.name} with canister_id:`, canister_id.toText())
+    })).canister_id.toText()
+    console.log(`Created ${canisterName} with canister_id:`, canister_id)
   } catch (e) {
     console.log("Failed to create canister:", e)
-    throw { kind: "CanisterCreationFailed", error: e }
+    // throw { kind: "CanisterCreationFailed", error: e }
   }
   try {
     const wasm = Array.from(new Uint8Array(fs.readFileSync(wasmPath)))
@@ -405,25 +232,41 @@ export const deployCanister = async (canisterConfig) => {
       mode,
     })
     console.log(`Success with wasm bytes length: ${wasm.length}`)
+    console.log(`Installed code for ${canisterName} with canister_id:`, canister_id)
     return canister_id
   } catch (e) {
     console.log("Failed to install code:", e)
   }
-  // TODO: canisterIds not there yet?
-  // const { default: canisterIds } = await import(`${appDirectory}/.dfx/local/canister_ids.json`, { assert: { type: "json" } })
-  // const canisterIds = getCanisterIds()
-  // const canisterId = canisterIds[canisterName]
-  // return canisterId
 }
 
-const execTasks = async (taskStream) => {
+const execTasks = async (taskStream, currentNetwork = "local") => {
   for await (const { taskName: fullName, taskConfig } of taskStream) {
     const [taskType, taskName] = fullName.split(":")
     console.log(`Running ${taskType} ${taskName}`)
     if (taskType === "canisters") {
       try {
-        // await deployCanister(taskName, taskConfig)
-        await deployCanister(taskConfig)
+        const canisterName = taskName
+        const canisterId = await deployCanister(canisterName, taskConfig)
+        let canisterIds = {}
+        try {
+          const mod = await import(`${appDirectory}/canister_ids.json`, { assert: { type: "json" } })
+          canisterIds = mod.default
+        } catch (e) {
+
+        }
+        canisterIds[canisterName] = {
+          ...canisterIds[canisterName],
+          [currentNetwork]: canisterId,
+        }
+        fs.writeFile(`${appDirectory}/canister_ids.json`, JSON.stringify(canisterIds), "utf-8", (err) => {
+          if (!err) {
+            console.log("Wrote canister id to file")
+          } else {
+            console.log("Failed to write canister id to file:", err)
+          }
+        })
+
+
       } catch (e) {
         // TODO: dont create actors
         console.log("Failed to deploy canister: ", e)
@@ -445,21 +288,11 @@ const execTasks = async (taskStream) => {
   }
 }
 
-type DeployArgs = {
-  dfxConfig: DfxJson,
-}
-// TODO: Result?
-
 const createTaskStream = (dfxConfig, tasks) => new Repeater<any>(async (push, stop) => {
   const jobs = tasks.map(async (fullName) => {
     const [taskType, taskName] = fullName.split(":")
     let taskConfig = dfxConfig[taskType][taskName]
     let deps = getDeps(dfxConfig, taskConfig?.dependencies ?? [])
-    // const allDeps = getDeps(dfxConfig, tasks)
-    // if (fullName === "scripts:setup") {
-    //   // TODO: ??
-    //   deps = [...new Set([...deps, ...Object.keys(dfxConfig.canisters).map((canisterName) => `canisters:${canisterName}`)])]
-    // }
     const depsPromises = deps.map(async (fullName) => {
       const [taskType, taskName] = fullName.split(":")
       const taskResult = await waitFor(fullName)
@@ -468,15 +301,13 @@ const createTaskStream = (dfxConfig, tasks) => new Repeater<any>(async (push, st
       }
     })
     const taskResults = Object.assign({}, ...await Promise.all(depsPromises))
-    // TODO: rename
     let finalConfig
     const isJustFn = typeof taskConfig === "function"
     if (taskType === "canisters") {
-      // TODO: allow just fns?
       if (isJustFn) {
         finalConfig = taskConfig(...taskResults)
       } else {
-        finalConfig = typeof taskConfig.config === "function" ? taskConfig.config({ ...taskResults }) : taskConfig.config
+        finalConfig = taskConfig
       }
     }
     if (taskType === "scripts") {
@@ -510,6 +341,7 @@ const transformWildcards = (dfxConfig, dep) => {
   return allTasks
 }
 
+// TODO: write tests
 const getDeps = (dfxConfig, tasks) => {
   const walkDeps = (dfxConfig, dep) => {
     const allTasks = transformWildcards(dfxConfig, dep)
@@ -529,8 +361,7 @@ const getDeps = (dfxConfig, tasks) => {
   return allDeps
 }
 
-export const runTasks = async (tasks: Array<string>) => {
-  console.log(".................Generated config............:\n", config)
+export const runTasks = async (config, tasks: Array<string>) => {
   const allDeps = getDeps(config, tasks)
   const allTasks = [...new Set([...allDeps, ...tasks.map(t => transformWildcards(config, t)).flat()])]
   const taskStream = createTaskStream(config, allTasks)
@@ -539,24 +370,19 @@ export const runTasks = async (tasks: Array<string>) => {
   return getCanisterIds()
 }
 
-const fromAppDir = (path) => `${appDirectory}/${path}`
-
 export const getDfxConfig = async (configPath: string = "hydra.config.ts") => {
   const appDirectory = fs.realpathSync(process.cwd())
-  const { default: dfxConfig } = await import(path.resolve(appDirectory, configPath))
-  return dfxConfig
+  try {
+    const { default: dfxConfig } = await import(path.resolve(appDirectory, configPath))
+    return dfxConfig
+  } catch (e) {
+    console.log(e)
+    console.error(e)
+  }
 }
 
-// TODO: take dfx config as param?
-export const createActors = async (
-  canisterList: Array<string>,
-  { canisterConfig, agentIdentity }: {
-    canisterConfig: CanisterConfiguration,
-    agentIdentity?: Identity,
-  }) => {
-  let canisters = canisterList ?? Object.keys((await getDfxConfig()).canisters)
-  const identity = agentIdentity ?? (await getIdentity()).identity
-
+const getEnv = async () => {
+  const identity = (await getIdentity()).identity
   const agent = new HttpAgent({
     // TODO: get dfx port
     host: "http://0.0.0.0:8080",
@@ -566,11 +392,31 @@ export const createActors = async (
     console.warn("Unable to fetch root key. Check to ensure that your local replica is running")
     console.error(err)
   })
+  return {
+    network: "local",
+    agent,
+    identity,
+  }
+}
+
+// TODO: take dfx config as param?
+export const createActors = async (
+  canisterList: Array<string>,
+  { canisterConfig, agentIdentity, currentNetwork = "local" }: {
+    canisterConfig: CanisterConfiguration,
+    agentIdentity?: Identity,
+    currentNetwork?: string,
+  }) => {
+  const {
+    agent,
+  } = await getEnv()
+  let canisters = canisterList
   let actors = {}
   const canisterIds = getCanisterIds()
+  console.log("create actors:", canisterIds)
   for (let canisterName of canisters) {
     // TODO: network support?
-    const canisterId = canisterIds[canisterName]
+    const canisterId = canisterIds[canisterName][currentNetwork]
     // TODO: get did
     const didPath = canisterConfig.candid + ".js"
     // const didPath = `${appDirectory}/.dfx/local/canisters/${canisterName}/${canisterName}.did.js`
@@ -579,7 +425,8 @@ export const createActors = async (
     // TODO: better way of checking? call dfx?
     const canisterExists = fs.existsSync(didPath)
     if (!canisterExists) {
-      await init(canisterName, canisterConfig)
+      // TODO: was init() before
+      await deployCanister(canisterName, canisterConfig)
     }
     actors[canisterName] = {
       actor: Actor.createActor(canisterDID.idlFactory, {
@@ -637,19 +484,15 @@ export const createActors = async (
 // TODO: ........ no top level await
 // TODO: clone. make immutable?
 // const userConfig = await getDfxConfig()
-const userConfig = {}
+// const userConfig = {}
 // let config = JSON.parse(JSON.stringify(userConfig))
 // let config
 // const getConfig = async () => config ? JSON.parse(JSON.stringify(config)) : await getDfxConfig()
-type ConfigFn = (config: DfxTs<any>, userConfig: DfxTs<any>) => void
-export const extendConfig = (fn: ConfigFn) => {
-  // TODO: let plugins call this function to extend config
-  fn(config, JSON.parse(JSON.stringify(userConfig)))
-}
-
-export const task = (name, description, fn) => {
-
-}
+// type ConfigFn = (config: DfxTs, userConfig: DfxTs) => void
+// export const extendConfig = (fn: ConfigFn) => {
+//   // TODO: let plugins call this function to extend config
+//   fn(config, JSON.parse(JSON.stringify(userConfig)))
+// }
 
 // TODO: use dfx identity export ?
 export const getIdentity = async (selection?: string): Promise<{
@@ -683,72 +526,6 @@ export const getIdentity = async (selection?: string): Promise<{
   }
 }
 
-// // TODO: just create identity? take an optional param of identity.json, else create new
-// export const getOrCreateIdentity = async (): Promise<{ identity: Secp256k1KeyIdentity, pem: string }> => {
-//   const identityExists = fs.existsSync(`${appDirectory}/identity.json`)
-//   let identity
-//   if (identityExists) {
-//     const { default: identityJson } = await import(`${appDirectory}/identity.json`, { assert: { type: "json" } })
-//     identity = Secp256k1KeyIdentity.fromParsedJson(identityJson)
-//   } else {
-//     identity = Secp256k1KeyIdentity.generate()
-//     const identityJson = identity.toJSON()
-//     await new Promise<void>((resolve, reject) => {
-//       fs.writeFile(`${appDirectory}/identity.json`, JSON.stringify(identityJson), "utf-8", (err) => {
-//         if (!err) {
-//           resolve()
-//         }
-//       })
-//     })
-//   }
-//
-//   const {
-//     secretKey: privateKey,
-//     publicKey,
-//   } = identity.getKeyPair()
-//
-//   const rawPrivateKey = toHexString(new Uint8Array(privateKey))
-//   const rawPublicKey = toHexString(new Uint8Array(publicKey.rawKey))
-//
-//   const PEM_BEGIN = `-----BEGIN EC PARAMETERS-----
-// BgUrgQQACg==
-// -----END EC PARAMETERS-----
-// -----BEGIN EC PRIVATE KEY-----`
-//   const PEM_END = "-----END EC PRIVATE KEY-----"
-//   const PRIV_KEY_INIT = "30740201010420"
-//   const KEY_SEPARATOR = "a00706052b8104000aa144034200"
-//
-//   const pem = `${PEM_BEGIN}\n${Buffer.from(
-//     `${PRIV_KEY_INIT}${rawPrivateKey}${KEY_SEPARATOR}${rawPublicKey}`,
-//     "hex",
-//   ).toString("base64")}\n${PEM_END}`
-//
-//   // TODO: check if exists
-//   await new Promise<void>((resolve, reject) => {
-//     fs.writeFile(`${appDirectory}/identity.pem`, pem, "utf-8", (err) => {
-//       if (!err) {
-//         resolve()
-//       }
-//     })
-//   })
-//
-//   await spawn({
-//     command: "dfx",
-//     args: ["identity", "import", adminName, `${appDirectory}/identity.pem`, "--disable-encryption"],
-//     stdout: (data) => {
-//     },
-//   })
-//
-//   await spawn({
-//     command: "dfx",
-//     args: ["identity", "use", adminName],
-//     stdout: (data) => {
-//     },
-//   })
-//
-//   return { identity, pem }
-// }
-
 export const getUserFromBrowser = async (browserUrl) => {
   // TODO: move out?
   // TODO: get port from vite
@@ -776,46 +553,16 @@ export const getUserFromBrowser = async (browserUrl) => {
   return browser
 }
 
-type CanisterDeclarations = {
-  [canisterName: string]: {
-    canisterId: string
-    actor: ActorSubclass<any>
-    // TODO: ?
-    // setControllers: (controllers: Array<string>) => Promise<void>,
-    // addControllers: (controllers: Array<string>) => Promise<void>
-  }
-}
-
-export const defineConfig = <Canisters extends CanisterDeclarations>(
-  config: DfxTs<{
-    [C in keyof Canisters]: Omit<Canisters[C], "service" | "idlFactory"> & {
-    setControllers: (controllers: Array<string>) => Promise<void>,
-    addControllers: (controllers: Array<string>) => Promise<void>
-  }
-  }>) => {
-  return config
-}
-
 export const getCanisterIds = () => {
-  // const { default: ids } = await import(`${appDirectory}/.dfx/local/canister_ids.json`, { assert: { type: "json" } })
-  const ids = JSON.parse(fs.readFileSync(`${appDirectory}/.dfx/local/canister_ids.json`, "utf8"))
+  const ids = JSON.parse(fs.readFileSync(`${appDirectory}/canister_ids.json`, "utf8"))
   const canisterIds = Object.keys(ids).reduce((acc, canisterName) => {
     if (canisterName !== "__Candid_UI") {
-      acc[canisterName] = ids[canisterName].local
+      acc[canisterName] = ids[canisterName]
     }
     return acc
   }, {})
   return canisterIds
 }
-
-// TODO: cycles wallet
-// export const getAllCanisterIds = () => {
-//   // const { default: ids } = await import(`${appDirectory}/.dfx/local/canister_ids.json`, { assert: { type: "json" } })
-//   const ids = JSON.parse(fs.readFileSync(`${appDirectory}/.dfx/local/canister_ids.json`, "utf8"))
-//   const wallets = JSON.parse(fs.readFileSync(`${appDirectory}/.dfx/local/wallets.json`, "utf8"))
-//   const canisterIds = Object.assign(ids, wallets.identities)
-//   return canisterIds
-// }
 
 export const dfxDefaults: DfxJson = {
   defaults: {

@@ -1,11 +1,10 @@
 import path from "path"
-import { CanisterConfiguration } from "dfx-js/dist/schema"
 import { Opt } from "../types"
 import * as url from "url"
 import { Actor, HttpAgent } from "@dfinity/agent"
 import { idlFactory } from "./management.did"
 import { CreateProps } from "../types"
-import type { ExtendedCanisterConfiguration } from "@dfx-js/core"
+import type { ExtendedCanisterConfiguration } from "@hydra.icp/runner"
 
 const __filename = url.fileURLToPath(import.meta.url)
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))

@@ -4,7 +4,7 @@ import { idlFactory } from "./ledger.private.did.js"
 // import { idlFactory as ledgerPublicIdlFactory } from "./ledger.public.did.js"
 import type { LedgerCanisterInitPayload } from "./ledger.private.types"
 import * as url from "url"
-import type { ExtendedCanisterConfiguration } from "@dfx-js/core"
+import type { ExtendedCanisterConfiguration } from "@hydra.icp/runner"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 

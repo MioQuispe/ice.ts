@@ -4,7 +4,7 @@ import * as url from "url"
 import { Actor, HttpAgent } from "@dfinity/agent"
 import { idlFactory } from "./cycles_wallet.did"
 import { CreateProps } from "../types"
-import type { ExtendedCanisterConfiguration } from "@dfx-js/core"
+import type { ExtendedCanisterConfiguration } from "@hydra.icp/runner"
 
 
 const __filename = url.fileURLToPath(import.meta.url)

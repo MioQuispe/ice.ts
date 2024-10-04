@@ -2,14 +2,14 @@
   "name": "@hydra.icp/runner",
   "type": "module",
   "version": "0.0.1",
-  "main": "dist/index.mjs",
+  "main": "dist/index.js",
   "source": "src",
   "files": [
     "dist",
     "bin"
   ],
   "bin": {
-    "hydra": "./bin/cli.mjs"
+    "hydra": "./bin/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -45,6 +45,6 @@
     "vitest": "^0.13.1"
   },
   "peerDependencies": {
-    "tsx": "^3.14.0"
+    "tsx": "^3.12.2"
   }
 }

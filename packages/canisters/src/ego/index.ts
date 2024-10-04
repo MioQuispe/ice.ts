@@ -9,7 +9,7 @@ import { InitArg as EgoAssetsInitArg } from "./ego_assets/ego_assets"
 import { InitArg as EgoTenantInitArg } from "./ego_tenant/ego_tenant"
 import { InitArg as EgoFileInitArg } from "./ego_file/ego_file"
 import { Opt } from "../types"
-import type { ExtendedCanisterConfiguration } from "@dfx-js/core"
+import type { ExtendedCanisterConfiguration } from "@hydra.icp/runner"
 
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
