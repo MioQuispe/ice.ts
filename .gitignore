@@ -11,3 +11,4 @@ dist-ssr
 .turbo
 **/package-lock.json
 **/yarn.lock
+**/target/**

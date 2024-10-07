@@ -9,7 +9,6 @@ import appIconSrc from "../phone_icon.svg"
 import browserIconSrc from "../browser_icon.svg"
 import "webcomponent-qr-code"
 import type { Provider } from "@connect2ic/core/providers"
-import AuthClient, { generateNonce } from "@walletconnect/auth-client"
 import { Methods } from "@connect2ic/core"
 
 const ua = navigator.userAgent.toLowerCase()
@@ -101,44 +100,6 @@ const ConnectDialog: React.FC<PropsWithChildren<Props>> = (props) => {
   const availableMethods = isMobile ? mobileMethods : desktopMethods
   const shouldShowMethods = availableMethods?.length > 1
 
-  const [client, setClient] = useState<typeof AuthClient>()
-
-  useEffect(() => {
-    ;(async () => {
-      const authClient = await AuthClient.init({
-        // TODO:
-        projectId: "809a380ab4c414631cbc45bbca4b641a",
-        metadata: {
-          name: "eight.icp",
-          description: "A dapp using WalletConnect AuthClient",
-          url: window.location.origin,
-          icons: ["https://my-auth-dapp.com/icons/logo.png"],
-        },
-      })
-      authClient.on("auth_response", ({ params }) => {
-        if (Boolean(params.result?.s)) {
-          // Response contained a valid signature -> user is authenticated.
-
-        } else {
-          // Handle error or invalid signature case
-          console.error(params.message)
-        }
-      })
-      setClient(authClient)
-      // TODO: client not ready always
-      const { uri: result } = await authClient.request({
-        aud: window.location.href,
-        domain: window.location.hostname.split(".").slice(-2).join("."),
-        chainId: "eip155:1",
-        // type: "eip4361",
-        nonce: generateNonce(),
-        statement: "Sign in with wallet.",
-      })
-      setUri(result)
-    })()
-  }, [AuthClient])
-
-  const [uri, setUri] = useState<string>()
   const showQRCode = async () => {
     setScreen(screens.QR_CODE)
   }
@@ -267,9 +228,9 @@ const ConnectDialog: React.FC<PropsWithChildren<Props>> = (props) => {
               </div>
               <div className="qr-container">
                 <div className="qr-bg">
-                  {uri ? (
-                    <qr-code data={uri} />
-                  ) : null}
+                  {/*{uri ? (*/}
+                  {/*  <qr-code data={uri} />*/}
+                  {/*) : null}*/}
                 </div>
               </div>
               <div className="dialog-bottom">

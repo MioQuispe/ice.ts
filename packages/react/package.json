@@ -25,7 +25,6 @@
     "@fontsource/pt-sans": "^4.5.11",
     "@tanstack/react-query": "^4.29.12",
     "@vanilla-extract/css": "^1.9.2",
-    "@walletconnect/auth-client": "^1.0.1",
     "@xstate/react": "^3.0.1",
     "cap-js-without-npm-registry": "file:../../../cap-js-without-npm-registry",
     "neverthrow": "^5.0.0",

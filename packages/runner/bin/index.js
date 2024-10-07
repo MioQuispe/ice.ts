@@ -5,8 +5,6 @@ import fs from "fs"
 import path from "path"
 
   ;(async () => {
-  // const appDirectory = fs.realpathSync(process.cwd())
-  // const { default: dfxConfig } = await import(await path.resolve(appDirectory, configPath))
   const dfxConfig = await getDfxConfig()
   const tasks = process.argv.slice(2)
   try {
