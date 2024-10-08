@@ -1,5 +1,5 @@
 import path from "path"
-import type { ExtendedCanisterConfiguration } from "@hydra.icp/runner"
+import type { ExtendedCanisterConfiguration } from "@crystal/runner"
 import { Opt } from "../types"
 import * as url from "url"
 import { Actor, HttpAgent } from "@dfinity/agent"

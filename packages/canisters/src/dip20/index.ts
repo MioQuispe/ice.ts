@@ -1,6 +1,6 @@
 import * as url from "url"
 import path from "path"
-import type { ExtendedCanisterConfiguration } from "@hydra.icp/runner"
+import type { ExtendedCanisterConfiguration } from "@crystal/runner"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 

@@ -1,6 +1,6 @@
 import fs from "fs"
 import { extendConfig, getIdentity } from "../../index"
-import { ICRC1Ledger, InternetIdentity, Ledger } from "@hydra.icp/canisters"
+import { ICRC1Ledger, InternetIdentity, Ledger } from "@crystal/canisters"
 
 const appDirectory = fs.realpathSync(process.cwd())
 const fromAppDir = (path) => `${appDirectory}/${path}`

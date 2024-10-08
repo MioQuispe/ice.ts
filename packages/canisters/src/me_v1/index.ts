@@ -7,7 +7,7 @@ import path from "path"
 // import { InitArg as EgoAssetsInitArg } from "./ego_assets/ego_assets"
 // import { InitArg as EgoTenantInitArg } from "./ego_tenant/ego_tenant"
 // import { InitArg as EgoFileInitArg } from "./ego_file/ego_file"
-import type { ExtendedCanisterConfiguration } from "@hydra.icp/runner"
+import type { ExtendedCanisterConfiguration } from "@crystal/runner"
 import { Principal } from "@dfinity/principal"
 
 

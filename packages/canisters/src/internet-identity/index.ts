@@ -4,7 +4,7 @@ import * as url from "url"
 import { Actor, HttpAgent, ActorSubclass } from "@dfinity/agent"
 import { idlFactory } from "./internet_identity.did"
 import { CreateProps } from "../types"
-import type { ExtendedCanisterConfiguration } from "@hydra.icp/runner"
+import type { ExtendedCanisterConfiguration } from "@crystal/runner"
 
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))

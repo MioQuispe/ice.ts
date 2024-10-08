@@ -1,5 +1,5 @@
 {
-  "name": "@hydra.icp/canisters",
+  "name": "@crystal/canisters",
   "type": "module",
   "version": "0.0.1",
   "main": "dist/bundle.js",

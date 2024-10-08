@@ -27,6 +27,24 @@ import find from "find-process"
 import { principalToAccountId } from "./utils"
 import { did_to_js } from "didc_js"
 
+const getDfxPort = async (): Promise<number> => {
+  return new Promise((resolve, reject) => {
+    childSpawn('dfx', ['info', 'webserver-port'], { stdio: ['ignore', 'pipe', 'ignore'] })
+      .stdout!.on('data', (data) => {
+        const port = parseInt(data.toString().trim(), 10);
+        if (isNaN(port)) {
+          reject(new Error('Failed to parse DFX webserver port'));
+        } else {
+          resolve(port);
+        }
+      })
+      .on('error', (err) => {
+        reject(new Error(`Failed to get DFX webserver port: ${err.message}`));
+      });
+  });
+}
+
+
 type ManagementActor = import("@dfinity/agent").ActorSubclass<import("./canisters/management_new/management.types.js")._SERVICE>
 
 type Deps<C, S, D> = {
@@ -43,13 +61,13 @@ type Deps<C, S, D> = {
 export type ExtendedCanisterConfiguration =
   (CanisterConfiguration | RustSpecificProperties | MotokoSpecificProperties | AssetSpecificProperties)
   & {
-  _metadata?: { standard?: string; }; dfx_js?: {
-    args?: any[];
-    canister_id?: {
-      [network: string]: string
+    _metadata?: { standard?: string; }; dfx_js?: {
+      args?: any[];
+      canister_id?: {
+        [network: string]: string
+      }
     }
   }
-}
 
 // Define a more specific type for canister configurations
 export type TaskCanisterConfiguration<T = ExtendedCanisterConfiguration> = ExtendedCanisterConfiguration & T
@@ -126,10 +144,10 @@ export const Opt = <T>(value?: any): [T] | [] => {
 }
 
 const spawn = ({
-                 command,
-                 args,
-                 stdout,
-               }: {
+  command,
+  args,
+  stdout,
+}: {
   command: string,
   args: Array<string>,
   stdout?: (data: string) => void,
@@ -233,62 +251,58 @@ export const deployCanister = async (canisterName: string, canisterConfig: Exten
     // const canisterDID = await import(didPath)
     // TODO: add args to schema
     let encodedArgs = canisterConfig.dfx_js?.args ? IDL.encode(canisterDID.init({ IDL }), canisterConfig.dfx_js.args) : new Uint8Array()
-    } catch (e: Error) {
-      console.log("Failed to encode args: ", e)
-      throw { kind: "CanisterArgsFailed", message: e.message }
-    }
-    // TODO: create random principal?
-    let canister_id = canisterConfig.dfx_js?.canister_id?.local
-    try {
-      // const specified_id = canisterConfig.dfx_js?.canister_id?.local
-      canister_id = (await mgmt.provisional_create_canister_with_cycles({
-        settings: [{
-          compute_allocation: Opt<bigint>(),
-          // compute_allocation: Opt<bigint>(100n),
-          memory_allocation: Opt<bigint>(), // 8gb
-          // memory_allocation: Opt<bigint>(8_000_000_000n), // 8gb
-          freezing_threshold: Opt<bigint>(), // 30 days in seconds
-          // freezing_threshold: Opt<bigint>(3600n * 24n * 30n), // 30 days in seconds
-          controllers: Opt<Principal[]>([
-            // TODO: add more
-            identity.getPrincipal(),
-          ]),
-        }],
-        // amount: Opt<bigint>(1_000_000_000_000n),
-        amount: Opt<bigint>(1_000_000_000_000n),
-        specified_id: Opt<Principal>(canister_id ? Principal.from(canister_id) : undefined), // TODO: add custom_id
-        sender_canister_version: Opt<bigint>(0n), // TODO: ??
-        // sender_canister_version: Opt<bigint>(0n), // TODO: ??
-        // settings: [] | [canister_settings];   specified_id: [] | [Principal];   amount: [] | [bigint];   sender_canister_version: [] | [bigint];
-      })).canister_id.toText()
-      console.log(`Created ${canisterName} with canister_id:`, canister_id)
-    } catch (e: Error) {
-      console.log("Failed to create canister:", e)
-      throw { kind: "CanisterCreationFailed", message: e.message }
-    }
-    try {
-      const wasm = Array.from(new Uint8Array(fs.readFileSync(wasmPath)))
-      await mgmt.install_code({
-        arg: encodedArgs,
-        canister_id: Principal.from(canister_id),
-        sender_canister_version: Opt<bigint>(),
-        wasm_module: wasm,
-        mode,
-      })
-      console.log(`Success with wasm bytes length: ${wasm.length}`)
-      console.log(`Installed code for ${canisterName} with canister_id:`, canister_id)
-      return canister_id
-    } catch (e: Error) {
-      console.error("Failed to deploy canister:", e)
-      throw { kind: 'CanisterDeploymentError', message: `Failed to deploy canister ${canisterName}: ${e.message}` }
-    }
+  } catch (e: Error) {
+    console.log("Failed to encode args: ", e)
+    throw { kind: "CanisterArgsFailed", message: e.message }
+  }
+  // TODO: create random principal?
+  let canister_id = canisterConfig.dfx_js?.canister_id?.local
+  try {
+    // const specified_id = canisterConfig.dfx_js?.canister_id?.local
+    canister_id = (await mgmt.provisional_create_canister_with_cycles({
+      settings: [{
+        compute_allocation: Opt<bigint>(),
+        // compute_allocation: Opt<bigint>(100n),
+        memory_allocation: Opt<bigint>(), // 8gb
+        // memory_allocation: Opt<bigint>(8_000_000_000n), // 8gb
+        freezing_threshold: Opt<bigint>(), // 30 days in seconds
+        // freezing_threshold: Opt<bigint>(3600n * 24n * 30n), // 30 days in seconds
+        controllers: Opt<Principal[]>([
+          // TODO: add more
+          identity.getPrincipal(),
+        ]),
+      }],
+      // amount: Opt<bigint>(1_000_000_000_000n),
+      amount: Opt<bigint>(1_000_000_000_000n),
+      specified_id: Opt<Principal>(canister_id ? Principal.from(canister_id) : undefined), // TODO: add custom_id
+      sender_canister_version: Opt<bigint>(0n), // TODO: ??
+      // sender_canister_version: Opt<bigint>(0n), // TODO: ??
+      // settings: [] | [canister_settings];   specified_id: [] | [Principal];   amount: [] | [bigint];   sender_canister_version: [] | [bigint];
+    })).canister_id.toText()
+    console.log(`Created ${canisterName} with canister_id:`, canister_id)
+  } catch (e: Error) {
+    console.log("Failed to create canister:", e)
+    throw { kind: "CanisterCreationFailed", message: e.message }
+  }
+  try {
+    const wasm = Array.from(new Uint8Array(fs.readFileSync(wasmPath)))
+    await mgmt.install_code({
+      arg: encodedArgs,
+      canister_id: Principal.from(canister_id),
+      sender_canister_version: Opt<bigint>(),
+      wasm_module: wasm,
+      mode,
+    })
+    console.log(`Success with wasm bytes length: ${wasm.length}`)
+    console.log(`Installed code for ${canisterName} with canister_id:`, canister_id)
+    return canister_id
   } catch (e: Error) {
     console.error("Failed to deploy canister:", e)
     throw { kind: 'CanisterDeploymentError', message: `Failed to deploy canister ${canisterName}: ${e.message}` }
   }
 }
 
-const execTasks = async (taskStream: Repeater<any>, currentNetwork: string = "local") => {
+export const execTasks = async (taskStream: Repeater<any>, currentNetwork: string = "local") => {
   for await (const { taskName: fullName, taskConfig } of taskStream) {
     const [taskType, taskName] = fullName.split(":")
     console.log(`Running ${taskType} ${taskName}`)
@@ -344,7 +358,7 @@ const execTasks = async (taskStream: Repeater<any>, currentNetwork: string = "lo
   }
 }
 
-const createTaskStream = (dfxConfig: DfxTs<any, any>, tasks: Array<TaskFullName>) => new Repeater<any>(async (push, stop) => {
+export const createTaskStream = (dfxConfig: DfxTs<any, any>, tasks: Array<TaskFullName>) => new Repeater<any>(async (push, stop) => {
   const jobs = tasks.map(async (fullName) => {
     const [taskType, taskName] = fullName.split(":") as [`${"canisters" | "scripts"}`, string]
     let taskConfig = dfxConfig[taskType][taskName]
@@ -383,10 +397,10 @@ const createTaskStream = (dfxConfig: DfxTs<any, any>, tasks: Array<TaskFullName>
   stop()
 })
 
-type TaskFullName = `${"canisters" | "scripts"}:${string}`
+export type TaskFullName = `${"canisters" | "scripts"}:${string}`
 
 // TODO: simplify & rename?
-const transformWildcards = (dfxConfig: DfxTs<any, any>, dep: TaskFullName): Array<TaskFullName> => {
+export const transformWildcards = (dfxConfig: DfxTs<any, any>, dep: TaskFullName): Array<TaskFullName> => {
   const [depType, depName] = dep.split(":") as [`${"canisters" | "scripts"}`, string]
   // TODO: check for every iteration?
   const isWildcard = depName === "*"
@@ -399,7 +413,7 @@ const transformWildcards = (dfxConfig: DfxTs<any, any>, dep: TaskFullName): Arra
   return allTasks
 }
 // TODO: write tests
-const getDeps = (dfxConfig: DfxTs<any, any>, tasks: Array<TaskFullName>): Array<TaskFullName> => {
+export const getDeps = (dfxConfig: DfxTs<any, any>, tasks: Array<TaskFullName>): Array<TaskFullName> => {
   const walkDeps = (dfxConfig: DfxTs<any, any>, dep: TaskFullName): Array<TaskFullName> => {
     const allTasks = transformWildcards(dfxConfig, dep)
     return allTasks.map((task): Array<TaskFullName> => {
@@ -427,7 +441,7 @@ export const runTasks = async (config: DfxTs<any, any>, tasks: Array<TaskFullNam
   return getCanisterIds()
 }
 
-export const getDfxConfig = async (configPath: string = "hydra.config.ts") => {
+export const getDfxConfig = async (configPath: string = "crystal.config.ts") => {
   const appDirectory = fs.realpathSync(process.cwd())
   try {
     const { default: dfxConfig } = await import(path.resolve(appDirectory, configPath))
@@ -621,7 +635,7 @@ export const getUserFromBrowser = async (browserUrl: string) => {
     app.use(express.static(`${__dirname}/public/assets`))
     const server = app.listen(666)
     // TODO: serve overrides this
-    app.post("/key", function(req, res) {
+    app.post("/key", function (req, res) {
       // TODO: ?
       // const key = Ed25519KeyIdentity.fromJSON(req.body.key)
       // const chain = DelegationChain.fromJSON(req.body.chain)
@@ -689,7 +703,7 @@ export const dfxDefaults: DfxJson = {
   version: 1,
 }
 
-const killDfx = async () => {
+export const killDfx = async () => {
   try {
     const dfxPids = await find("name", "dfx", true)
     const replicaPids = await find("name", "replica", true)

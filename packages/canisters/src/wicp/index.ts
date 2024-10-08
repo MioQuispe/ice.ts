@@ -2,7 +2,7 @@ import path from "path"
 import * as url from "url"
 import { Principal } from "@dfinity/principal"
 import { Opt } from "../types"
-import type { ExtendedCanisterConfiguration } from "@hydra.icp/runner"
+import type { ExtendedCanisterConfiguration } from "@crystal/runner"
 
 const __filename = url.fileURLToPath(import.meta.url)
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))

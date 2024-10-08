@@ -1,7 +1,7 @@
 import { Opt } from "../types"
 import * as url from "url"
 import path from "path"
-import type { ExtendedCanisterConfiguration } from "@hydra.icp/runner"
+import type { ExtendedCanisterConfiguration } from "@crystal/runner"
 import type { InitArgs, Account, MetadataValue, FeatureFlags } from "./icrc1_ledger.types"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))

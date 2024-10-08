@@ -3,7 +3,7 @@ import { Opt } from "../types"
 import { Principal } from "@dfinity/principal"
 import * as url from "url"
 import fs from "fs"
-import type { ExtendedCanisterConfiguration } from "@hydra.icp/runner"
+import type { ExtendedCanisterConfiguration } from "@crystal/runner"
 
 const appDirectory = fs.realpathSync(process.cwd())
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))

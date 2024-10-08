@@ -3,7 +3,7 @@ import { Opt } from "../types"
 import * as url from "url"
 import { idlFactory } from "./astrox_wallet.did"
 import { CreateProps } from "../types"
-import type { ExtendedCanisterConfiguration } from "@hydra.icp/runner"
+import type { ExtendedCanisterConfiguration } from "@crystal/runner"
 
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
