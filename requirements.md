@@ -32,9 +32,8 @@ Crystal aims to:
 Crystal allows developers to install canisters directly from npm, managing dependencies in a more efficient way than modifying `dfx.json` manually.
 
 #### Requirements:
-- Use `crystal install <canister-name>` to install a canister.
-- Automatically configure installed canisters in `crystal.config.ts`.
-- Allow installation of specific versions (e.g., `crystal install <canister-name>@<version>`).
+- Use `npm i <canister-name>` to install a canister.
+- Configure installed canisters in `crystal.config.ts`.
 
 ### 2. TypeScript-Based Configuration (`crystal.config.ts`)
 Crystal replaces the `dfx.json` file with `crystal.config.ts`, giving developers the power of TypeScript for their canister configurations.
@@ -66,6 +65,11 @@ Crystal generates TypeScript declarations and types for the canisters to facilit
 #### Requirements:
 - Automatically generate types when canisters are built with `crystal c`.
 - Types should be importable into the project’s TypeScript codebase.
+- Generate React, Vue, Svelte and other frameworks bindings for canisters.
+    - useCanister() hook for React
+    - useCanister() composable for Vue
+    - useCanister() function for Svelte
+    These should be automatically typed for the canisters
 
 ## Non-functional Requirements
 
@@ -75,7 +79,7 @@ Crystal generates TypeScript declarations and types for the canisters to facilit
 
 ### 2. Documentation and Help
 - Provide a comprehensive documentation site detailing all commands, configurations, and features.
-- Offer inline help via `crystal help <command>` to provide immediate assistance with syntax and options.
+- Offer inline help via `crystal <command> --help` to provide immediate assistance with syntax and options.
 
 ### 3. Testing Support
 Crystal includes utilities for easier testing of canisters, possibly integrating with `pocket-ic`.
@@ -107,3 +111,5 @@ Crystal’s architecture should support future extensibility, including potentia
 ## Future Features (Backlog)
 - **Canister Update Automation**: Automate updating of canisters to newer versions.
 - **Multi-Environment Configuration**: Add support for handling multiple environments (e.g., development, production) within `crystal.config.ts`.
+- **Plugin System**: Evolve the architecture to support a plugin system, allowing developers to extend Crystal’s functionality with custom commands and features.
+- **Templates**: Add templates for React, Vue, Svelte, and more with `crystal create <project-name>`

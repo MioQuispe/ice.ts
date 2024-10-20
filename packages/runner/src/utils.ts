@@ -19,13 +19,11 @@ export function toHexString(bytes: ArrayBuffer): string {
 
 export const principalToAccountId = (principal: Principal | string, subAccount?: Uint8Array): string => {
   // Hash (sha224) the principal, the subAccount and some padding
-  if (!(principal instanceof Principal)) {
-    principal = Principal.fromText(principal)
-  }
-  const padding = asciiStringToByteArray("\x0Aaccount-id")
+  const principalToUse = principal instanceof Principal ? principal : Principal.fromText(principal);
+  const padding = asciiStringToByteArray("\x0Aaccount-id");
 
-  const shaObj = sha224.create()
-  shaObj.update([...padding, ...principal.toUint8Array(), ...(subAccount ?? Array(32).fill(0))])
+  const shaObj = sha224.create();
+  shaObj.update([...padding, ...principalToUse.toUint8Array(), ...(subAccount ?? Array(32).fill(0))])
   const hash = new Uint8Array(shaObj.array())
 
   // Prepend the checksum of the hash and convert to a hex string
