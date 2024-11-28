@@ -1,6 +1,6 @@
 import { Opt } from "../types"
-import * as url from "url"
-import type { ExtendedCanisterConfiguration } from "@crystal/runner"
+import * as url from "node:url"
+import type { ExtendedCanisterConfiguration } from "../types"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 

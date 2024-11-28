@@ -25,7 +25,15 @@
     "moduleResolution": "node",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "baseUrl": "."
+    "baseUrl": ".",
+    "plugins": [
+      {
+        "name": "@effect/language-service"
+      },
+      {
+        "name": "typescript-plugin-effect"
+      }
+    ]
   },
   "include": [
     "src/index.ts"

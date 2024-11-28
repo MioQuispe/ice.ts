@@ -1,7 +1,7 @@
 # Crystal CLI/SDK - Requirements Specification
 
 ## Overview
-**Crystal** is a command-line tool (CLI) and SDK designed to simplify and automate complex `dfx` tasks for Internet Computer developers. It provides a TypeScript interface for managing canisters, making canister-related tasks composable and easier to automate. Crystal replaces the traditional `dfx.json` with a more ergonomic and type-safe `crystal.config.ts` file.
+**Crystal** is a command-line tool (CLI) and SDK designed to simplify and automate complex `dfx` tasks for Internet Computer developers. It provides a TypeScript interface for managing canisters, making canister-related tasks composable and easier to automate. Crystal replaces the traditional `dfx.json` with a more ergonomic and type-safe `crystal.config.ts` file. It is a task runner and allows you to generate templates, bindings and boilerplate code for tokens, NFTs, and DAOs as well.
 
 ## Purpose
 Crystal aims to:

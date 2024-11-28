@@ -1,10 +1,10 @@
-import path from "path"
+import path from "node:path"
 import { Opt } from "../types"
-import * as url from "url"
+import * as url from "node:url"
 import { Actor, HttpAgent } from "@dfinity/agent"
 import { idlFactory } from "./management.did"
 import { CreateProps } from "../types"
-import type { ExtendedCanisterConfiguration } from "@crystal/runner"
+import type { ExtendedCanisterConfiguration } from "../types"
 
 const __filename = url.fileURLToPath(import.meta.url)
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))

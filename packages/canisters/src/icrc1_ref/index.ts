@@ -1,9 +1,9 @@
-import path from "path"
+import path from "node:path"
 import { Opt } from "../types"
 import { Principal } from "@dfinity/principal"
-import * as url from "url"
-import fs from "fs"
-import type { ExtendedCanisterConfiguration } from "@crystal/runner"
+import * as url from "node:url"
+import fs from "node:fs"
+import type { ExtendedCanisterConfiguration } from "../types"
 
 const appDirectory = fs.realpathSync(process.cwd())
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
