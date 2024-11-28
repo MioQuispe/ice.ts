@@ -1,4 +1,5 @@
-import { HttpAgent } from "@dfinity/agent"
+import type { HttpAgent } from "@dfinity/agent"
+import type { AssetSpecificProperties, CanisterConfiguration, MotokoSpecificProperties, RustSpecificProperties } from "./schema"
 
 export const Opt = <T>(value?): [T] | [] => {
   return (value || value === 0) ? ([value]) : []
@@ -7,6 +8,21 @@ export const Opt = <T>(value?): [T] | [] => {
 export type CreateProps = {
   canisterId?: string
   agent: HttpAgent
+}
+
+export type ExtendedCanisterConfiguration = (
+  | CanisterConfiguration
+  | RustSpecificProperties
+  | MotokoSpecificProperties
+  | AssetSpecificProperties
+) & {
+  _metadata?: { standard?: string }
+  dfx_js?: {
+    args?: any[]
+    canister_id?: {
+      [network: string]: string
+    }
+  }
 }
 //
 // const agent = new HttpAgent({

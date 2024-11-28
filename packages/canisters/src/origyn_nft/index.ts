@@ -1,9 +1,9 @@
-import * as url from "url"
-import path from "path"
+import * as url from "node:url"
+import path from "node:path"
 import type { InitArgs } from "./origyn_nft.did"
-import { Opt } from "@crystal/runner"
+import { Opt } from "../types"
 import { Principal } from "@dfinity/principal"
-import type { ExtendedCanisterConfiguration } from "@crystal/runner"
+import type { ExtendedCanisterConfiguration } from "../types"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 

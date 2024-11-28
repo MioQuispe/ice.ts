@@ -9,8 +9,6 @@
       "dom"
     ],
     "strict": true,
-    "jsx": "react-jsx",
-    "noImplicitAny": true,
     "esModuleInterop": true,
     "isolatedModules": true,
     "moduleResolution": "node",

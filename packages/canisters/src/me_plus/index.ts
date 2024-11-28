@@ -1,9 +1,9 @@
-import path from "path"
+import path from "node:path"
 import { Opt } from "../types"
-import * as url from "url"
+import * as url from "node:url"
 import { idlFactory } from "./astrox_wallet.did"
 import { CreateProps } from "../types"
-import type { ExtendedCanisterConfiguration } from "@crystal/runner"
+import type { ExtendedCanisterConfiguration } from "../types"
 
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))

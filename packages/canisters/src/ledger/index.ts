@@ -1,10 +1,10 @@
-import path from "path"
+import path from "node:path"
 import { Opt } from "../types"
 import { idlFactory } from "./ledger.private.did.js"
 // import { idlFactory as ledgerPublicIdlFactory } from "./ledger.public.did.js"
 import type { LedgerCanisterInitPayload } from "./ledger.private.types"
-import * as url from "url"
-import type { ExtendedCanisterConfiguration } from "@crystal/runner"
+import * as url from "node:url"
+import type { ExtendedCanisterConfiguration } from "../types"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 

@@ -1,12 +1,12 @@
-import path from "path"
+import path from "node:path"
 import { idlFactory as capBucketIdlFactory } from "./cap-bucket/cap-bucket.did.js"
 import { idlFactory as capRootIdlFactory } from "./cap-root/cap-root.did.js"
 import { idlFactory as capRouterIdlFactory } from "./cap-router/cap-router.did.js"
 import { idlFactory as capRouterTestIdlFactory } from "./cap-router-test/cap-router-test.did.js"
-import type { ExtendedCanisterConfiguration } from "@crystal/runner"
+import type { ExtendedCanisterConfiguration } from "../types"
 
 import { Principal } from "@dfinity/principal"
-import * as url from "url"
+import * as url from "node:url"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 

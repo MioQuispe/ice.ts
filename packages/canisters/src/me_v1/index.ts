@@ -1,5 +1,5 @@
-import * as url from "url"
-import path from "path"
+import * as url from "node:url"
+import path from "node:path"
 // import { InitArg as EgoOpsInitArg } from "./me_e2e/me_e2e"
 // import { InitArg as EgoLedgerInitArg } from "./ego_ledger/ego_ledger"
 // import { InitArg as EgoStoreInitArg } from "./ego_store/ego_store"
@@ -7,7 +7,7 @@ import path from "path"
 // import { InitArg as EgoAssetsInitArg } from "./ego_assets/ego_assets"
 // import { InitArg as EgoTenantInitArg } from "./ego_tenant/ego_tenant"
 // import { InitArg as EgoFileInitArg } from "./ego_file/ego_file"
-import type { ExtendedCanisterConfiguration } from "@crystal/runner"
+import type { ExtendedCanisterConfiguration } from "../types"
 import { Principal } from "@dfinity/principal"
 
 
