@@ -11,7 +11,7 @@ import {
   Chunk,
 } from "effect"
 import { NodeContext } from "@effect/platform-node"
-import { FileSystem, CommandExecutor, Command } from "@effect/platform"
+import { FileSystem, CommandExecutor, Command, Path } from "@effect/platform"
 import { NodeInspectSymbol } from "effect/Inspectable"
 import { SystemError } from "@effect/platform/Error"
 import { DevTools } from "@effect/experimental"
@@ -26,14 +26,16 @@ import {
   createTaskStreamEffect,
   deployCanisterEffect,
   DeploymentError,
-  DfxEnvironment,
-  DfxEnvironmentLive,
-  DfxTs,
+  CrystalEnvironment,
+  CrystalEnvironmentLive,
+  CrystalConfig,
   getCanisterIdsEffect,
   getCurrentIdentityEffect,
   getIdentityEffect,
   runTasksEffect,
-  TaskCanisterConfiguration,
+  type TaskCanisterConfiguration,
+  type TaskContext,
+  type TaskFullName,
 } from "./index"
 import { DIP721 } from "@crystal/canisters"
 import { Actor, ActorSubclass } from "@dfinity/agent"
@@ -168,21 +170,21 @@ describe("getIdentityEffect", () => {
 })
 
 /**
- * @group DfxEnvironmentLive
+ * @group CrystalEnvironmentLive
  */
-describe("DfxEnvironmentLive", () => {
+describe("CrystalEnvironmentLive", () => {
   const FileSystemTest = FileSystem.makeNoop({
     exists: (_path: string) => Effect.succeed(true),
     readFileString: (_path: string, _encoding?: string) =>
       Effect.succeed(mockPem),
   })
 
-  it("should create DfxEnvironment with correct properties", async () => {
+  it("should create CrystalEnvironment with correct properties", async () => {
     const layers = Layer.mergeAll(
       NodeContext.layer,
       configLayer,
       Layer.provide(
-        DfxEnvironmentLive,
+        CrystalEnvironmentLive,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -192,7 +194,7 @@ describe("DfxEnvironmentLive", () => {
     )
     const runtime = ManagedRuntime.make(layers)
     const program = Effect.gen(function* () {
-      const env = yield* DfxEnvironment
+      const env = yield* CrystalEnvironment
       return env
     })
 
@@ -215,7 +217,7 @@ describe("DfxEnvironmentLive", () => {
       NodeContext.layer,
       configLayer,
       Layer.provide(
-        DfxEnvironmentLive,
+        CrystalEnvironmentLive,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -225,7 +227,7 @@ describe("DfxEnvironmentLive", () => {
     )
     const runtime = ManagedRuntime.make(layers)
     const program = Effect.gen(function* () {
-      const env = yield* DfxEnvironment
+      const env = yield* CrystalEnvironment
       return env
     })
     const result = await runtime.runPromiseExit(program)
@@ -318,7 +320,7 @@ describe("deployCanisterEffect", () => {
       FileSystemTestLayer,
       configLayer,
       Layer.provide(
-        DfxEnvironmentLive,
+        CrystalEnvironmentLive,
         Layer.mergeAll(configLayer, NodeContext.layer, FileSystemTestLayer),
       ),
     )
@@ -337,7 +339,7 @@ describe("deployCanisterEffect", () => {
       FileSystemErrorLayer,
       configLayer,
       Layer.provide(
-        DfxEnvironmentLive,
+        CrystalEnvironmentLive,
         Layer.mergeAll(configLayer, NodeContext.layer, FileSystemTestLayer),
       ),
     )
@@ -373,7 +375,7 @@ describe("deployCanisterEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemBadDid),
       configLayer,
       Layer.provide(
-        DfxEnvironmentLive,
+        CrystalEnvironmentLive,
         Layer.mergeAll(configLayer, NodeContext.layer, FileSystemTestLayer),
       ),
     )
@@ -400,7 +402,7 @@ describe("deployCanisterEffect", () => {
       FileSystemTestLayer,
       configLayer,
       Layer.provide(
-        DfxEnvironmentLive,
+        CrystalEnvironmentLive,
         Layer.mergeAll(configLayer, NodeContext.layer, FileSystemTestLayer),
       ),
     )
@@ -463,7 +465,7 @@ describe("createActorsEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemTest),
       configLayer,
       Layer.provide(
-        DfxEnvironmentLive,
+        CrystalEnvironmentLive,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -494,7 +496,7 @@ describe("createActorsEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemError),
       configLayer,
       Layer.provide(
-        DfxEnvironmentLive,
+        CrystalEnvironmentLive,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -627,9 +629,12 @@ describe("createTaskStreamEffect", () => {
     }
   }
 
-  const mockScriptConfig = {
-    dependencies: ["canisters:test_canister"],
-    fn: () => Promise.resolve()
+  const mockAsyncCanisterConfig = async (ctx: TaskContext) => mockCanisterConfig
+
+  const mockScriptConfig = async (ctx: TaskContext) => {
+    // TODO: use reference instead of string
+    const result = await ctx.task("canisters:canister_1")
+    return "mockScript returned"
   }
 
   const mockConfig = {
@@ -642,11 +647,19 @@ describe("createTaskStreamEffect", () => {
   }
 
   it("should create task stream for canister tasks", async () => {
-    const tasks = ["canisters:test_canister"]
+    const tasks: Array<TaskFullName> = ["canisters:test_canister"]
     const layers = Layer.mergeAll(
       NodeContext.layer,
       Layer.succeed(FileSystem.FileSystem, FileSystemTest),
-      configLayer
+      configLayer,
+      // Layer.provide(
+      //   DfxEnvironmentLive,
+      //   Layer.mergeAll(
+      //     configLayer,
+      //     NodeContext.layer,
+      //     Layer.succeed(FileSystem.FileSystem, FileSystemTest),
+      //   ),
+      // ),
     )
     const runtime = ManagedRuntime.make(layers)
 
@@ -663,6 +676,35 @@ describe("createTaskStreamEffect", () => {
       taskConfig: mockCanisterConfig
     }])
   })
+  it("should handle async canister config", async () => {
+    const mockAsyncConfig = {
+      canisters: {
+        test_canister: mockAsyncCanisterConfig
+      },
+      scripts: {}
+    }
+    const tasks = ["canisters:test_canister"]
+    const layers = Layer.mergeAll(
+      NodeContext.layer, 
+      Layer.succeed(FileSystem.FileSystem, FileSystemTest),
+      configLayer
+    )
+    const runtime = ManagedRuntime.make(layers)
+
+    const program = Effect.gen(function* (_) {
+      const taskStream = createTaskStreamEffect(mockAsyncConfig, tasks)
+      const result = yield* Stream.runCollect(taskStream)
+      return Chunk.toReadonlyArray(result)
+    })
+
+    const result = await runtime.runPromise(program)
+    expect(result).toBeDefined()
+    expect(result).toEqual([{
+      taskName: "canisters:test_canister",
+      taskConfig: mockCanisterConfig,
+    }])
+  })
+
 
   it("should create task stream for script tasks", async () => {
     const tasks = ["scripts:test_script"] 
@@ -683,7 +725,7 @@ describe("createTaskStreamEffect", () => {
     expect(result).toBeDefined()
     expect(result).toEqual([{
       taskName: "scripts:test_script",
-      taskConfig: mockScriptConfig
+      taskConfig: "mockScript returned",
     }])
   })
 
@@ -704,12 +746,13 @@ describe("createTaskStreamEffect", () => {
 
     const result = await runtime.runPromise(program)
     expect(result).toBeDefined()
+    console.log("should handle dependencies correctly", result)
     expect(result).toEqual([{
       taskName: "canisters:test_canister",
       taskConfig: mockCanisterConfig
     }, {
       taskName: "scripts:test_script",
-      taskConfig: mockScriptConfig
+      taskConfig: "mockScript returned",
     }])
   })
 
@@ -783,7 +826,7 @@ describe("runTasksEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemTest),
       configLayer,
       Layer.provide(
-        DfxEnvironmentLive,
+        CrystalEnvironmentLive,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -824,7 +867,7 @@ describe("runTasksEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemTest),
       configLayer,
       Layer.provide(
-        DfxEnvironmentLive,
+        CrystalEnvironmentLive,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -862,7 +905,7 @@ describe("runTasksEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemTest),
       configLayer,
       Layer.provide(
-        DfxEnvironmentLive,
+        CrystalEnvironmentLive,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -902,7 +945,7 @@ describe("runTasksEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemTest),
       configLayer,
       Layer.provide(
-        DfxEnvironmentLive,
+        CrystalEnvironmentLive,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
