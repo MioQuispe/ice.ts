@@ -102,7 +102,19 @@ type ManagementActor = import("@dfinity/agent").ActorSubclass<
 
 // TODO: change
 export type TaskContext = {
-  task: <T>(taskName: string) => Promise<T>
+  runTask: <T>(taskName: string) => Promise<T>
+  // TODO: identities & other context. agent, etc.
+  // users: {
+  //   [name: string]: {
+  //     identity: Identity
+  //     agent: HttpAgent
+  //     principal: Principal
+  //     accountId: string
+  //   }
+  // }
+
+  // config: DfxConfig
+
   // [K in keyof DfxTs["canisters"]]: {
   //   // actor: ActorSubclass<C[K]["idlFactory"]>
   //   // canisterId: C[K]["canisterId"]
@@ -228,7 +240,6 @@ enum InstallMode {
 
 // // Define a custom Effect type for deployment
 // type DeployEffect = Effect.Effect<never, typeof DeploymentError | typeof ActorError | typeof IdentityError | typeof ConfigError, string>
-
 
 export const deployCanisterEffect = (
   canisterName: string,
@@ -510,17 +521,17 @@ export const createTaskStreamEffect = (
         }
         // TODO: exec
         console.log("finalTask", finalTask)
-        if (taskType === "canisters") {
-          const canisterId = yield* deployCanisterEffect(taskName, finalTask)
-          return { taskName: fullName, taskType, taskResult: canisterId }
-        } else if (taskType === "scripts") {
-          // TODO: exec script
-          const taskResult = yield* Effect.tryPromise({
-            try: () => finalTask(),
-            catch: (e) => new Error(String(e)),
-          })
-          return { taskName: fullName, taskType, taskResult }
-        }
+        // if (taskType === "canisters") {
+        //   const canisterId = yield* deployCanisterEffect(taskName, finalTask)
+        //   return { taskName: fullName, taskType, taskResult: canisterId }
+        // } else if (taskType === "scripts") {
+        //   // TODO: exec script
+        // }
+        const taskResult = yield* Effect.tryPromise({
+          try: () => finalTask(),
+          catch: (e) => new Error(String(e)),
+        })
+        return { taskName: fullName, taskType, taskResult }
         return Effect.fail(new Error("Unknown task type"))
       }),
     ),
@@ -625,7 +636,9 @@ export const runTasksEffect = async (
   const program = Effect.gen(function* () {
     const crystalConfig = yield* getCrystalConfigEffect
     const allTasks = [
-      ...new Set([...tasksArray.flatMap((t) => transformWildcards(crystalConfig, t))]),
+      ...new Set([
+        ...tasksArray.flatMap((t) => transformWildcards(crystalConfig, t)),
+      ]),
     ]
     const stream = createTaskStreamEffect(crystalConfig, allTasks)
     const tasksChunk = yield* Stream.runCollect(stream)
@@ -692,14 +705,105 @@ export const CrystalEnvironmentLive = Layer.effect(
   }),
 )
 
+export const createActorEffect = <T>({
+  canisterName,
+  canisterConfig,
+}: {
+  canisterName: string
+  canisterConfig: CanisterConfiguration
+}) =>
+  Effect.gen(function* () {
+    const { agent, network } = yield* CrystalEnvironment
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const appDir = yield* Config.string("APP_DIR")
+
+    // let canister: {
+    //   actor: ActorSubclass<any>
+    //   canisterId: string
+    //   getControllers: () => Promise<void>
+    //   addControllers: (controllers: Array<string>) => Promise<void>
+    //   setControllers: (controllers: Array<string>) => Promise<void>
+    // }
+
+    const canisterIds = yield* getCanisterIdsEffect
+
+    const canisterId = canisterIds[canisterName][network]
+    const didPath = path.join(`${canisterConfig.candid}.js`)
+
+    // Import canister DID
+    const canisterDID = yield* Effect.tryPromise({
+      try: () => import(didPath),
+      catch: (err) =>
+        new ConfigError({
+          message: `Failed to import canister DID: ${err instanceof Error ? err.message : String(err)}`,
+        }),
+    })
+
+    const exists = yield* fs.exists(didPath)
+    if (!exists) {
+      yield* deployCanisterEffect(canisterName, canisterConfig)
+    }
+
+    const commandExecutor = yield* CommandExecutor.CommandExecutor
+
+    const getControllers = () => Effect.unit
+
+    const addControllers = (controllers: Array<string>) =>
+      Effect.gen(function* () {
+        const command = Command.make(
+          "dfx",
+          "canister",
+          "--network",
+          "local",
+          "update-settings",
+          ...controllers.flatMap((c) => ["--add-controller", c]),
+          canisterId,
+        )
+        yield* commandExecutor.start(command)
+      })
+
+    const setControllers = (controllers: Array<string>) =>
+      Effect.gen(function* () {
+        const cyclesWalletCommand = Command.make(
+          "dfx",
+          "identity",
+          "get-wallet",
+        )
+        const cyclesWallet = yield* Command.string(cyclesWalletCommand)
+
+        const command = Command.make(
+          "dfx",
+          "canister",
+          "--network",
+          "local",
+          "update-settings",
+          ...controllers.flatMap((c) => ["--set-controller", c]),
+          "--set-controller",
+          cyclesWallet.trim(),
+          canisterId,
+        )
+        yield* commandExecutor.start(command)
+      })
+
+    return {
+      actor: Actor.createActor(canisterDID.idlFactory, {
+        agent,
+        canisterId,
+      }),
+      canisterId,
+      getControllers,
+      addControllers,
+      setControllers,
+    }
+  })
+
 export const createActorsEffect = <T>({
   canisterList,
   canisterConfig,
-  currentNetwork = "local",
 }: {
   canisterList: Array<string>
   canisterConfig: CanisterConfiguration
-  currentNetwork?: string
 }) =>
   Effect.gen(function* () {
     const { agent } = yield* CrystalEnvironment
@@ -720,75 +824,10 @@ export const createActorsEffect = <T>({
     const canisterIds = yield* getCanisterIdsEffect
 
     for (const canisterName of canisterList) {
-      const canisterId = canisterIds[canisterName][currentNetwork]
-      const didPath = path.join(canisterConfig.candid + ".js")
-
-      // Import canister DID
-      const canisterDID = yield* Effect.tryPromise({
-        try: () => import(didPath),
-        catch: (err) =>
-          new ConfigError({
-            message: `Failed to import canister DID: ${err instanceof Error ? err.message : String(err)}`,
-          }),
+      actors[canisterName] = yield* createActorEffect({
+        canisterName,
+        canisterConfig,
       })
-
-      const exists = yield* fs.exists(didPath)
-      if (!exists) {
-        // TODO: Implement deployCanisterEffect first
-        yield* deployCanisterEffect(canisterName, canisterConfig)
-      }
-
-      const commandExecutor = yield* CommandExecutor.CommandExecutor
-
-      const getControllers = () => Effect.unit
-
-      const addControllers = (controllers: Array<string>) =>
-        Effect.gen(function* () {
-          const command = Command.make(
-            "dfx",
-            "canister",
-            "--network",
-            "local",
-            "update-settings",
-            ...controllers.flatMap((c) => ["--add-controller", c]),
-            canisterId,
-          )
-          yield* CommandExecutor.start(command)
-        })
-
-      const setControllers = (controllers: Array<string>) =>
-        Effect.gen(function* () {
-          const cyclesWalletCommand = Command.make(
-            "dfx",
-            "identity",
-            "get-wallet",
-          )
-          const cyclesWallet = yield* Command.string(cyclesWalletCommand)
-
-          const command = Command.make(
-            "dfx",
-            "canister",
-            "--network",
-            "local",
-            "update-settings",
-            ...controllers.flatMap((c) => ["--set-controller", c]),
-            "--set-controller",
-            cyclesWallet.trim(),
-            canisterId,
-          )
-          yield* CommandExecutor.start(command)
-        })
-
-      actors[canisterName] = {
-        actor: Actor.createActor(canisterDID.idlFactory, {
-          agent,
-          canisterId,
-        }),
-        canisterId,
-        getControllers,
-        addControllers,
-        setControllers,
-      }
     }
 
     return actors

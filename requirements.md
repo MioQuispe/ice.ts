@@ -82,7 +82,7 @@ Crystal generates TypeScript declarations and types for the canisters to facilit
 - Offer inline help via `crystal <command> --help` to provide immediate assistance with syntax and options.
 
 ### 3. Testing Support
-Crystal includes utilities for easier testing of canisters, possibly integrating with `pocket-ic`.
+Crystal includes utilities for easier testing of canisters, possibly integrating with `pocket-ic`. Have canisters deployed already in the test environment (see hardhat-deploy).
 
 #### Requirements:
 - Simplify testing by generating test utilities for canisters.
