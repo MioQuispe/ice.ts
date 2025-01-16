@@ -1,0 +1,259 @@
+import { Effect, Layer, Context, Data, Config } from "effect"
+import { Command, CommandExecutor, Path, FileSystem } from "@effect/platform"
+import type { Principal } from "@dfinity/principal"
+import { Actor, HttpAgent, SignIdentity, type Identity } from "@dfinity/agent"
+import { IDL } from "@dfinity/candid"
+import find from "find-process"
+import { idlFactory } from "../canisters/management_new/management.did.js"
+import { Ed25519KeyIdentity } from "@dfinity/identity"
+import type { DfxJson } from "../schema.js"
+import {
+  getCurrentIdentity,
+  getIdentity,
+  ConfigError,
+} from "../index.js"
+import type { ManagementActor } from "../types.js"
+import type { PlatformError } from "@effect/platform/Error"
+
+// TODO: not just dfx?
+export const dfxDefaults: DfxJson = {
+  defaults: {
+    build: {
+      packtool: "",
+      args: "--force-gc",
+    },
+    replica: {
+      subnet_type: "system",
+    },
+  },
+  networks: {
+    local: {
+      bind: "127.0.0.1:8080",
+      type: "ephemeral",
+    },
+    staging: {
+      providers: ["https://ic0.app"],
+      type: "persistent",
+    },
+    ic: {
+      providers: ["https://ic0.app"],
+      type: "persistent",
+    },
+  },
+  version: 1,
+}
+
+// Error types
+export class DfxError extends Data.TaggedError("DfxError")<{
+  readonly message: string
+}> {}
+
+export class DfxService extends Context.Tag("DfxService")<
+  DfxService,
+  {
+    readonly start: () => Effect.Effect<void, PlatformError>
+    readonly stop: () => Effect.Effect<void, DfxError>
+    // readonly deployCanister: (params: {
+    //   canisterName: string
+    //   wasm: Uint8Array
+    //   candid: any
+    //   args?: any[]
+    //   controllers?: Principal[]
+    // }) => Effect.Effect<string, DfxError>
+    // readonly createCanister: (params: {
+    //   canisterName: string
+    //   args?: any[]
+    // }) => Effect.Effect<string, DfxError>
+    // readonly installCanister: (params: {
+    //   canisterName: string
+    //   args?: any[]
+    // }) => Effect.Effect<string, DfxError>
+    readonly getWebserverPort: () => Effect.Effect<number, DfxError>
+    readonly getIdentity: (selection?: string) => Effect.Effect<
+      {
+        identity: SignIdentity
+        pem: string
+        name: string
+        principal: string
+        accountId: string
+      },
+      DfxError | PlatformError
+    >
+    readonly network: string
+    readonly identity: SignIdentity
+    readonly agent: HttpAgent
+    readonly mgmt: ManagementActor
+    // readonly createManagementActor: () => Effect.Effect<
+    //   ManagementActor,
+    //   DfxError
+    // >
+  }
+>() {
+  static Live = Layer.effect(
+    DfxService,
+    Effect.gen(function* () {
+      const commandExecutor = yield* CommandExecutor.CommandExecutor
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const dfxPort = yield* Config.string("DFX_PORT")
+      const host = yield* Config.string("DFX_HOST")
+
+      const getCurrentIdentity = () =>
+        Effect.gen(function* () {
+          const command = Command.make("dfx", "identity", "whoami")
+          const result = yield* commandExecutor.string(command)
+          return result.trim()
+        })
+
+      const getAccountId = (principal: string) =>
+        // TODO: get straight from ledger canister?
+        Effect.gen(function* (_) {
+          const command = Command.make(
+            "dfx",
+            "ledger",
+            "account-id",
+            "--of-principal",
+            principal,
+          )
+          const result = yield* commandExecutor.string(command)
+          return result.trim()
+        })
+
+      const { identity } = yield* getIdentity()
+      const agent = new HttpAgent({
+        host: `${host}:${dfxPort}`,
+        identity,
+      })
+      yield* Effect.tryPromise({
+        try: () => agent.fetchRootKey(),
+        catch: (err) =>
+          new ConfigError({
+            message: `Unable to fetch root key: ${err instanceof Error ? err.message : String(err)}`,
+          }),
+      })
+
+      return DfxService.of({
+        network: "local",
+        identity,
+        agent,
+        mgmt: Actor.createActor<ManagementActor>(idlFactory, {
+          canisterId: "aaaaa-aa",
+          agent,
+        }),
+        start: () =>
+          Effect.gen(function* () {
+            const command = Command.make(
+              "dfx",
+              "start",
+              "--background",
+              "--clean",
+            )
+            yield* commandExecutor.start(command).pipe(Effect.scoped)
+            // yield* Effect.tryMap({
+            //   try: () => commandExecutor.start(command),
+            //   catch: (error) =>
+            //     new DfxError({
+            //       message: `Failed to start DFX: ${error instanceof Error ? error.message : String(error)}`,
+            //     }),
+            //   onSuccess: () => undefined,
+            // })
+          }),
+        stop: () =>
+          Effect.tryPromise({
+            try: async () => {
+              const processes = await Promise.all([
+                find("name", "dfx", true),
+                find("name", "replica", true),
+                find("name", "icx-proxy", true),
+              ])
+              for (const proc of processes.flat()) {
+                process.kill(proc.pid)
+              }
+            },
+            catch: (error) =>
+              new DfxError({
+                message: `Failed to kill DFX processes: ${error instanceof Error ? error.message : String(error)}`,
+              }),
+          }),
+        getWebserverPort: () =>
+          Effect.gen(function* () {
+            const command = Command.make("dfx", "info", "webserver-port")
+            const output = yield* commandExecutor.string(command).pipe(
+              Effect.mapError(
+                (err) =>
+                  new DfxError({
+                    message: `Failed to get webserver port: ${err.message}`,
+                  }),
+              ),
+            )
+            const port = Number.parseInt(output.trim(), 10)
+
+            if (Number.isNaN(port)) {
+              return yield* Effect.fail(
+                new DfxError({ message: "Failed to parse DFX webserver port" }),
+              )
+            }
+            return port
+          }),
+        getIdentity: (selection?: string) =>
+          Effect.gen(function* () {
+            const identityName = selection ?? (yield* getCurrentIdentity())
+            const identityPath = path.join(
+              // TODO: platform agnostic
+              // os.homedir(),
+              "~",
+              ".config/dfx/identity",
+              identityName,
+              "identity.pem",
+            )
+
+            const exists = yield* fs.exists(identityPath).pipe(
+              Effect.mapError(
+                (err) =>
+                  new DfxError({
+                    message: `Failed to check identity path: ${err.message}`,
+                  }),
+              ),
+            )
+            if (!exists) {
+              return yield* Effect.fail(
+                new DfxError({ message: "Identity does not exist" }),
+              )
+            }
+
+            const pem = yield* fs.readFileString(identityPath, "utf8").pipe(
+              Effect.mapError(
+                (err) =>
+                  new DfxError({
+                    message: `Failed to read identity file: ${err.message}`,
+                  }),
+              ),
+            )
+            const cleanedPem = pem
+              .replace("-----BEGIN PRIVATE KEY-----", "")
+              .replace("-----END PRIVATE KEY-----", "")
+              .replace("\n", "")
+              .trim()
+
+            const raw = Buffer.from(cleanedPem, "base64")
+              .toString("hex")
+              .replace("3053020101300506032b657004220420", "")
+              .replace("a123032100", "")
+            const key = new Uint8Array(Buffer.from(raw, "hex"))
+            // TODO: this is not working
+            const identity = Ed25519KeyIdentity.fromSecretKey(key)
+            const principal = identity.getPrincipal().toText()
+            const accountId = yield* getAccountId(principal)
+
+            return {
+              identity: identity as SignIdentity,
+              pem: cleanedPem,
+              name: identityName,
+              principal,
+              accountId,
+            }
+          }),
+      })
+    }),
+  )
+}

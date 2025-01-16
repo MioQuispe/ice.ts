@@ -16,9 +16,8 @@
 //   console.log("Done")
 // })()
 
-import { runTasksEffect } from "../dist"
+import { getTaskEffect, runTask } from "../dist"
 
 ;(async () => {
-  const tasks = process.argv.slice(2)
-  await runTasksEffect(tasks)
+  await runTask()
 })()

@@ -25,3 +25,5 @@ A workspace should have a vitest.workspace or vitest.projects file in its root (
 - what if we could just clone a git repo and import the crystal config and run it?
     - or package.json? add fields? hmm
     - import dfx.json files?
+
+- What would if we could control it through claude with mcp?

@@ -24,10 +24,9 @@ import {
   configLayer,
   createActorsEffect,
   createTaskStreamEffect,
-  deployCanisterEffect,
+  deployCanister,
   DeploymentError,
   CrystalEnvironment,
-  CrystalEnvironmentLive,
   CrystalConfig,
   getCanisterIdsEffect,
   getCurrentIdentityEffect,
@@ -170,9 +169,9 @@ describe("getIdentityEffect", () => {
 })
 
 /**
- * @group CrystalEnvironmentLive
+ * @group CrystalEnvironment.Live
  */
-describe("CrystalEnvironmentLive", () => {
+describe("CrystalEnvironment.Live", () => {
   // TODO: import of cystal.config.ts fails
   const FileSystemTest = FileSystem.makeNoop({
     exists: (_path: string) => Effect.succeed(true),
@@ -185,7 +184,7 @@ describe("CrystalEnvironmentLive", () => {
       NodeContext.layer,
       configLayer,
       Layer.provide(
-        CrystalEnvironmentLive,
+        CrystalEnvironment.Live,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -218,7 +217,7 @@ describe("CrystalEnvironmentLive", () => {
       NodeContext.layer,
       configLayer,
       Layer.provide(
-        CrystalEnvironmentLive,
+        CrystalEnvironment.Live,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -321,13 +320,13 @@ describe("deployCanisterEffect", () => {
       FileSystemTestLayer,
       configLayer,
       Layer.provide(
-        CrystalEnvironmentLive,
+        CrystalEnvironment.Live,
         Layer.mergeAll(configLayer, NodeContext.layer, FileSystemTestLayer),
       ),
     )
     const runtime = ManagedRuntime.make(layers)
 
-    const program = deployCanisterEffect("test_canister", mockCanisterConfig)
+    const program = deployCanister("test_canister", mockCanisterConfig)
 
     const result = await runtime.runPromise(program)
     // TODO: get canister wasm hash instead from mgmt canister
@@ -340,14 +339,14 @@ describe("deployCanisterEffect", () => {
       FileSystemErrorLayer,
       configLayer,
       Layer.provide(
-        CrystalEnvironmentLive,
+        CrystalEnvironment.Live,
         Layer.mergeAll(configLayer, NodeContext.layer, FileSystemTestLayer),
       ),
     )
     const runtime = ManagedRuntime.make(layers)
 
     const program = Effect.flip(
-      deployCanisterEffect("test_canister", mockCanisterConfig),
+      deployCanister("test_canister", mockCanisterConfig),
     )
 
     const result = await runtime.runPromise(program)
@@ -376,14 +375,14 @@ describe("deployCanisterEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemBadDid),
       configLayer,
       Layer.provide(
-        CrystalEnvironmentLive,
+        CrystalEnvironment.Live,
         Layer.mergeAll(configLayer, NodeContext.layer, FileSystemTestLayer),
       ),
     )
     const runtime = ManagedRuntime.make(layers)
 
     const program = Effect.flip(
-      deployCanisterEffect("test_canister", mockCanisterConfig),
+      deployCanister("test_canister", mockCanisterConfig),
     )
 
     const result = await runtime.runPromise(program)
@@ -403,13 +402,13 @@ describe("deployCanisterEffect", () => {
       FileSystemTestLayer,
       configLayer,
       Layer.provide(
-        CrystalEnvironmentLive,
+        CrystalEnvironment.Live,
         Layer.mergeAll(configLayer, NodeContext.layer, FileSystemTestLayer),
       ),
     )
     const runtime = ManagedRuntime.make(layers)
 
-    const program = deployCanisterEffect("test_canister", mockCanisterConfig)
+    const program = deployCanister("test_canister", mockCanisterConfig)
 
     const result = await runtime.runPromiseExit(program)
     expect(result.cause.error._tag).toBe("ConfigError")
@@ -466,7 +465,7 @@ describe("createActorsEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemTest),
       configLayer,
       Layer.provide(
-        CrystalEnvironmentLive,
+        CrystalEnvironment.Live,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -496,7 +495,7 @@ describe("createActorsEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemError),
       configLayer,
       Layer.provide(
-        CrystalEnvironmentLive,
+        CrystalEnvironment.Live,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -826,7 +825,7 @@ describe("runTasksEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemTest),
       configLayer,
       Layer.provide(
-        CrystalEnvironmentLive,
+        CrystalEnvironment.Live,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -867,7 +866,7 @@ describe("runTasksEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemTest),
       configLayer,
       Layer.provide(
-        CrystalEnvironmentLive,
+        CrystalEnvironment.Live,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -905,7 +904,7 @@ describe("runTasksEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemTest),
       configLayer,
       Layer.provide(
-        CrystalEnvironmentLive,
+        CrystalEnvironment.Live,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -945,7 +944,7 @@ describe("runTasksEffect", () => {
     //   Layer.succeed(FileSystem.FileSystem, FileSystemTest),
     //   configLayer,
     //   Layer.provide(
-    //     CrystalEnvironmentLive,
+    //     CrystalEnvironment.Live,
     //     Layer.mergeAll(
     //       configLayer,
     //       NodeContext.layer,
