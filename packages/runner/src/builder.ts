@@ -1,5 +1,11 @@
 import { Layer, Effect, Context, Data, Config } from "effect"
-import { createCanister, installCanister, compileMotokoCanister, generateCandidJS } from "./index.js"
+import {
+  createCanister,
+  installCanister,
+  compileMotokoCanister,
+  generateCandidJS,
+  writeCanisterIds,
+} from "./index.js"
 import type { Identity } from "@dfinity/agent"
 import type { Agent } from "@dfinity/agent"
 import type { Scope, Task } from "./types"
@@ -29,6 +35,15 @@ const generatePrincipal = () => {
 type CanisterBuilderCtx = {
   ctx: CrystalCtx
   scope: Scope
+}
+
+type CanisterBuilder = {
+  install: <A, E, R>(fn: Task<A, E, R>) => CanisterBuilder
+  build: <A, E, R>(fn: Task<A, E, R>) => CanisterBuilder
+  // Internal property to store the current scope
+  _scope: Scope
+  // Special method for implicit conversion
+  [Symbol.toPrimitive](hint: string): Scope
 }
 
 type CanisterConfig = {
@@ -100,11 +115,11 @@ export const createCanisterBuilder = (
       },
     },
   }
-  const canisterBuilder = (ctx: CanisterBuilderCtx) => {
+  const createBuilder = (ctx: CanisterBuilderCtx): CanisterBuilder => {
     return {
       install: <A, E, R>(fn: Task<A, E, R>) => {
         type RemainingTasks = Omit<typeof ctx.scope.tasks, "install">
-        return canisterBuilder({
+        return createBuilder({
           ...ctx,
           scope: {
             ...ctx.scope,
@@ -126,7 +141,7 @@ export const createCanisterBuilder = (
       //   },
       build: <A, E, R>(fn: Task<A, E, R>) => {
         type RemainingTasks = Omit<typeof ctx.scope.tasks, "build">
-        return canisterBuilder({
+        return createBuilder({
           ...ctx,
           scope: {
             ...ctx.scope,
@@ -137,10 +152,13 @@ export const createCanisterBuilder = (
           },
         })
       },
+      _scope: ctx.scope,
+      [Symbol.toPrimitive]: () => ctx.scope,
     }
   }
 
-  return canisterBuilder({
+  // TODO: ctx should be a property of scope?
+  return createBuilder({
     ctx,
     scope,
   })
@@ -151,19 +169,37 @@ type MotokoCanisterConfig = {
   canisterId?: string
 }
 
+type MotokoCanisterBuilder = {
+  install: <A, E, R>(fn: Task<A, E, R>) => MotokoCanisterBuilder
+  build: <A, E, R>(fn: Task<A, E, R>) => MotokoCanisterBuilder
+  // Internal property to store the current scope
+  _scope: Scope
+  // Special method for implicit conversion
+  [Symbol.toPrimitive](hint: string): Scope
+}
+
 const createMotokoCanisterBuilder = (
   ctx: CrystalCtx,
   canisterConfig: MotokoCanisterConfig,
 ) => {
   const canisterId = canisterConfig.canisterId ?? generatePrincipal().toString()
+  // TODO: get canisterName!! how???
+  const canisterName = canisterId
   const scope: Scope = {
     tags: [Tags.CANISTER],
     description: "some description",
     // TODO: default implementations
     tasks: {
+      // TODO: write canisterIds to file
       // TODO: we need to provide the context. do we do it here or later?
       create: {
-        task: createCanister(canisterId),
+        task: Effect.gen(function* () {
+          // TODO: maybe we can get the canisterName here through context somehow?
+          yield* createCanister(canisterId)
+          // TODO: handle errors? retry logic? should it be atomic?
+          yield* writeCanisterIds(canisterName, canisterId)
+          return canisterId
+        }),
         description: "some description",
         tags: [],
       },
@@ -183,11 +219,11 @@ const createMotokoCanisterBuilder = (
         tags: [],
       },
       // TODO: candid declarations
-    //   generate: {
-    //     task: generateCandidJS(canisterConfig.canisterId),
-    //     description: "some description",
-    //     tags: [],
-    //   },
+      //   generate: {
+      //     task: generateCandidJS(canisterConfig.canisterId),
+      //     description: "some description",
+      //     tags: [],
+      //   },
 
       install: {
         // task: installCanister({
@@ -202,8 +238,18 @@ const createMotokoCanisterBuilder = (
           const path = yield* Path.Path
           const fs = yield* FileSystem.FileSystem
           const appDir = yield* Config.string("APP_DIR")
-          const didPath = path.join(appDir, ".artifacts", canisterId, `${canisterId}.did`)
-          const wasmPath = path.join(appDir, ".artifacts", canisterId, `${canisterId}.wasm`)
+          const didPath = path.join(
+            appDir,
+            ".artifacts",
+            canisterId,
+            `${canisterId}.did`,
+          )
+          const wasmPath = path.join(
+            appDir,
+            ".artifacts",
+            canisterId,
+            `${canisterId}.wasm`,
+          )
           const didExists = yield* fs.exists(didPath)
           if (!didExists) {
             yield* Effect.fail(new Error("Candid file not found"))
@@ -225,11 +271,11 @@ const createMotokoCanisterBuilder = (
     },
   }
   // TODO: should return scope
-  const motokoCanisterBuilder = (ctx: CanisterBuilderCtx) => {
+  const createBuilder = (ctx: CanisterBuilderCtx): MotokoCanisterBuilder => {
     return {
       install: <A, E, R>(fn: Task<A, E, R>) => {
         type RemainingTasks = Omit<typeof ctx.scope.tasks, "install">
-        return motokoCanisterBuilder({
+        return createBuilder({
           ...ctx,
           scope: {
             ...ctx.scope,
@@ -251,7 +297,7 @@ const createMotokoCanisterBuilder = (
       //   },
       build: <A, E, R>(fn: Task<A, E, R>) => {
         type RemainingTasks = Omit<typeof ctx.scope.tasks, "build">
-        return motokoCanisterBuilder({
+        return createBuilder({
           ...ctx,
           scope: {
             ...ctx.scope,
@@ -262,10 +308,13 @@ const createMotokoCanisterBuilder = (
           },
         })
       },
+      // Add scope property to the initial builder
+      _scope: ctx.scope,
+      [Symbol.toPrimitive]: () => ctx.scope,
     }
   }
 
-  return motokoCanisterBuilder({
+  return createBuilder({
     ctx,
     scope,
   })

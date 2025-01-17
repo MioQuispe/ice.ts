@@ -1,4 +1,4 @@
-#!/usr/bin/env node --import tsx
+#!/usr/bin/env tsx --experimental-wasm-modules
 
 // import { runTasks, getDfxConfig } from "../dist"
 // import fs from "node:fs"

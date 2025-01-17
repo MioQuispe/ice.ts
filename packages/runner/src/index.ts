@@ -242,6 +242,7 @@ export const getCanisterInfo = (canisterId: string) =>
 export const createCanister = (canisterId: string) =>
   Effect.gen(function* () {
     const { mgmt, identity } = yield* DfxService
+    // TODO: canister needs to be created if it doesn't exist
     const createResult = yield* Effect.tryPromise({
       try: () =>
         mgmt.provisional_create_canister_with_cycles({
@@ -282,9 +283,18 @@ export const installCanister = ({
     const { mgmt } = yield* DfxService
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
+    const appDir = yield* Config.string("APP_DIR")
+    // TODO: we need to generate did.js before?
+
     // const didPath = `${canisterConfig.candid}.js`
+    const didString = yield* fs.readFileString(didPath)
+    const didJSString = didc.did_to_js(didString)
+    // TODO: save it to file?
+    const didJSPath = path.join(appDir, ".artifacts", canisterId, `${canisterId}.did.js`)
+    yield* fs.writeFile(didJSPath, Buffer.from(didJSString ?? "")) // TODO: check
+    
     const canisterDID = yield* Effect.tryPromise({
-      try: () => import(didPath),
+      try: () => import(didJSPath),
       catch: (error) =>
         new DeploymentError({
           message: `Failed to import canister DID: ${error instanceof Error ? error.message : String(error)}`,
@@ -331,12 +341,18 @@ export const compileMotokoCanister = (src: string, canisterName: string) =>
   Effect.gen(function* () {
     const moc = yield* Moc
     const path = yield* Path.Path
+    const fs = yield* FileSystem.FileSystem
     const appDir = yield* Config.string("APP_DIR")
     // TODO: where?
     const outDir = path.join(appDir, ".artifacts", canisterName)
     const wasmOutputFilePath = path.join(outDir, `${canisterName}.wasm`)
     const candidOutputFilePath = path.join(outDir, `${canisterName}.did`)
+    // Create output directories if they don't exist
+    yield* fs.makeDirectory(outDir, { recursive: true })
+    yield* Effect.log(`Compiling ${canisterName} to ${outDir}`)
+    // TODO: we need to make dirs if they don't exist
     yield* moc.compile(src, wasmOutputFilePath)
+    yield* Effect.log(`Successfully compiled ${src} ${canisterName} to ${outDir} outputFilePath: ${wasmOutputFilePath}`)
     return {
       wasmPath: wasmOutputFilePath,
       candidPath: candidOutputFilePath,
@@ -421,107 +437,52 @@ export const deployCanister = (
     return canisterId
   })
 
-// export const execTasks = (taskStream: Repeater<any>) =>
-//   Effect.flatMap(Effect.fromAsyncIterable(taskStream), (tasks) =>
-//     Effect.forEach(
-//       tasks,
-//       ({ taskName: fullName, taskConfig }) =>
-//         Effect.gen(function* () {
-//           const [taskType, taskName] = fullName.split(":") as [
-//             `${"canisters" | "scripts"}`,
-//             string,
-//           ]
+type BuilderResult = {
+  _scope: Scope
+}
 
-//           if (taskType === "canisters") {
-//             try {
-//               const canisterId = yield* Effect.promise(() =>
-//                 deployCanister(taskName, taskConfig),
-//               )
-//               const appDirectory = yield* Config.string("APP_DIR")
-//               let canisterIds: {
-//                 [canisterName: string]: {
-//                   [network: string]: string
-//                 }
-//               } = {}
+const matcher = Match.type<Task<any, any, any> | Scope | BuilderResult>().pipe(
+  Match.when(
+    {
+      task: Match.any,
+      description: Match.any,
+      tags: Match.any,
+    },
+    (task) => task,
+  ),
+  Match.when(
+    {
+      tasks: Match.any,
+      tags: Match.any,
+      description: Match.any,
+    },
+    (scope) => scope,
+  ),
+  Match.when(
+    {
+      _scope: Match.any,
+    },
+    (builderResult) => builderResult._scope,
+  ),
+  Match.exhaustive,
+)
 
-//               try {
-//                 const mod = yield* Effect.promise(
-//                   () =>
-//                     import(`${appDirectory}/canister_ids.json`, {
-//                       assert: { type: "json" },
-//                     }),
-//                 )
-//                 canisterIds = mod.default
-//               } catch (e) {}
-
-//               const currentNetwork = "local" // TODO: get from config
-//               canisterIds[taskName] = {
-//                 ...canisterIds[taskName],
-//                 [currentNetwork]: canisterId,
-//               }
-
-//               yield* Effect.promise(() =>
-//                 fs.promises.writeFile(
-//                   `${appDirectory}/canister_ids.json`,
-//                   JSON.stringify(canisterIds),
-//                   "utf-8",
-//                 ),
-//               )
-
-//               Effect.log("Wrote canister id to file")
-//             } catch (e) {
-//               Effect.log("Failed to deploy canister: ", e)
-//             }
-
-//             try {
-//               const actors = yield* Effect.promise(() =>
-//                 createActors([taskName], {
-//                   canisterConfig: taskConfig,
-//                 }),
-//               )
-//               Effect.log("Task finished:", fullName)
-//               emitter.emit(fullName, actors[taskName])
-//             } catch (e) {
-//               Effect.log("Failed to create actors: ", e)
-//             }
-//           }
-
-//           if (taskType === "scripts") {
-//             const taskResult =
-//               taskConfig instanceof Promise
-//                 ? yield* Effect.promise(() => taskConfig)
-//                 : taskConfig
-//             Effect.log("Task finished:", fullName)
-//             emitter.emit(fullName, taskResult)
-//           }
-//         }),
-//       { concurrency: 1 },
-//     ),
-//   )
-
-// export const getTask = <T, K extends keyof T>(
-//   obj: T,
-//   ...keys: K[]
-// ): Task<A, E, R> | undefined => {
-//   return keys.reduce(
-//     (acc, key) =>
-//       acc && acc.tasks[key] !== undefined ? acc.tasks[key] : undefined,
-//     obj as any,
-//   )
-// }
-
-export const getTask = <
-  A,
-  E,
-  R,
-  T extends Record<string, Scope | Task<A, E, R>>,
->(
-  obj: T,
+export const getTask = <A, E, R>(
+  obj: Scope | Task<A, E, R>,
   keys: Array<string>,
 ): Task<A, E, R> | undefined => {
-  return keys.reduce(
-    (acc, key) => (acc?.tasks[key] ? acc.tasks[key] : undefined),
-    obj as any,
+  // TODO: throw instead?
+  // TODO: pass in key as well?
+  const val = matcher(obj)
+  if (!val) {
+    return undefined
+  }
+  return Match.value(val).pipe(
+    Match.when({ tasks: Match.any }, (scope) =>
+      getTask<A, E, R>(scope.tasks[keys[0]], keys.slice(1)),
+    ),
+    Match.when({ task: Match.any }, (task) => task as Task<A, E, R>),
+    Match.exhaustive,
   )
 }
 
@@ -531,35 +492,31 @@ type TaskFullName = string
 export const getTaskEffect = (taskPathString: TaskFullName) =>
   Effect.gen(function* () {
     const taskPath: string[] = taskPathString.split(":")
+    const firstKey = taskPath[0]
+    const rest = taskPath.slice(1)
     const crystalConfig = yield* getCrystalConfig()
     // TODO: only works for scope, not task currently?
-    console.log({ crystalConfig })
-    const task = getTask(crystalConfig, taskPath)
+    const task = getTask(crystalConfig[firstKey], rest)
+    if (!task) {
+      return yield* Effect.fail(new Error(`Task ${taskPathString} not found`))
+    }
+    // TODO: just store it in the task?
     const scope = crystalConfig.crystal
-    // TODO: run the task
-    // const stream = Stream.fromIterable([tasks]).pipe(
-    //   Stream.mapEffect((taskName: TaskFullName) =>
-    //     Effect.gen(function* () {
-    //       // TODO: get task from crystalConfig
-    //       const task = crystalConfig[taskType]?.[taskName]
-    //       return task
-    //     }),
-    //   ),
-    // )
-    // const tasksChunk = yield* Stream.runCollect(stream)
-    // return Chunk.toReadonlyArray(tasksChunk)
-    // Effect.log({task, runtime})
-    console.log({ task, scope })
     return { task, scope }
   })
 
 // TODO: construct later
 const MainLayer = Layer.mergeAll(
   NodeContext.layer,
-  // NodeRuntime.layer,
-  // FileSystem.layer,
-  Path.layer,
-  // configLayer,
+  DfxService.Live.pipe(
+    Layer.provide(NodeContext.layer),
+    Layer.provide(configLayer),
+    // Layer.provide(Path.layer),
+  ),
+  Moc.Live.pipe(
+    Layer.provide(NodeContext.layer)
+  ),
+  configLayer,
 )
 const runtime = ManagedRuntime.make(MainLayer)
 
@@ -568,29 +525,14 @@ export const runTask = async () => {
   const result = await runtime.runPromise(
     Effect.gen(function* () {
       const taskPath = process.argv.slice(2).join(":")
-      return yield* getTaskEffect(taskPath)
+      const { task, scope } = yield* getTaskEffect(taskPath)
       // TODO: pass in Layers?
       // const result = yield* task.task
+      yield* task.task
     }),
   )
   console.log(result)
 }
-
-// export const getCrystalConfig = async (
-//   configPath: string = "crystal.config.ts",
-// ) => {
-//   const appDirectory = fs.realpathSync(process.cwd())
-//   try {
-//     const module = await import(path.resolve(appDirectory, configPath))
-//     return module
-//   } catch (e: Error) {
-//     Effect.log("Failed to get config:", e)
-//     throw {
-//       kind: "ConfigError",
-//       message: `Failed to get Crystal config: ${e.message}`,
-//     }
-//   }
-// }
 
 type CrystalConfigFile = {
   [key: string]: Scope | Task<any, any, any>
