@@ -5,8 +5,13 @@ import {
   compileMotokoCanister,
   generateCandidJS,
   writeCanisterIds,
+  encodeArgs,
+  generateDIDJS,
+  TaskCtx,
+  type TaskCtxShape,
+  createActor,
 } from "./index.js"
-import type { Identity } from "@dfinity/agent"
+import type { Actor, HttpAgent, Identity } from "@dfinity/agent"
 import type { Agent } from "@dfinity/agent"
 import type { Scope, Task } from "./types"
 import { Principal } from "@dfinity/principal"
@@ -15,6 +20,7 @@ import process from "node:process"
 import { execFileSync } from "node:child_process"
 import { Path, FileSystem, Command, CommandExecutor } from "@effect/platform"
 import { Moc } from "./services/moc.js"
+import { DfxService } from "./services/dfx.js"
 
 export const Tags = {
   CANISTER: Symbol("canister"),
@@ -37,32 +43,37 @@ type CanisterBuilderCtx = {
   scope: Scope
 }
 
-type CanisterBuilder = {
-  install: <A, E, R>(fn: Task<A, E, R>) => CanisterBuilder
-  build: <A, E, R>(fn: Task<A, E, R>) => CanisterBuilder
+export type CanisterBuilder = {
+  install: (
+    fn: (args: {
+      ctx: TaskCtxShape
+      mode: string
+    }) => Promise<any>,
+  ) => CanisterBuilder
+  build: (fn: (args: { ctx: TaskCtxShape }) => Promise<any>) => CanisterBuilder
   // Internal property to store the current scope
   _scope: Scope
-  // Special method for implicit conversion
-  [Symbol.toPrimitive](hint: string): Scope
 }
 
-type CanisterConfig = {
-  src: string
+type CustomCanisterConfig = {
   wasm: string
   candid: string
   // TODO: make optional
-  canisterId: string
+  canisterId?: string
 }
 
 // TODO: need to group these kinds of tasks
 // returns { _tag: "canister", task: () => Promise<{ canister_id: string }> }
 // TODO: some kind of metadata?
 // TODO: warn about context if not provided
-export const createCanisterBuilder = (
+export const createCustomCanisterBuilder = (
   // TODO: rust / motoko / etc.
   ctx: CrystalCtx,
-  canisterConfig: CanisterConfig,
+  canisterConfig: CustomCanisterConfig,
 ) => {
+  const canisterId = canisterConfig.canisterId ?? generatePrincipal().toString()
+  // TODO: get canisterName!! how???
+  const canisterName = canisterId
   // TODO: convert async to effect
   // let effect: Effect.Effect<A, E, R>
   // if (task instanceof Promise) {
@@ -84,7 +95,13 @@ export const createCanisterBuilder = (
     tasks: {
       // TODO: we need to provide the context. do we do it here or later?
       create: {
-        task: createCanister(canisterConfig.canisterId),
+        task: Effect.gen(function* () {
+          // TODO: maybe we can get the canisterName here through context somehow?
+          yield* createCanister(canisterId)
+          // TODO: handle errors? retry logic? should it be atomic?
+          yield* writeCanisterIds(canisterName, canisterId)
+          return canisterId
+        }),
         description: "some description",
         tags: [],
       },
@@ -97,63 +114,132 @@ export const createCanisterBuilder = (
       //   ctx: ctx,
       // },
 
-      //   build: {
-      //     task: buildCanister,
-      //     description: "some description",
-      //     tags: [],
-      //   },
+      // TODO: not doing anything!
+        build: {
+          task: Effect.gen(function* () {
+            return canisterId
+          }),
+          description: "some description",
+          tags: [],
+        },
 
       install: {
-        task: installCanister({
-          args: [],
-          canisterId: canisterConfig.canisterId,
-          didPath: canisterConfig.candid,
-          wasmPath: canisterConfig.wasm,
+        // TODO: lets fix this!!
+        task: Effect.gen(function* () {
+          const path = yield* Path.Path
+          const fs = yield* FileSystem.FileSystem
+          const appDir = yield* Config.string("APP_DIR")
+          const wasmPath = path.join(
+            appDir,
+            ".artifacts",
+            canisterId,
+            `${canisterId}.wasm`,
+          )
+          // TODO: generate task? or in build?
+          const didJS = yield* generateDIDJS(canisterId, canisterConfig.candid)
+          const encodedArgs = encodeArgs([], didJS)
+          yield* installCanister({
+            encodedArgs,
+            canisterId,
+            wasmPath,
+          })
         }),
         description: "some description",
         tags: [],
       },
     },
   }
-  const createBuilder = (ctx: CanisterBuilderCtx): CanisterBuilder => {
+  const createBuilder = ({
+    ctx,
+    scope,
+  }: CanisterBuilderCtx): CanisterBuilder => {
     return {
-      install: <A, E, R>(fn: Task<A, E, R>) => {
-        type RemainingTasks = Omit<typeof ctx.scope.tasks, "install">
-        return createBuilder({
-          ...ctx,
+      // TODO: write canisterIds to file
+      // TODO: we need to provide the context. do we do it here or later?
+      install: (fn) => {
+        type RemainingTasks = Omit<typeof scope.tasks, "install">
+        // TODO: is this a flag, arg, or what?
+        const mode = "install"
+        const builderArgs = {
+          ctx,
           scope: {
-            ...ctx.scope,
+            ...scope,
             tasks: {
-              ...ctx.scope.tasks,
-              install: fn,
-            } as RemainingTasks & { install: Task<A, E, R> },
+              ...scope.tasks,
+              install: {
+                task: Effect.gen(function* () {
+                  // TODO: create service
+                  const taskCtx = yield* TaskCtx
+                  // TODO: get canisterDID from somewhere
+                  const path = yield* Path.Path
+                  const fs = yield* FileSystem.FileSystem
+                  const appDir = yield* Config.string("APP_DIR")
+                  const wasmPath = path.join(
+                    appDir,
+                    ".artifacts",
+                    canisterId,
+                    `${canisterId}.wasm`,
+                  )
+                  // TODO: generate task? or in build?
+                  const didJS = yield* generateDIDJS(
+                    canisterId,
+                    canisterConfig.candid,
+                  )
+                  const installArgs = yield* Effect.tryPromise({
+                    // TODO: pass everything
+                    try: () => fn({ ctx: taskCtx, mode }),
+                    catch: Effect.fail,
+                  })
+                  const encodedArgs = encodeArgs(installArgs, didJS)
+                  yield* installCanister({
+                    encodedArgs,
+                    canisterId,
+                    wasmPath,
+                  })
+                //   const canister = yield* createActor({
+                //     canisterId: canisterId,
+                //     canisterDID: didJS,
+                //   })
+                }),
+                description: "some description",
+                tags: [],
+              },
+            } as RemainingTasks,
           },
-        })
+        }
+        return createBuilder(builderArgs)
       },
-      //   delete: (task) => {
-      //     return {
-      //       ...scope,
-      //       tasks: {
-      //         ...scope.tasks,
-      //         delete: task,
-      //       },
-      //     }
-      //   },
-      build: <A, E, R>(fn: Task<A, E, R>) => {
-        type RemainingTasks = Omit<typeof ctx.scope.tasks, "build">
-        return createBuilder({
-          ...ctx,
+      build: (fn) => {
+        type RemainingTasks = Omit<typeof scope.tasks, "build">
+        const builderArgs = {
+          ctx,
           scope: {
-            ...ctx.scope,
+            ...scope,
             tasks: {
-              ...ctx.scope.tasks,
-              build: fn,
-            } as RemainingTasks & { build: Task<A, E, R> },
+              ...scope.tasks,
+              build: {
+                task: Effect.gen(function* () {
+                  const taskCtx = yield* TaskCtx
+                  const { agent, identity } = yield* DfxService
+                  
+                  // TODO: write wasm and candid to artifacts
+                
+                  yield* Effect.tryPromise({
+                    // TODO:
+                    try: () => fn({ ctx: taskCtx }),
+                    catch: Effect.fail,
+                  })
+                }),
+                description: "some description",
+                tags: [],
+              },
+            } as RemainingTasks,
+            // } as RemainingTasks & { build: Task<A, E, R> },
           },
-        })
+        }
+        return createBuilder(builderArgs)
       },
-      _scope: ctx.scope,
-      [Symbol.toPrimitive]: () => ctx.scope,
+      _scope: scope,
     }
   }
 
@@ -169,13 +255,11 @@ type MotokoCanisterConfig = {
   canisterId?: string
 }
 
-type MotokoCanisterBuilder = {
+export type MotokoCanisterBuilder = {
   install: <A, E, R>(fn: Task<A, E, R>) => MotokoCanisterBuilder
   build: <A, E, R>(fn: Task<A, E, R>) => MotokoCanisterBuilder
   // Internal property to store the current scope
   _scope: Scope
-  // Special method for implicit conversion
-  [Symbol.toPrimitive](hint: string): Scope
 }
 
 const createMotokoCanisterBuilder = (
@@ -254,14 +338,19 @@ const createMotokoCanisterBuilder = (
           if (!didExists) {
             yield* Effect.fail(new Error("Candid file not found"))
           }
-          const wasmExists = yield* fs.exists(wasmPath)
+          const wasmExists = yield* fs
+            .exists(wasmPath)
+            .pipe(Effect.mapError((e) => new Error("Wasm file not found")))
           if (!wasmExists) {
             yield* Effect.fail(new Error("Wasm file not found"))
           }
+          const canisterDID = yield* generateDIDJS(canisterId, didPath)
+          // TODO: define where????
+          const args: Array<any> = []
+          const encodedArgs = encodeArgs(args, canisterDID)
           yield* installCanister({
-            args: [],
-            canisterId: canisterId,
-            didPath,
+            encodedArgs,
+            canisterId,
             wasmPath,
           })
         }),
@@ -310,7 +399,6 @@ const createMotokoCanisterBuilder = (
       },
       // Add scope property to the initial builder
       _scope: ctx.scope,
-      [Symbol.toPrimitive]: () => ctx.scope,
     }
   }
 
@@ -336,17 +424,16 @@ type CrystalConfig = {
   // runTask: <T>(taskName: string) => Promise<T>
 }
 
-type BuildContext = {
-  runTask: <T>(taskName: string) => Promise<T>
-  buildCustom: (config: CanisterConfig) => Promise<any>
-  compile: (config: CanisterConfig) => Promise<any>
-}
-
 type CrystalBuilder = {
-  canister: (config: CanisterConfig) => ReturnType<typeof createCanisterBuilder>
+  customCanister: (
+    config: CustomCanisterConfig,
+  ) => ReturnType<typeof createCustomCanisterBuilder>
   motokoCanister: (
     config: MotokoCanisterConfig,
   ) => ReturnType<typeof createMotokoCanisterBuilder>
+  // TODO:
+  //   rustCanister: (config: RustCanisterConfig) => ReturnType<typeof createRustCanisterBuilder>
+  //   azleCanister: (config: AzleCanisterConfig) => ReturnType<typeof createAzleCanisterBuilder>
   provide: (
     ...layers: [
       Layer.Layer<never, any, any>,
@@ -371,7 +458,8 @@ export const Crystal = (config?: CrystalConfig) => {
   const createCrystalBuilder = (ctx: CrystalCtx): CrystalBuilder => {
     // TODO: pass crystalConfig
     return {
-      canister: (canisterConfig) => createCanisterBuilder(ctx, canisterConfig),
+      customCanister: (canisterConfig) =>
+        createCustomCanisterBuilder(ctx, canisterConfig),
       motokoCanister: (canisterConfig) =>
         createMotokoCanisterBuilder(ctx, canisterConfig),
       // script: (config: CanisterConfig) => createScriptBuilder(config),

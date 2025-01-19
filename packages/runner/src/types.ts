@@ -41,6 +41,8 @@ export type ManagementActor = import("@dfinity/agent").ActorSubclass<
 
 export interface Task<A, E, R> {
   task: Effect.Effect<A, E, R>
+  // TODO:
+  // run: () => Promise<A> | Effect.Effect<any, any, A>
   description: string
   tags: Array<string>
   // TODO: hmm? is this needed?

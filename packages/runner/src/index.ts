@@ -19,6 +19,7 @@ import {
   Agent,
   HttpAgent,
   type Identity,
+  SignIdentity,
 } from "@dfinity/agent"
 import { idlFactory } from "./canisters/management_new/management.did.js"
 import { Ed25519KeyIdentity } from "@dfinity/identity"
@@ -155,6 +156,62 @@ export type CrystalRuntime = {
   profile?: Profile | null
 }
 
+export class TaskCtx extends Context.Tag("TaskCtx")<
+  TaskCtx,
+  {
+    readonly network: string
+    readonly subnet: string
+    readonly agent: HttpAgent
+    readonly identity: SignIdentity
+    readonly users: {
+      [name: string]: {
+        identity: Identity
+        agent: HttpAgent
+        principal: Principal
+        accountId: string
+      }
+    }
+    readonly runTask: (
+      task: Task<any, any, any>,
+    ) => Effect.Effect<void, never, never>
+  }
+>() {
+  static Live = Layer.effect(
+    TaskCtx,
+    Effect.gen(function* () {
+      // TODO: should be dynamically determined, whether this or pocket-ic?
+      const { agent, identity } = yield* DfxService
+      // const crystalConfig = yield* getCrystalConfig()
+      // TODO: get layers or runtime? we need access to the tasks dependencies here
+      return {
+        // TODO: get from config?
+        network: "local",
+        subnet: "system",
+        agent,
+        identity,
+        runTask: (task: Task<any, any, any>) =>
+          Effect.gen(function* () {
+            // TODO: run task
+            // TODO: pass in layers?
+            // yield* runtime.runPromise(task.task)
+            // yield* task.task
+            Effect.log("running task")
+          }),
+        users: {
+          default: {
+            identity,
+            agent,
+            // TODO: use Account class from connect2ic?
+            principal: identity.getPrincipal(),
+            accountId: principalToAccountId(identity.getPrincipal()),
+          },
+        },
+      }
+    }),
+  )
+}
+export type TaskCtxShape = Context.Tag.Service<typeof TaskCtx>
+
 // TODO: hmmmmm?
 // export type ExtendedCanisterConfiguration = (
 //   | CanisterConfiguration
@@ -268,31 +325,22 @@ export const createCanister = (canisterId: string) =>
     return createResult.canister_id.toText()
   })
 
-export const installCanister = ({
-  args,
-  canisterId,
-  didPath,
-  wasmPath,
-}: {
-  args: any[]
-  canisterId: string
-  didPath: string
-  wasmPath: string
-}) =>
+export const generateDIDJS = (canisterId: string, didPath: string) =>
   Effect.gen(function* () {
-    const { mgmt } = yield* DfxService
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const appDir = yield* Config.string("APP_DIR")
-    // TODO: we need to generate did.js before?
-
-    // const didPath = `${canisterConfig.candid}.js`
     const didString = yield* fs.readFileString(didPath)
     const didJSString = didc.did_to_js(didString)
     // TODO: save it to file?
-    const didJSPath = path.join(appDir, ".artifacts", canisterId, `${canisterId}.did.js`)
+    const didJSPath = path.join(
+      appDir,
+      ".artifacts",
+      canisterId,
+      `${canisterId}.did.js`,
+    )
     yield* fs.writeFile(didJSPath, Buffer.from(didJSString ?? "")) // TODO: check
-    
+
     const canisterDID = yield* Effect.tryPromise({
       try: () => import(didJSPath),
       catch: (error) =>
@@ -306,15 +354,33 @@ export const installCanister = ({
         new DeploymentError({ message: "Failed to convert DID to JS" }),
       )
     }
+    return canisterDID
+  })
+
+export const encodeArgs = (args: any[], canisterDID: any) => {
+  const encodedArgs = args
+    ? new Uint8Array(IDL.encode(canisterDID.init({ IDL }), args))
+    : new Uint8Array()
+  return encodedArgs
+}
+
+export const installCanister = ({
+  encodedArgs,
+  canisterId,
+  wasmPath,
+}: {
+  encodedArgs: Uint8Array
+  canisterId: string
+  wasmPath: string
+}) =>
+  Effect.gen(function* () {
+    const { mgmt } = yield* DfxService
+    const fs = yield* FileSystem.FileSystem
+    // TODO: we need to generate did.js before?
 
     // Prepare WASM module
     const wasmContent = yield* fs.readFile(wasmPath)
     const wasm = Array.from(new Uint8Array(wasmContent))
-
-    // Encode arguments if present
-    const encodedArgs = args
-      ? new Uint8Array(IDL.encode(canisterDID.init({ IDL }), args))
-      : new Uint8Array()
 
     // Install code
     yield* Effect.tryPromise({
@@ -343,7 +409,7 @@ export const compileMotokoCanister = (src: string, canisterName: string) =>
     const path = yield* Path.Path
     const fs = yield* FileSystem.FileSystem
     const appDir = yield* Config.string("APP_DIR")
-    // TODO: where?
+    // TODO: move out of here!
     const outDir = path.join(appDir, ".artifacts", canisterName)
     const wasmOutputFilePath = path.join(outDir, `${canisterName}.wasm`)
     const candidOutputFilePath = path.join(outDir, `${canisterName}.did`)
@@ -352,7 +418,9 @@ export const compileMotokoCanister = (src: string, canisterName: string) =>
     yield* Effect.log(`Compiling ${canisterName} to ${outDir}`)
     // TODO: we need to make dirs if they don't exist
     yield* moc.compile(src, wasmOutputFilePath)
-    yield* Effect.log(`Successfully compiled ${src} ${canisterName} to ${outDir} outputFilePath: ${wasmOutputFilePath}`)
+    yield* Effect.log(
+      `Successfully compiled ${src} ${canisterName} to ${outDir} outputFilePath: ${wasmOutputFilePath}`,
+    )
     return {
       wasmPath: wasmOutputFilePath,
       candidPath: candidOutputFilePath,
@@ -405,37 +473,38 @@ export const writeCanisterIds = (canisterName: string, canisterId: string) =>
   })
 
 // TODO: Do we need this? or just call the tasks in sequence?
-export const deployCanister = (
-  canisterName: string,
-  specifiedCanisterId: string,
-  didPath: string,
-  wasmPath: string,
-  args: any[],
-) =>
-  Effect.gen(function* () {
-    const { agent, identity } = yield* DfxService
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
+// export const deployCanister = (
+//   canisterName: string,
+//   specifiedCanisterId: string,
+//   didPath: string,
+//   wasmPath: string,
+//   args: any[],
+// ) =>
+//   Effect.gen(function* () {
+//     const { agent, identity } = yield* DfxService
+//     const fs = yield* FileSystem.FileSystem
+//     const path = yield* Path.Path
 
-    // Check if canister exists and get its status
-    let canisterId = specifiedCanisterId
-    const canisterInfo = specifiedCanisterId
-      ? yield* getCanisterInfo(specifiedCanisterId)
-      : { status: "not_installed" }
+//     // Check if canister exists and get its status
+//     let canisterId = specifiedCanisterId
+//     const canisterInfo = specifiedCanisterId
+//       ? yield* getCanisterInfo(specifiedCanisterId)
+//       : { status: "not_installed" }
 
-    // Create new canister only if needed
-    if (canisterInfo.status === "not_installed") {
-      canisterId = yield* createCanister(specifiedCanisterId)
-      Effect.log(`Created ${canisterName} with canister_id:`, canisterId)
-    }
+//     // Create new canister only if needed
+//     if (canisterInfo.status === "not_installed") {
+//       canisterId = yield* createCanister(specifiedCanisterId)
+//       Effect.log(`Created ${canisterName} with canister_id:`, canisterId)
+//     }
 
-    yield* installCanister({ args, canisterId, didPath, wasmPath })
-    // Import and verify canister DID
-    yield* writeCanisterIds(canisterName, canisterId)
+//     const encodedArgs = encodeArgs(args, didPath)
+//     yield* installCanister({ encodedArgs, canisterId, wasmPath })
+//     // Import and verify canister DID
+//     yield* writeCanisterIds(canisterName, canisterId)
 
-    // Update canister_ids.json
-    return canisterId
-  })
+//     // Update canister_ids.json
+//     return canisterId
+//   })
 
 type BuilderResult = {
   _scope: Scope
@@ -505,25 +574,31 @@ export const getTaskEffect = (taskPathString: TaskFullName) =>
     return { task, scope }
   })
 
-// TODO: construct later
-const MainLayer = Layer.mergeAll(
+// TODO: layer memoization should work? do we need this?
+const DfxLayer = DfxService.Live.pipe(
+  Layer.provide(NodeContext.layer),
+  Layer.provide(configLayer),
+)
+// TODO: construct later? or this is just defaults
+const DefaultsLayer = Layer.mergeAll(
   NodeContext.layer,
-  DfxService.Live.pipe(
+  DfxLayer,
+  // TODO: do not depend on DfxService directly?
+  TaskCtx.Live.pipe(
+    // Layer.provide(DfxService.Live),
+    Layer.provide(DfxLayer),
     Layer.provide(NodeContext.layer),
-    Layer.provide(configLayer),
-    // Layer.provide(Path.layer),
   ),
-  Moc.Live.pipe(
-    Layer.provide(NodeContext.layer)
-  ),
+  Moc.Live.pipe(Layer.provide(NodeContext.layer)),
   configLayer,
 )
-const runtime = ManagedRuntime.make(MainLayer)
+const runtime = ManagedRuntime.make(DefaultsLayer)
 
 export const runTask = async () => {
   // TODO: should it have the runtime?
   const result = await runtime.runPromise(
     Effect.gen(function* () {
+      // TODO: use effect-platform / cmd / cli
       const taskPath = process.argv.slice(2).join(":")
       const { task, scope } = yield* getTaskEffect(taskPath)
       // TODO: pass in Layers?
@@ -557,74 +632,17 @@ export const getCrystalConfig = (configPath = "crystal.config.ts") =>
     })
   })
 
-export class CrystalEnvironment extends Context.Tag("CrystalEnvironment")<
-  CrystalEnvironment,
-  {
-    readonly network: string
-    readonly subnet: string
-    readonly agent: HttpAgent
-    readonly identity: Ed25519KeyIdentity
-  }
->() {
-  static Live = Layer.effect(
-    CrystalEnvironment,
-    Effect.gen(function* () {
-      const dfxPort = yield* Config.string("DFX_PORT")
-      const host = yield* Config.string("DFX_HOST")
-      const { identity } = yield* getIdentity()
-      const agent = new HttpAgent({
-        host: `${host}:${dfxPort}`,
-        identity,
-      })
-      yield* Effect.tryPromise({
-        try: () => agent.fetchRootKey(),
-        catch: (err) =>
-          new ConfigError({
-            message: `Unable to fetch root key: ${err instanceof Error ? err.message : String(err)}`,
-          }),
-      })
-      // TODO: decode crystalconfig into TaskGroup
-      return {
-        network: "local",
-        subnet: "system",
-        agent,
-        identity,
-      }
-    }),
-  )
-}
-
 export const createActor = <T>({
-  canisterName,
-  canisterConfig,
+  canisterId,
+  canisterDID,
 }: {
-  canisterName: string
-  canisterConfig: CanisterConfiguration
+  canisterId: string
+  canisterDID: any
 }) =>
   Effect.gen(function* () {
-    const { agent, network } = yield* DfxService
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const appDir = yield* Config.string("APP_DIR")
-    const canisterIds = yield* getCanisterIds
-    const canisterId = canisterIds[canisterName][network]
-    const didPath = path.join(`${canisterConfig.candid}.js`)
-
-    // Import canister DID
-    const canisterDID = yield* Effect.tryPromise({
-      try: () => import(didPath),
-      catch: (err) =>
-        new ConfigError({
-          message: `Failed to import canister DID: ${err instanceof Error ? err.message : String(err)}`,
-        }),
-    })
-
-    // const exists = yield* fs.exists(didPath)
-    // if (!exists) {
-    //   yield* deployCanister({ canisterName, canisterId, didPath, wasmPath })
-    // }
-
+    const { agent } = yield* DfxService
     const commandExecutor = yield* CommandExecutor.CommandExecutor
+    // TODO: should be agnostic of dfx
     const getControllers = () => Promise.resolve()
     const addControllers = (controllers: Array<string>) =>
       Effect.gen(function* () {
@@ -677,26 +695,26 @@ export const createActor = <T>({
     }
   })
 
-export const createActors = <T>({
-  canisterList,
-  canisterConfig,
-}: {
-  canisterList: Array<string>
-  canisterConfig: CanisterConfiguration
-}) =>
-  Effect.gen(function* () {
-    const actors: Record<
-      string,
-      Effect.Effect.Success<ReturnType<typeof createActor>>
-    > = {}
-    for (const canisterName of canisterList) {
-      actors[canisterName] = yield* createActor({
-        canisterName,
-        canisterConfig,
-      })
-    }
-    return actors
-  })
+// export const createActors = <T>({
+//   canisterList,
+//   canisterConfig,
+// }: {
+//   canisterList: Array<string>
+//   canisterConfig: CanisterConfiguration
+// }) =>
+//   Effect.gen(function* () {
+//     const actors: Record<
+//       string,
+//       Effect.Effect.Success<ReturnType<typeof createActor>>
+//     > = {}
+//     for (const canisterName of canisterList) {
+//       actors[canisterName] = yield* createActor({
+//         canisterId: canisterId,
+//         canisterDID: canisterConfig.candid,
+//       })
+//     }
+//     return actors
+//   })
 
 // TODO: this is dfx specific
 export const getIdentity = (selection?: string) =>
