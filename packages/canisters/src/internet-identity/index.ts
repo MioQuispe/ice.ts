@@ -19,13 +19,12 @@ export type CanisterInitArgs = [Opt<{
   assigned_user_number_range : [bigint, bigint],
 }>]
 
-// TODO: make subtasks easily overrideable. maybe helpers like withInstall(). or just let users keep chaining the builder api
 type InitArgs = {
   owner: string
   assignedUserNumberRange: [bigint, bigint]
 }
 export const InternetIdentity = (
-  initArgsOrFn: InitArgs | ((ctx: TaskCtxShape) => Promise<InitArgs>)
+  initArgs: InitArgs
 ) => {
   return crystal
     .customCanister<CanisterInitArgs>({
@@ -42,7 +41,6 @@ export const InternetIdentity = (
     .install(async ({ mode }) => {
       // TODO: automatic types for actor?
       // TODO: do we need to install the canister here also?
-      // const initArgs = await (typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx: ctx }) : initArgsOrFn)
       if (mode === "install" || mode === "reinstall") {
         const args: InternetIdentityInit = {
           assigned_user_number_range: initArgs.assignedUserNumberRange,

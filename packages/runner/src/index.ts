@@ -171,9 +171,7 @@ export class TaskCtx extends Context.Tag("TaskCtx")<
         accountId: string
       }
     }
-    readonly runTask: (
-      task: Task,
-    ) => Effect.Effect<void, never, never>
+    readonly runTask: (task: Task) => Effect.Effect<void, never, never>
   }
 >() {
   static Live = Layer.effect(
@@ -193,8 +191,8 @@ export class TaskCtx extends Context.Tag("TaskCtx")<
           Effect.gen(function* () {
             // TODO: run task
             // TODO: pass in layers?
-            // yield* runtime.runPromise(task.task)
-            // yield* task.task
+            // yield* runtime.runPromise(task.effect)
+            // yield* task.effect
             Effect.log("running task")
           }),
         users: {
@@ -230,7 +228,7 @@ export type TaskCtxShape = Context.Tag.Service<typeof TaskCtx>
 
 export type Opt<T> = [T] | []
 export const Opt = <T>(value?: T): Opt<T> => {
-  return (value || value === 0) ? ([value]) : []
+  return value || value === 0 ? [value] : []
 }
 
 export const getAccountId = (principal: string) =>
@@ -404,7 +402,11 @@ export const installCanister = ({
     Effect.log(`Installed code for ${canisterId}`)
   })
 
-export const compileMotokoCanister = (src: string, canisterName: string, wasmOutputFilePath: string) =>
+export const compileMotokoCanister = (
+  src: string,
+  canisterName: string,
+  wasmOutputFilePath: string,
+) =>
   Effect.gen(function* () {
     const moc = yield* Moc
     // Create output directories if they don't exist
@@ -500,10 +502,11 @@ type BuilderResult = {
   _scope: Scope
 }
 
+// TODO: theres duplication now. we should have one place to define this, like in types.ts
 const matcher = Match.type<Task | Scope | BuilderResult>().pipe(
   Match.when(
     {
-      task: Match.any,
+      effect: Match.any,
       description: Match.any,
       tags: Match.any,
     },
@@ -511,7 +514,7 @@ const matcher = Match.type<Task | Scope | BuilderResult>().pipe(
   ),
   Match.when(
     {
-      tasks: Match.any,
+      children: Match.any,
       tags: Match.any,
       description: Match.any,
     },
@@ -526,10 +529,10 @@ const matcher = Match.type<Task | Scope | BuilderResult>().pipe(
   Match.exhaustive,
 )
 
-export const getTask = <A, E, R>(
-  obj: Scope | Task<A, E, R>,
+export const getTask = (
+  obj: Scope | Task,
   keys: Array<string>,
-): Task<A, E, R> | undefined => {
+): Task | undefined => {
   // TODO: throw instead?
   // TODO: pass in key as well?
   const val = matcher(obj)
@@ -538,9 +541,9 @@ export const getTask = <A, E, R>(
   }
   return Match.value(val).pipe(
     Match.when({ children: Match.any }, (scope) =>
-      getTask<A, E, R>(scope.children[keys[0]], keys.slice(1)),
+      getTask(scope.children[keys[0]], keys.slice(1)),
     ),
-    Match.when({ effect: Match.any }, (task) => task as Task<A, E, R>),
+    Match.when({ effect: Match.any }, (task) => task as Task),
     Match.exhaustive,
   )
 }
@@ -585,25 +588,32 @@ const DefaultsLayer = Layer.mergeAll(
 const runtime = ManagedRuntime.make(DefaultsLayer)
 
 export const runCLI = async () => {
+  // TODO: we need to run setup first!
   // TODO: should it have the runtime?
-  const result = await runtime.runPromise(
-    Effect.gen(function* () {
-      // TODO: use effect-platform / cmd / cli
-      if (process.argv[2] === "run") {
-        const taskPath = process.argv.slice(3).join(":")
-        const { task, scope } = yield* getTaskEffect(taskPath)
-        // TODO: pass in Layers?
-        // const result = yield* task.task
-        yield* task.task
-      }
-      Effect.fail(new Error("Invalid command"))
-    }),
-  )
-  console.log(result)
+  if (process.argv[2] === "run") {
+    const taskPath = process.argv.slice(3).join(":")
+    const task = Effect.gen(function* () {
+      const { task } = yield* getTaskEffect(taskPath)
+      return task
+    })
+    // TODO: run above
+    const result = await runtime.runPromise(task)
+    // const result = await runtime.runPromise(
+    //   Effect.gen(function* () {
+    //     // TODO: use effect-platform / cmd / cli
+    //     const { task, scope } = yield* getTaskEffect(taskPath)
+    //     // TODO: pass in Layers?
+    //     // const result = yield* task.effect
+    //     yield* Effect.provideLayer(task.effect, DefaultsLayer)
+    //     // Effect.fail(new Error("Invalid command"))
+    //   }),
+    // )
+    console.log(result)
+  }
 }
 
 type CrystalConfigFile = {
-  [key: string]: Scope | Task<any, any, any>
+  [key: string]: Scope | Task
   crystal: Scope
 }
 

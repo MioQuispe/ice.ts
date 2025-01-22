@@ -464,7 +464,6 @@ export type MotokoCanisterBuilder = {
 }
 
 const createMotokoCanisterBuilder = <I extends Array<any>>(
-  ctx: CrystalCtx,
   canisterConfig: MotokoCanisterConfig,
 ) => {
   const canisterId = canisterConfig.canisterId ?? generatePrincipal().toString()
@@ -648,77 +647,16 @@ type CrystalConfig = {
   // runTask: <T>(taskName: string) => Promise<T>
 }
 
-type CrystalBuilder = {
-  customCanister: <I extends Array<any>>(
-    config: CustomCanisterConfig,
-  ) => ReturnType<typeof createCustomCanisterBuilder<I>>
-  motokoCanister: <I extends Array<any>>(
-    config: MotokoCanisterConfig,
-  ) => ReturnType<typeof createMotokoCanisterBuilder<I>>
-  // TODO:
-  //   rustCanister: (config: RustCanisterConfig) => ReturnType<typeof createRustCanisterBuilder>
-  //   azleCanister: (config: AzleCanisterConfig) => ReturnType<typeof createAzleCanisterBuilder>
-  provide: (
-    ...layers: [
-      Layer.Layer<never, any, any>,
-      ...Array<Layer.Layer<never, any, any>>,
-    ]
-  ) => CrystalBuilder
-  // script: (config: CanisterConfig) => ScriptBuilder
-}
-
 type CrystalCtx = {
   config: CrystalConfig
   dependencies?: Layer.Layer<never, any, any>
 }
 
+// is this where we construct the runtime / default environment?
 // TODO: can we make this async as well?
 export const Crystal = (config?: CrystalConfig) => {
-  const tag = Context.Tag("crystal")
-
-  // const createScriptBuilder = (ctx: Ctx, config: CanisterConfig): ScriptBuilder => {
-  //   // TODO:
-  // }
-
   // TODO: rename ctx to runtime or config or something??
-  const createCrystalBuilder = (ctx: CrystalCtx): CrystalBuilder => {
-    // TODO: pass crystalConfig
-    return {
-      customCanister: <I extends Array<any>>(
-        canisterConfig: CustomCanisterConfig,
-      ) => createCustomCanisterBuilder<I>(ctx, canisterConfig),
-      motokoCanister: <I extends Array<any>>(
-        canisterConfig: MotokoCanisterConfig,
-      ) => createMotokoCanisterBuilder<I>(ctx, canisterConfig),
-      // script: (config: CanisterConfig) => createScriptBuilder(config),
-      // script: (config: CanisterConfig) => createScriptBuilder(config),
-      // TODO: support scopes?
-      withContext: (
-        fn: (ctx: TaskCtxShape) => Promise<CanisterBuilder<any>>,
-      ) => {
-        // TODO: is it a higher order task?
-        // TODO: we need to wrap all the tasks
-        return withContext(ctx, fn)
-      },
-      provide: (
-        ...layers: [
-          Layer.Layer<never, any, any>,
-          ...Array<Layer.Layer<never, any, any>>,
-        ]
-      ) => {
-        const layer = Layer.mergeAll(...layers)
-        // TODO: service provide to tasks
-        // TODO: runtime??
-        // TODO: keep in closure
-        return createCrystalBuilder({
-          ...ctx,
-          dependencies: layer,
-        })
-      },
-    }
+  return config ?? {
+    // TODO: dfx defaults etc.
   }
-
-  return createCrystalBuilder({
-    config: config ?? {},
-  })
 }
