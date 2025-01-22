@@ -17,9 +17,9 @@ import {
   Actor,
   type ActorSubclass,
   Agent,
-  HttpAgent,
+  type HttpAgent,
   type Identity,
-  SignIdentity,
+  type SignIdentity,
 } from "@dfinity/agent"
 import { idlFactory } from "./canisters/management_new/management.did.js"
 import { Ed25519KeyIdentity } from "@dfinity/identity"
@@ -172,7 +172,7 @@ export class TaskCtx extends Context.Tag("TaskCtx")<
       }
     }
     readonly runTask: (
-      task: Task<any, any, any>,
+      task: Task,
     ) => Effect.Effect<void, never, never>
   }
 >() {
@@ -189,7 +189,7 @@ export class TaskCtx extends Context.Tag("TaskCtx")<
         subnet: "system",
         agent,
         identity,
-        runTask: (task: Task<any, any, any>) =>
+        runTask: (task: Task) =>
           Effect.gen(function* () {
             // TODO: run task
             // TODO: pass in layers?
@@ -228,8 +228,9 @@ export type TaskCtxShape = Context.Tag.Service<typeof TaskCtx>
 //   }
 // }
 
-export const Opt = <T>(value?: any): [T] | [] => {
-  return value || value === 0 ? [value] : []
+export type Opt<T> = [T] | []
+export const Opt = <T>(value?: T): Opt<T> => {
+  return (value || value === 0) ? ([value]) : []
 }
 
 export const getAccountId = (principal: string) =>
@@ -403,28 +404,17 @@ export const installCanister = ({
     Effect.log(`Installed code for ${canisterId}`)
   })
 
-export const compileMotokoCanister = (src: string, canisterName: string) =>
+export const compileMotokoCanister = (src: string, canisterName: string, wasmOutputFilePath: string) =>
   Effect.gen(function* () {
     const moc = yield* Moc
-    const path = yield* Path.Path
-    const fs = yield* FileSystem.FileSystem
-    const appDir = yield* Config.string("APP_DIR")
-    // TODO: move out of here!
-    const outDir = path.join(appDir, ".artifacts", canisterName)
-    const wasmOutputFilePath = path.join(outDir, `${canisterName}.wasm`)
-    const candidOutputFilePath = path.join(outDir, `${canisterName}.did`)
     // Create output directories if they don't exist
-    yield* fs.makeDirectory(outDir, { recursive: true })
-    yield* Effect.log(`Compiling ${canisterName} to ${outDir}`)
+    yield* Effect.log(`Compiling ${canisterName} to ${wasmOutputFilePath}`)
     // TODO: we need to make dirs if they don't exist
     yield* moc.compile(src, wasmOutputFilePath)
     yield* Effect.log(
-      `Successfully compiled ${src} ${canisterName} to ${outDir} outputFilePath: ${wasmOutputFilePath}`,
+      `Successfully compiled ${src} ${canisterName} outputFilePath: ${wasmOutputFilePath}`,
     )
-    return {
-      wasmPath: wasmOutputFilePath,
-      candidPath: candidOutputFilePath,
-    }
+    return wasmOutputFilePath
   })
 
 export const generateCandidJS = (canisterName: string) =>
@@ -510,7 +500,7 @@ type BuilderResult = {
   _scope: Scope
 }
 
-const matcher = Match.type<Task<any, any, any> | Scope | BuilderResult>().pipe(
+const matcher = Match.type<Task | Scope | BuilderResult>().pipe(
   Match.when(
     {
       task: Match.any,
@@ -547,10 +537,10 @@ export const getTask = <A, E, R>(
     return undefined
   }
   return Match.value(val).pipe(
-    Match.when({ tasks: Match.any }, (scope) =>
-      getTask<A, E, R>(scope.tasks[keys[0]], keys.slice(1)),
+    Match.when({ children: Match.any }, (scope) =>
+      getTask<A, E, R>(scope.children[keys[0]], keys.slice(1)),
     ),
-    Match.when({ task: Match.any }, (task) => task as Task<A, E, R>),
+    Match.when({ effect: Match.any }, (task) => task as Task<A, E, R>),
     Match.exhaustive,
   )
 }
@@ -594,16 +584,19 @@ const DefaultsLayer = Layer.mergeAll(
 )
 const runtime = ManagedRuntime.make(DefaultsLayer)
 
-export const runTask = async () => {
+export const runCLI = async () => {
   // TODO: should it have the runtime?
   const result = await runtime.runPromise(
     Effect.gen(function* () {
       // TODO: use effect-platform / cmd / cli
-      const taskPath = process.argv.slice(2).join(":")
-      const { task, scope } = yield* getTaskEffect(taskPath)
-      // TODO: pass in Layers?
-      // const result = yield* task.task
-      yield* task.task
+      if (process.argv[2] === "run") {
+        const taskPath = process.argv.slice(3).join(":")
+        const { task, scope } = yield* getTaskEffect(taskPath)
+        // TODO: pass in Layers?
+        // const result = yield* task.task
+        yield* task.task
+      }
+      Effect.fail(new Error("Invalid command"))
     }),
   )
   console.log(result)

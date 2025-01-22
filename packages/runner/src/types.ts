@@ -1,32 +1,6 @@
 import type { Effect } from "effect"
 import type { ActorSubclass } from "@dfinity/agent"
 
-export type TaskContext = {
-  runTask: <T>(taskName: string) => Promise<T>
-}
-
-export type TaskScriptConfiguration<T = unknown> = (ctx: TaskContext) => T | Promise<T>
-
-export type TaskCanisterConfiguration = {
-  candid: string
-  wasm: string
-  dfx_js?: {
-    args?: unknown[]
-    canister_id?: {
-      [network: string]: string
-    }
-  }
-  _metadata?: { 
-    standard?: string 
-  }
-}
-
-export type TaskConfiguration<T = unknown> = 
-  | TaskCanisterConfiguration 
-  | TaskScriptConfiguration<T>
-
-export type TaskFullName = `${"canisters" | "scripts"}:${string}`
-
 export type CanisterActor = {
   actor: ActorSubclass<unknown>
   canisterId: string
@@ -39,26 +13,23 @@ export type ManagementActor = import("@dfinity/agent").ActorSubclass<
   import("./canisters/management_new/management.types.js")._SERVICE
 >
 
-export interface Task<A, E, R> {
-  task: Effect.Effect<A, E, R>
-  // TODO:
-  // run: () => Promise<A> | Effect.Effect<any, any, A>
+export interface Task<A = unknown, E = unknown, R = unknown> {
+  // TODO: how do we define args? do we just pass them in or inject into context?
+  // task: (args: any) => Effect.Effect<A, E, R>
+  readonly id: symbol; // assigned by the builder
+  effect: Effect.Effect<A, E, R>
   description: string
   tags: Array<string>
-  // TODO: hmm? is this needed?
+  // TODO: hmm? is this needed? hardhat has them but not sure if we need them
   // flags: {
   //   [key: `--${string}`]: any
   // }
+  // TODO: not sure if we need this
   // transformArgs?: (args: string[]) => any[]
 }
 
-// TODO: how do we nest them infinitely?
-// The whole module is a TaskGroup?
 export type Scope = {
-  // TODO: do we need this? is this just unnecessary inheritance?
   tags: Array<string | symbol>
   description: string
-  tasks: {
-    [key: string]: Task<any, any, any> | Scope
-  }
+  children: Record<string, Task | Scope>
 }

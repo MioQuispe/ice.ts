@@ -1,7 +1,8 @@
 import type { HttpAgent } from "@dfinity/agent"
 import type { AssetSpecificProperties, CanisterConfiguration, MotokoSpecificProperties, RustSpecificProperties } from "./schema"
 
-export const Opt = <T>(value?): [T] | [] => {
+export type Opt<T> = [T] | []
+export const Opt = <T>(value?: T): Opt<T> => {
   return (value || value === 0) ? ([value]) : []
 }
 

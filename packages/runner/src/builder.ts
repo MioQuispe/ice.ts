@@ -22,11 +22,163 @@ import { Path, FileSystem, Command, CommandExecutor } from "@effect/platform"
 import { Moc } from "./services/moc.js"
 import { DfxService } from "./services/dfx.js"
 
+// // Common tasks you might reuse across canister builders
+// function createBaseTasks(canisterId: string) {
+//   return {
+//     create: <Task<string, Error, void>>{
+//       task: () => Effect.succeed(canisterId),
+//       description: "Create canister",
+//       tags: [],
+//     },
+//     build: <Task<void, Error, void>>{
+//       task: () => Effect.succeed(),
+//       description: "Build canister",
+//       tags: [],
+//     },
+//     install: <Task<void, Error, void>>{
+//       task: () => Effect.succeed(),
+//       description: "Install canister",
+//       tags: [],
+//     },
+//   } as const
+// }
+
+// /**
+//  * Merges new tasks into an existing scope to avoid duplication or rewriting.
+//  */
+// function mergeTasks(baseScope: Scope, newTasks: Record<string, Task>): Scope {
+//   return {
+//     ...baseScope,
+//     tasks: {
+//       ...baseScope.tasks,
+//       ...newTasks,
+//     },
+//   }
+// }
+
+// type Builder = {
+//   scope: Scope
+//   extend: (tasks: Record<string, Task>) => Builder
+// }
+
+// /**
+//  * Creates a composable builder interface.
+//  */
+// export function createBuilder(canisterId: string): Builder {
+//   const baseScope: Scope = {
+//     tags: [],
+//     description: "",
+//     tasks: createBaseTasks(canisterId),
+//   }
+
+//   // Provide a composable "extend" to add or override tasks.
+//   function extend(tasks: Record<string, Task>): Builder {
+//     return {
+//       scope: mergeTasks(baseScope, tasks),
+//       extend,
+//     }
+//   }
+
+//   return { scope: baseScope, extend }
+// }
+
+// /**
+//  * Example usage for a custom canister
+//  */
+// export function createCustomCanisterBuilder(canisterId: string) {
+//   return createBuilder(canisterId).extend({
+//     // Add or override tasks that are specific to a custom canister
+//     build: {
+//       task: Effect.succeedWith(() => {
+//         // e.g. read .wasm / .did and write to artifact
+//       }),
+//       description: "Build custom canister",
+//       tags: [],
+//     },
+//   })
+// }
+
+// /**
+//  * Example usage for a Motoko canister
+//  */
+// export function createMotokoCanisterBuilder(canisterId: string) {
+//   return createBuilder(canisterId).extend({
+//     build: {
+//       task: Effect.succeedWith(() => {
+//         // e.g. compile Motoko source -> .wasm
+//       }),
+//       description: "Build Motoko canister",
+//       tags: [],
+//     },
+//   })
+// }
+
 export const Tags = {
   CANISTER: Symbol("canister"),
   GROUP: Symbol("group"),
   TASK: Symbol("task"),
   SCRIPT: Symbol("script"),
+}
+
+const taskWithContext = <A, E, R>(Ctx: TaskCtx, task: Task<A, E, R>) => {
+  return {
+    ...task,
+    effect: Effect.gen(function* () {
+      const taskCtx = yield* Ctx
+      return task.effect(taskCtx)
+    }),
+  }
+}
+// TODO: handle scope as well
+const scopeWithContext = (Ctx: TaskCtx, scope: Scope) => {
+  return {
+    ...scope,
+    tasks: Object.fromEntries(
+      Object.entries(scope.tasks).map(([key, task]) => [
+        key,
+        taskWithContext(Ctx, task),
+      ]),
+    ),
+  }
+}
+
+// TODO: fix
+const builderWithContext = <T>(Ctx: TaskCtx, builder: CanisterBuilder<T>) => {
+  return {
+    ...builder,
+    install: (fn) => builderWithContext(Ctx, builder.install(fn)),
+    build: (fn) => builderWithContext(Ctx, builder.build(fn)),
+  }
+}
+
+// TODO: handle better. use effect pattern matching?
+const isScope = (task: Task | Scope): task is Scope => {
+  return "tasks" in task
+}
+
+const isTask = (task: Task | Scope): task is Task => {
+  return "task" in task
+}
+
+const isBuilder = <I extends Array<any>>(
+  task: Task | Scope | CanisterBuilder<I> | MotokoCanisterBuilder,
+): task is CanisterBuilder<I> | MotokoCanisterBuilder => {
+  return "install" in task || "build" in task
+}
+
+const withContext = <I extends Array<any>>(
+  Ctx: TaskCtx,
+  task: Task | Scope | CanisterBuilder<I> | MotokoCanisterBuilder,
+) => {
+  if (isBuilder(task)) {
+    return builderWithContext(Ctx, task)
+  }
+  if (isScope(task)) {
+    return scopeWithContext(Ctx, task)
+  }
+  if (isTask(task)) {
+    return taskWithContext(Ctx, task)
+  }
 }
 
 const generatePrincipal = () => {
@@ -43,14 +195,11 @@ type CanisterBuilderCtx = {
   scope: Scope
 }
 
-export type CanisterBuilder = {
+export type CanisterBuilder<I extends Array<any>> = {
   install: (
-    fn: (args: {
-      ctx: TaskCtxShape
-      mode: string
-    }) => Promise<any>,
-  ) => CanisterBuilder
-  build: (fn: (args: { ctx: TaskCtxShape }) => Promise<any>) => CanisterBuilder
+    fn: (args: { ctx: TaskCtxShape; mode: string }) => Promise<I>,
+  ) => CanisterBuilder<I>
+  build: (fn: (args: { ctx: TaskCtxShape }) => Promise<I>) => CanisterBuilder<I>
   // Internal property to store the current scope
   _scope: Scope
 }
@@ -66,7 +215,7 @@ type CustomCanisterConfig = {
 // returns { _tag: "canister", task: () => Promise<{ canister_id: string }> }
 // TODO: some kind of metadata?
 // TODO: warn about context if not provided
-export const createCustomCanisterBuilder = (
+export const createCustomCanisterBuilder = <I extends Array<any> = []>(
   // TODO: rust / motoko / etc.
   ctx: CrystalCtx,
   canisterConfig: CustomCanisterConfig,
@@ -96,9 +245,16 @@ export const createCustomCanisterBuilder = (
       // TODO: we need to provide the context. do we do it here or later?
       create: {
         task: Effect.gen(function* () {
+          const path = yield* Path.Path
+          const fs = yield* FileSystem.FileSystem
           // TODO: maybe we can get the canisterName here through context somehow?
           yield* createCanister(canisterId)
-          // TODO: handle errors? retry logic? should it be atomic?
+          // TODO: handle errors? what to do if already exists?
+          const appDir = yield* Config.string("APP_DIR")
+          const canisterName = canisterId
+          // TODO: should it be here?
+          const outDir = path.join(appDir, ".artifacts", canisterName)
+          yield* fs.makeDirectory(outDir, { recursive: true })
           yield* writeCanisterIds(canisterName, canisterId)
           return canisterId
         }),
@@ -115,13 +271,37 @@ export const createCustomCanisterBuilder = (
       // },
 
       // TODO: not doing anything!
-        build: {
-          task: Effect.gen(function* () {
-            return canisterId
-          }),
-          description: "some description",
-          tags: [],
-        },
+      build: {
+        task: Effect.gen(function* () {
+          const taskCtx = yield* TaskCtx
+          const { agent, identity } = yield* DfxService
+
+          // we should have access to the wasm and candid here?
+          // TODO: write wasm and candid to artifacts!!
+          const fs = yield* FileSystem.FileSystem
+          const path = yield* Path.Path
+          const appDir = yield* Config.string("APP_DIR")
+          const outWasmPath = path.join(
+            appDir,
+            ".artifacts",
+            canisterId,
+            `${canisterId}.wasm`,
+          )
+          const wasm = yield* fs.readFile(canisterConfig.wasm)
+          yield* fs.writeFile(outWasmPath, wasm)
+
+          const outCandidPath = path.join(
+            appDir,
+            ".artifacts",
+            canisterId,
+            `${canisterId}.did`,
+          )
+          const candid = yield* fs.readFile(canisterConfig.candid)
+          yield* fs.writeFile(outCandidPath, candid)
+        }),
+        description: "some description",
+        tags: [],
+      },
 
       install: {
         // TODO: lets fix this!!
@@ -137,7 +317,9 @@ export const createCustomCanisterBuilder = (
           )
           // TODO: generate task? or in build?
           const didJS = yield* generateDIDJS(canisterId, canisterConfig.candid)
-          const encodedArgs = encodeArgs([], didJS)
+          const args = [] as unknown as I
+          // TODO: why is this being called??
+          const encodedArgs = encodeArgs(args, didJS)
           yield* installCanister({
             encodedArgs,
             canisterId,
@@ -149,19 +331,18 @@ export const createCustomCanisterBuilder = (
       },
     },
   }
-  const createBuilder = ({
-    ctx,
-    scope,
-  }: CanisterBuilderCtx): CanisterBuilder => {
+  const createBuilder = (ctx: CanisterBuilderCtx): CanisterBuilder<I> => {
     return {
       // TODO: write canisterIds to file
       // TODO: we need to provide the context. do we do it here or later?
-      install: (fn) => {
+      install: (
+        fn: (args: { ctx: TaskCtxShape; mode: string }) => Promise<I>,
+      ) => {
         type RemainingTasks = Omit<typeof scope.tasks, "install">
         // TODO: is this a flag, arg, or what?
         const mode = "install"
         const builderArgs = {
-          ctx,
+          ...ctx,
           scope: {
             ...scope,
             tasks: {
@@ -185,7 +366,7 @@ export const createCustomCanisterBuilder = (
                     canisterId,
                     canisterConfig.candid,
                   )
-                  const installArgs = yield* Effect.tryPromise({
+                  const installArgs: I = yield* Effect.tryPromise({
                     // TODO: pass everything
                     try: () => fn({ ctx: taskCtx, mode }),
                     catch: Effect.fail,
@@ -196,10 +377,10 @@ export const createCustomCanisterBuilder = (
                     canisterId,
                     wasmPath,
                   })
-                //   const canister = yield* createActor({
-                //     canisterId: canisterId,
-                //     canisterDID: didJS,
-                //   })
+                  //   const canister = yield* createActor({
+                  //     canisterId: canisterId,
+                  //     canisterDID: didJS,
+                  //   })
                 }),
                 description: "some description",
                 tags: [],
@@ -212,7 +393,7 @@ export const createCustomCanisterBuilder = (
       build: (fn) => {
         type RemainingTasks = Omit<typeof scope.tasks, "build">
         const builderArgs = {
-          ctx,
+          ...ctx,
           scope: {
             ...scope,
             tasks: {
@@ -221,9 +402,30 @@ export const createCustomCanisterBuilder = (
                 task: Effect.gen(function* () {
                   const taskCtx = yield* TaskCtx
                   const { agent, identity } = yield* DfxService
-                  
-                  // TODO: write wasm and candid to artifacts
-                
+
+                  // we should have access to the wasm and candid here?
+                  // TODO: write wasm and candid to artifacts!!
+                  const fs = yield* FileSystem.FileSystem
+                  const path = yield* Path.Path
+                  const appDir = yield* Config.string("APP_DIR")
+                  const outWasmPath = path.join(
+                    appDir,
+                    ".artifacts",
+                    canisterId,
+                    `${canisterId}.wasm`,
+                  )
+                  const wasm = yield* fs.readFile(canisterConfig.wasm)
+                  yield* fs.writeFile(outWasmPath, wasm)
+
+                  const outCandidPath = path.join(
+                    appDir,
+                    ".artifacts",
+                    canisterId,
+                    `${canisterId}.did`,
+                  )
+                  const candid = yield* fs.readFile(canisterConfig.candid)
+                  yield* fs.writeFile(outCandidPath, candid)
+
                   yield* Effect.tryPromise({
                     // TODO:
                     try: () => fn({ ctx: taskCtx }),
@@ -234,16 +436,15 @@ export const createCustomCanisterBuilder = (
                 tags: [],
               },
             } as RemainingTasks,
-            // } as RemainingTasks & { build: Task<A, E, R> },
           },
         }
         return createBuilder(builderArgs)
       },
-      _scope: scope,
+      // Add scope property to the initial builder
+      _scope: ctx.scope,
     }
   }
 
-  // TODO: ctx should be a property of scope?
   return createBuilder({
     ctx,
     scope,
@@ -262,7 +463,7 @@ export type MotokoCanisterBuilder = {
   _scope: Scope
 }
 
-const createMotokoCanisterBuilder = (
+const createMotokoCanisterBuilder = <I extends Array<any>>(
   ctx: CrystalCtx,
   canisterConfig: MotokoCanisterConfig,
 ) => {
@@ -278,9 +479,16 @@ const createMotokoCanisterBuilder = (
       // TODO: we need to provide the context. do we do it here or later?
       create: {
         task: Effect.gen(function* () {
+          const path = yield* Path.Path
+          const fs = yield* FileSystem.FileSystem
           // TODO: maybe we can get the canisterName here through context somehow?
           yield* createCanister(canisterId)
           // TODO: handle errors? retry logic? should it be atomic?
+          const appDir = yield* Config.string("APP_DIR")
+          const canisterName = canisterId
+          // TODO: should it be here?
+          const outDir = path.join(appDir, ".artifacts", canisterName)
+          yield* fs.makeDirectory(outDir, { recursive: true })
           yield* writeCanisterIds(canisterName, canisterId)
           return canisterId
         }),
@@ -298,7 +506,23 @@ const createMotokoCanisterBuilder = (
 
       build: {
         // TODO: needs to return the paths to wasm and candid
-        task: compileMotokoCanister(canisterConfig.src, canisterId),
+        task: Effect.gen(function* () {
+          const path = yield* Path.Path
+          const fs = yield* FileSystem.FileSystem
+          const appDir = yield* Config.string("APP_DIR")
+          const canisterName = canisterId
+          const wasmOutputFilePath = path.join(
+            appDir,
+            ".artifacts",
+            canisterName,
+            `${canisterName}.wasm`,
+          )
+          yield* compileMotokoCanister(
+            canisterConfig.src,
+            canisterName,
+            wasmOutputFilePath,
+          )
+        }),
         description: "some description",
         tags: [],
       },
@@ -425,12 +649,12 @@ type CrystalConfig = {
 }
 
 type CrystalBuilder = {
-  customCanister: (
+  customCanister: <I extends Array<any>>(
     config: CustomCanisterConfig,
-  ) => ReturnType<typeof createCustomCanisterBuilder>
-  motokoCanister: (
+  ) => ReturnType<typeof createCustomCanisterBuilder<I>>
+  motokoCanister: <I extends Array<any>>(
     config: MotokoCanisterConfig,
-  ) => ReturnType<typeof createMotokoCanisterBuilder>
+  ) => ReturnType<typeof createMotokoCanisterBuilder<I>>
   // TODO:
   //   rustCanister: (config: RustCanisterConfig) => ReturnType<typeof createRustCanisterBuilder>
   //   azleCanister: (config: AzleCanisterConfig) => ReturnType<typeof createAzleCanisterBuilder>
@@ -448,6 +672,7 @@ type CrystalCtx = {
   dependencies?: Layer.Layer<never, any, any>
 }
 
+// TODO: can we make this async as well?
 export const Crystal = (config?: CrystalConfig) => {
   const tag = Context.Tag("crystal")
 
@@ -455,16 +680,32 @@ export const Crystal = (config?: CrystalConfig) => {
   //   // TODO:
   // }
 
+  // TODO: rename ctx to runtime or config or something??
   const createCrystalBuilder = (ctx: CrystalCtx): CrystalBuilder => {
     // TODO: pass crystalConfig
     return {
-      customCanister: (canisterConfig) =>
-        createCustomCanisterBuilder(ctx, canisterConfig),
-      motokoCanister: (canisterConfig) =>
-        createMotokoCanisterBuilder(ctx, canisterConfig),
+      customCanister: <I extends Array<any>>(
+        canisterConfig: CustomCanisterConfig,
+      ) => createCustomCanisterBuilder<I>(ctx, canisterConfig),
+      motokoCanister: <I extends Array<any>>(
+        canisterConfig: MotokoCanisterConfig,
+      ) => createMotokoCanisterBuilder<I>(ctx, canisterConfig),
       // script: (config: CanisterConfig) => createScriptBuilder(config),
       // script: (config: CanisterConfig) => createScriptBuilder(config),
-      provide: (...layers) => {
+      // TODO: support scopes?
+      withContext: (
+        fn: (ctx: TaskCtxShape) => Promise<CanisterBuilder<any>>,
+      ) => {
+        // TODO: is it a higher order task?
+        // TODO: we need to wrap all the tasks
+        return withContext(ctx, fn)
+      },
+      provide: (
+        ...layers: [
+          Layer.Layer<never, any, any>,
+          ...Array<Layer.Layer<never, any, any>>,
+        ]
+      ) => {
         const layer = Layer.mergeAll(...layers)
         // TODO: service provide to tasks
         // TODO: runtime??
@@ -481,54 +722,3 @@ export const Crystal = (config?: CrystalConfig) => {
     config: config ?? {},
   })
 }
-
-// const Crystal = (ctx: Ctx) => {
-//   const tag = Context.Tag("crystal")
-//   // TODO: create layers from ctx
-//   // TODO: Layer.mergeAll
-//   const context = {}
-
-//   // TODO: nope this is only for the default context
-//   // TODO: these are treated the same as tasks that are required
-//   // const context = {
-//   //   agent: Agent.make(),
-//   //   identity: Identity.make(),
-//   //   users: {},
-//   //   fs: FileSystem.make(),
-//   //   path: Path.make(),
-//   //   dfxConfig: DfxConfig.make(),
-//   //   runTask: (taskName) => Promise.resolve(taskName),
-//   //   ...ctx,
-//   // }
-
-//   return {
-//     context,
-//     // TODO: maybe make sure that the context is already provided? R should match the tasks R?
-//     canister: <A, E, R>(task: Task<A, E, R>) => {
-//       // TODO: this needs to warn if service is used which hasnt been provided
-//       // so we need to ...?
-//       // TODO: figure out where effect warns about services which have not been provided
-//       // it happens at the runtime / .runPromise part
-//       // Extract the context type, which is SomeContext
-//       // type R = Effect.Effect.Context<typeof task>
-//       return CanisterBuilder(context, task)
-//     },
-
-//     // script: <A, E, R>(task: Task<A, E, R>) => {
-//     //   return script(context, task)
-//     // },
-
-//     provide: (
-//       ...layers: [
-//         Layer.Layer<never, any, any>,
-//         ...Array<Layer.Layer<never, any, any>>,
-//       ]
-//     ) => {
-//       const layer = Layer.mergeAll(...layers)
-//       // TODO: service provide to tasks
-//       // TODO: runtime??
-//       // TODO: keep in closure
-//       return Crystal({ ...ctx })
-//     },
-//   }
-// }
