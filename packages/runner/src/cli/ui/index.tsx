@@ -1,7 +1,16 @@
 import { Effect, Console, Match, Option } from "effect"
 import { Spinner, ProgressBar, UnorderedList } from "@inkjs/ui"
 import React, { useState, useEffect } from "react"
-import { Box, render, Text, Static, useFocusManager, useInput } from "ink"
+import {
+  Box,
+  render,
+  Text,
+  Static,
+  useFocusManager,
+  useInput,
+  useFocus,
+  useApp,
+} from "ink"
 import type {
   CrystalConfigFile,
   Scope,
@@ -10,8 +19,8 @@ import type {
   TaskTreeNode,
 } from "../../types/types.js"
 import { filterTasks } from "../../index.js"
-import { TaskList, Task } from 'ink-task-list';
-import spinners from 'cli-spinners';
+import { TaskList, Task } from "ink-task-list"
+import spinners from "cli-spinners"
 
 const App = () => {
   const [counter, setCounter] = useState(0)
@@ -63,6 +72,26 @@ const renderTasks = (
   }
 }
 
+type StateOthers = "pending" | "success" | "warning" | "error" | "loading"
+
+const TaskTreeListItem = ({ label, ...props }: { label: string }) => {
+  const { isFocused } = useFocus()
+  // TODO: get state
+  const [state, setState] = useState<StateOthers>("pending")
+  useInput(
+    (input, key) => {
+      if (!isFocused) {
+        return
+      }
+      if (key.return || input === " ") {
+        setState(currentState => currentState === "loading" ? "pending" : "loading")
+      }
+    },
+    { isActive: isFocused },
+  )
+  return <Task state={isFocused ? "success" : state} spinner={spinners.dots} label={label} {...props} />
+}
+
 const TaskTreeList = ({
   taskTree,
   title,
@@ -78,20 +107,23 @@ const TaskTreeList = ({
       : Object.keys(taskTree)
   return (
     <TaskList>
-      <Text>{title}</Text>
       {keys.map((key) => {
         const node =
           taskTree._tag === "scope"
             ? (taskTree as Scope).children[key]
             : (taskTree as TaskTree)[key]
-        const fullPath = [ ...path, key,]
-        console.log(fullPath)
-        const state = fullPath.includes("cap") ? "loading" : "pending"
+        const fullPath = [...path, key]
+        // const state = fullPath.includes("cap") ? "loading" : "pending"
+        // TODO: get task state and allow running tasks
+        const state = "pending"
         if (node._tag === "task") {
           return (
             <>
-            <Task state={state} spinner={spinners.dots} key={fullPath.join(":")} label={fullPath.join(":")} />
-            {/* <Text>
+              <TaskTreeListItem
+                key={fullPath.join(":")}
+                label={fullPath[fullPath.length - 1]}
+              />
+              {/* <Text>
                 {node.description}
             </Text> */}
             </>
@@ -100,28 +132,36 @@ const TaskTreeList = ({
         if (node._tag === "builder") {
           return (
             <>
-              <UnorderedList.Item key={fullPath.join(":")}>
+              <Task
+                key={fullPath.join(":")}
+                isExpanded
+                label={fullPath[fullPath.length - 1]}
+              >
                 <TaskTreeList
                   key={fullPath.join(":")}
                   taskTree={node._scope}
                   title={fullPath.join(":")}
                   path={fullPath}
                 />
-              </UnorderedList.Item>
+              </Task>
             </>
           )
         }
         if (node._tag === "scope") {
           return (
             <>
-              <UnorderedList.Item key={fullPath.join(":")}>
+              <Task
+                key={fullPath.join(":")}
+                isExpanded
+                label={fullPath[fullPath.length - 1]}
+              >
                 <TaskTreeList
                   key={fullPath.join(":")}
                   taskTree={node.children}
                   title={fullPath.join(":")}
                   path={fullPath}
                 />
-              </UnorderedList.Item>
+              </Task>
             </>
           )
         }
@@ -131,34 +171,37 @@ const TaskTreeList = ({
 }
 
 const CliApp = ({ crystalConfig }: { crystalConfig: CrystalConfigFile }) => {
+  const focusManager = useFocusManager()
+  const [editingField, setEditingField] = useState<string>()
 
-    const focusManager = useFocusManager();
-    const [editingField, setEditingField] = useState<string>();
+  useEffect(() => {
+    focusManager.enableFocus()
+  }, [focusManager])
 
-    useEffect(() => {
-      focusManager.enableFocus();
-    }, [focusManager]);
+  useInput(
+    (input, key) => {
+      if (key.upArrow) {
+        focusManager.focusPrevious()
+      } else if (key.downArrow) {
+        focusManager.focusNext()
+      }
+    },
+    { isActive: !editingField },
+  )
 
-    useInput(
-        (input, key) => {
-          if (key.upArrow) {
-            focusManager.focusPrevious();
-          } else if (key.downArrow) {
-            focusManager.focusNext();
-          }
-        },
-        { isActive: !editingField }
-      );
-
-    return (
-      <Box margin={2} flexDirection="column">
-        {/* <Static items={[crystalConfig]}>
+  return (
+    <Box margin={2} flexDirection="column">
+      {/* <Static items={[crystalConfig]}>
           {(item) => (
           )}
         </Static> */}
-        <TaskTreeList key={"tasks"} taskTree={crystalConfig} title="Available tasks" />
-      </Box>
-    )
+      <TaskTreeList
+        key={"tasks"}
+        taskTree={crystalConfig}
+        title="Available tasks"
+      />
+    </Box>
+  )
 }
 
 // export const uiTask = () => {
@@ -171,9 +214,7 @@ export const uiTask = (crystalConfig: CrystalConfigFile) =>
       crystalConfig,
       (task) => task._tag === "task",
     )
-    render(
-        <CliApp crystalConfig={crystalConfig} />
-    )
+    render(<CliApp crystalConfig={crystalConfig} />)
     //   void render(
     //     React.createElement(Text, {}, "Hello world")
     //   )
