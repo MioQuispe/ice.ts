@@ -687,6 +687,15 @@ type CrystalConfig = CrystalContext & {
   setup?: () => Promise<CrystalContext>
 }
 
+export const scope = (description: string, children: TaskTree) => {
+  return {
+    _tag: "scope",
+    tags: [],
+    description,
+    children,
+  }
+}
+
 // is this where we construct the runtime / default environment?
 // TODO: can we make this async as well?
 export const Crystal = (config?: CrystalConfig) => {

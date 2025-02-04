@@ -8,83 +8,110 @@ import {
   canistersInstallTask,
   canistersStatusTask,
   DefaultsLayer,
+  getCrystalConfig,
   listCanistersTask,
   listTasksTask,
   runTaskByPath,
+  runtime,
 } from "../index.js"
+import type { CrystalConfigFile } from "../types/types.js"
+import { uiTask } from "./ui/index.js"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
 
-// TODO: we need to construct this dynamically if we want space delimited task paths
-// Basic run command for executing tasks
-const taskPath = Args.text({ name: "taskPath" }).pipe(
-  Args.withDescription("Path to the task (e.g. 'scope:task' or 'task')"),
-)
-const runCommand = Command.make("run", { taskPath }, ({ taskPath }) =>
-  runTaskByPath(taskPath),
-).pipe(Command.withDescription("Run a Crystal task"))
+// TODO: populate subcommands with tasks from crystalConfig
+const makeCliApp = (crystalConfig: CrystalConfigFile) => {
+  // TODO: we need to construct this dynamically if we want space delimited task paths
+  // Basic run command for executing tasks
+  const taskPath = Args.text({ name: "taskPath" }).pipe(
+    Args.withDescription("Path to the task (e.g. 'scope:task' or 'task')"),
+  )
+  const runCommand = Command.make("run", { taskPath }, ({ taskPath }) =>
+    runTaskByPath(taskPath),
+  ).pipe(Command.withDescription("Run a Crystal task"))
 
-// TODO: deploy
-const canistersDeployCommand = Command.make("canisters", {}, () =>
-  canistersDeployTask(),
-).pipe(Command.withDescription("Deploy all canisters"))
+  // TODO: deploy
+  const canistersDeployCommand = Command.make("canisters", {}, () =>
+    canistersDeployTask(),
+  ).pipe(Command.withDescription("Deploy all canisters"))
 
-const canistersCreateCommand = Command.make("canisters:create", {}, () =>
-  canistersCreateTask(),
-).pipe(Command.withDescription("Create all canisters"))
+  const canistersCreateCommand = Command.make("canisters:create", {}, () =>
+    canistersCreateTask(),
+  ).pipe(Command.withDescription("Create all canisters"))
 
-const canistersBuildCommand = Command.make("canisters:build", {}, () =>
-  canistersBuildTask(),
-).pipe(Command.withDescription("Build all canisters"))
+  const canistersBuildCommand = Command.make("canisters:build", {}, () =>
+    canistersBuildTask(),
+  ).pipe(Command.withDescription("Build all canisters"))
 
-const canistersBindingsCommand = Command.make("canisters:bindings", {}, () =>
-  canistersBindingsTask(),
-).pipe(Command.withDescription("Generate bindings for all canisters"))
+  const canistersBindingsCommand = Command.make("canisters:bindings", {}, () =>
+    canistersBindingsTask(),
+  ).pipe(Command.withDescription("Generate bindings for all canisters"))
 
-const canistersInstallCommand = Command.make("canisters:install", {}, () =>
-  canistersInstallTask(),
-).pipe(Command.withDescription("Install all canisters"))
+  const canistersInstallCommand = Command.make("canisters:install", {}, () =>
+    canistersInstallTask(),
+  ).pipe(Command.withDescription("Install all canisters"))
 
-const canistersStatusCommand = Command.make("canisters:status", {}, () =>
-  canistersStatusTask(),
-).pipe(Command.withDescription("Get status of all canisters"))
+  const canistersStatusCommand = Command.make("canisters:status", {}, () =>
+    canistersStatusTask(),
+  ).pipe(Command.withDescription("Get status of all canisters"))
 
-const canistersRemoveCommand = Command.make("canisters:remove", {}, () =>
-  Effect.gen(function* () {
-    yield* Console.log("Coming soon...")
-    // TODO: remove a canister
-  }),
-).pipe(Command.withDescription("Remove all canisters"))
+  const canistersRemoveCommand = Command.make("canisters:remove", {}, () =>
+    Effect.gen(function* () {
+      yield* Console.log("Coming soon...")
+      // TODO: remove a canister
+    }),
+  ).pipe(Command.withDescription("Remove all canisters"))
 
-const listCommand = Command.make("list", {}, () =>
-  listTasksTask(),
-).pipe(Command.withDescription("List all tasks"))
+  const listCommand = Command.make("list", {}, () => listTasksTask()).pipe(
+    Command.withDescription("List all tasks"),
+  )
 
-const listCanistersCommand = Command.make("list:canisters", {}, () =>
-  listCanistersTask(),
-).pipe(Command.withDescription("List all canisters"))
+  const listCanistersCommand = Command.make("list:canisters", {}, () =>
+    listCanistersTask(),
+  ).pipe(Command.withDescription("List all canisters"))
 
-const crystalCommand = Command.make("crystal", {}).pipe(
-  Command.withSubcommands([
-    runCommand,
-    canistersDeployCommand,
-    canistersCreateCommand,
-    canistersBuildCommand,
-    canistersBindingsCommand,
-    canistersInstallCommand,
-    canistersRemoveCommand,
-    canistersStatusCommand,
-    listCommand,
-    listCanistersCommand,
-  ]),
-)
+  const uiCommand = Command.make("ui", {}, () =>
+    // Effect.gen(function* () {
+    //   yield* Console.log("Coming soon...")
+    //   // TODO: open the UI
+    // }),
+    uiTask(crystalConfig),
+  ).pipe(Command.withDescription("Open the Crystal UI"))
 
-const cli = Command.run(crystalCommand, {
-  name: "Crystal CLI",
-  version: "0.0.1",
-})
+  const crystalCommand = Command.make("crystal", {}).pipe(
+    Command.withSubcommands([
+      runCommand,
+      canistersDeployCommand,
+      canistersCreateCommand,
+      canistersBuildCommand,
+      canistersBindingsCommand,
+      canistersInstallCommand,
+      canistersRemoveCommand,
+      canistersStatusCommand,
+      listCommand,
+      listCanistersCommand,
+      uiCommand,
+    ]),
+  )
 
+  const cli = Command.run(crystalCommand, {
+    name: "Crystal CLI",
+    version: "0.0.1",
+  })
+  return cli
+}
+
+// TODO: can we load the crystalConfig before running the cli?
 // Prepare and run the CLI application
 export const runCli = async () => {
-  // @ts-ignore
-  cli(process.argv).pipe(Effect.provide(DefaultsLayer), NodeRuntime.runMain)
+  runtime.runPromise(
+    Effect.gen(function* () {
+      const crystalConfig = yield* getCrystalConfig()
+      const cli = makeCliApp(crystalConfig)
+      return cli(process.argv).pipe(
+        // @ts-ignore
+        Effect.provide(DefaultsLayer),
+        NodeRuntime.runMain,
+      )
+    }),
+  )
 }

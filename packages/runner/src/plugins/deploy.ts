@@ -5,9 +5,9 @@ import type {
   Task,
   TaskTree,
   TaskTreeNode,
-} from "../types/types"
-import { TaskCtx, getCanisterInfo, Tags, TaskInfo } from "../index"
-import { loadCanisterId } from "../core/builder"
+} from "../types/types.js"
+import { TaskCtx, getCanisterInfo, Tags, TaskInfo } from "../index.js"
+import { loadCanisterId } from "../core/builder.js"
 
 type CanisterScope = Scope & {
   children: {

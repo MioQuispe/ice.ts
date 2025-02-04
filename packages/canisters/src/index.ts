@@ -2,11 +2,11 @@ export * from "./internet-identity"
 export * from "./ledger"
 export * from "./icrc1_ledger"
 export * from "./dip721"
-// export * from "./dip20"
+export * from "./dip20"
+export * from "./cap"
 // export * from "./nns"
 
 // export * from "./wicp"
-// export * from "./cap"
 // TODO:
 // // export * from "./is20"
 // // export * from "./icrc1_ref"

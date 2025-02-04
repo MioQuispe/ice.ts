@@ -83,3 +83,11 @@ export type TaskTree = Record<string, TaskTreeNode>
 //   transform: (ctx: CrystalContext) => PreTaskTree;
 //   children: PreTaskTree | ((args: any) => PreTaskTree)
 // }
+
+// TODO: fix
+export type CrystalConfig = CrystalContext
+export type CrystalConfigFile = {
+  default: CrystalContext
+} & {
+  [key: string]: TaskTreeNode
+}

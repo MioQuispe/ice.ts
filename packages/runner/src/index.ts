@@ -65,6 +65,7 @@ import type {
   TaskTree,
   TaskTreeNode,
   CrystalContext,
+  CrystalConfigFile,
 } from "./types/types.js"
 import { Moc } from "./services/moc.js"
 import { runCli } from "./cli/index.js"
@@ -212,7 +213,7 @@ export const createCanister = (canisterId?: string) =>
               controllers: Opt<Principal[]>([identity.getPrincipal()]),
             },
           ],
-          amount: Opt<bigint>(1_000_000_000_000n),
+          amount: Opt<bigint>(1_000_000_000_000_000_000n),
           // TODO: dont generate here. because it doesnt work on mainnet
           // instead expose the canisterId in the context for tasks which require it
           // could be through dependencies
@@ -660,7 +661,7 @@ export const runTask = <A, E, R, I>(
   })
 }
 
-const filterTasks = (
+export const filterTasks = (
   taskTree: TaskTree,
   predicate: (task: TaskTreeNode) => boolean,
   path: string[] = [],
@@ -899,13 +900,6 @@ export const listCanistersTask = () =>
 
 export { runCli } from "./cli/index.js"
 
-// TODO: fix
-type CrystalConfig = CrystalContext
-type CrystalConfigFile = {
-  default: CrystalContext
-} & {
-  [key: string]: TaskTreeNode
-}
 
 // TODO: types
 export const getCrystalConfig = (configPath = "crystal.config.ts") =>
@@ -1025,31 +1019,4 @@ export const getCanisterIds = Effect.gen(function* () {
   return canisterIds
 })
 
-export { deployTaskPlugin } from "./plugins/deploy"
-
-export const dfxDefaults: DfxJson = {
-  defaults: {
-    build: {
-      packtool: "",
-      args: "--force-gc",
-    },
-    replica: {
-      subnet_type: "system",
-    },
-  },
-  networks: {
-    local: {
-      bind: "127.0.0.1:8080",
-      type: "ephemeral",
-    },
-    staging: {
-      providers: ["https://ic0.app"],
-      type: "persistent",
-    },
-    ic: {
-      providers: ["https://ic0.app"],
-      type: "persistent",
-    },
-  },
-  version: 1,
-}
+export { deployTaskPlugin } from "./plugins/deploy.js"

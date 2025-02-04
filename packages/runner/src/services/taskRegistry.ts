@@ -1,5 +1,5 @@
 import { Effect, Layer, Context, Option } from "effect"
-import type { Task } from "../types/types"
+import type { Task } from "../types/types.js"
 import { KeyValueStore } from "@effect/platform"
 
 export class TaskRegistry extends Context.Tag("TaskRegistry")<

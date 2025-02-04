@@ -3,7 +3,7 @@ import { idlFactory as capBucketIdlFactory } from "./cap-bucket/cap-bucket.did.j
 import { idlFactory as capRootIdlFactory } from "./cap-root/cap-root.did.js"
 import { idlFactory as capRouterIdlFactory } from "./cap-router/cap-router.did.js"
 import { idlFactory as capRouterTestIdlFactory } from "./cap-router-test/cap-router-test.did.js"
-import type { ExtendedCanisterConfiguration } from "../types"
+import { customCanister, type TaskCtxShape, scope } from "@crystal/runner"
 
 import { Principal } from "@dfinity/principal"
 import * as url from "node:url"
@@ -15,39 +15,44 @@ const CapBucketIds = {
   ic: "r7inp-6aaaa-aaaaa-aaabq-cai",
 }
 
-export type CapBucketActor = import("@dfinity/agent").ActorSubclass<import("./cap-bucket/types")._SERVICE>
+export type CapBucketActor = import("@dfinity/agent").ActorSubclass<
+  import("./cap-bucket/types")._SERVICE
+>
 
 type CapBucketInitArgs = {
   // offset: number
   // next_canisters: Array<number>
   // contract: Principal
+  canisterId?: string
 }
 
-export const CapBucket = (args: CapBucketInitArgs): ExtendedCanisterConfiguration => {
+export const CapBucket = (
+  initArgsOrFn: CapBucketInitArgs | ((ctx: TaskCtxShape) => CapBucketInitArgs),
+) => {
   // const {
   //   contract,  // Id   // Principal probably?
   //   offset = 0, // u64,
   //   next_canisters = [0], // Vec<BucketId>,
   // } = args
-  return {
-    type: "custom",
-    candid: path.resolve(__dirname, "./cap/cap-bucket/cap-bucket.did"),
-    wasm: path.resolve(__dirname, "./cap/cap-bucket/cap-bucket.wasm"),
-    build: "",
-    // args: [{
-    //   contract, // TokenContractId,
-    //   offset, // u64
-    //   next_canisters, // Vec<BucketId>
-    // }],
-    // TODO:?
-    // remote: {
-    //   id: CapBucketIds,
-    // },
-    dfx_js: {
-      canister_id: CapBucketIds,
-      args: [],
-    },
-  }
+  return customCanister<[]>((ctx) => {
+    const initArgs =
+      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+    return {
+      candid: path.resolve(__dirname, "./cap/cap-bucket/cap-bucket.did"),
+      wasm: path.resolve(__dirname, "./cap/cap-bucket/cap-bucket.wasm"),
+      canisterId: CapBucketIds.local,
+    }
+  }).install(async ({ ctx, mode }) => {
+    const initArgs =
+      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+    return [
+      // args: [{
+      //   contract, // TokenContractId,
+      //   offset, // u64
+      //   next_canisters, // Vec<BucketId>
+      // }],
+    ]
+  })
 }
 
 CapBucket.id = CapBucketIds
@@ -63,36 +68,39 @@ const CapRootIds = {
   ic: "rrkah-fqaaa-aaaaa-aaaaq-cai",
 }
 
-export type CapRootActor = import("@dfinity/agent").ActorSubclass<import("./cap-root/types")._SERVICE>
+export type CapRootActor = import("@dfinity/agent").ActorSubclass<
+  import("./cap-root/types")._SERVICE
+>
 
 type CapRootInitArgs = {
   // contract: Principal
   // writers: Array<Principal>
+  canisterId?: string
 }
 
-export const CapRoot = (args: CapRootInitArgs): ExtendedCanisterConfiguration => {
+export const CapRoot = (initArgsOrFn: CapRootInitArgs | ((ctx: TaskCtxShape) => CapRootInitArgs)) => {
   // const {
   //   contract,
   //   writers,
   // } = args
-  return {
-    type: "custom",
-    candid: path.resolve(__dirname, "./cap/cap-root/cap-root.did"),
-    wasm: path.resolve(__dirname, "./cap/cap-root/cap-root.wasm"),
-    build: "",
-    // args: [
-    //   contract, // Principal,
-    //   writers, // BTreeSet<Principal>
-    // ],
-    // TODO: ?
-    // remote: {
-    //   id: CapRootIds,
-    // },
-    dfx_js: {
-      canister_id: CapRootIds,
-      args: [],
-    },
-  }
+  return customCanister<[]>((ctx) => {
+    const initArgs =
+      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+    return {
+      candid: path.resolve(__dirname, "./cap/cap-root/cap-root.did"),
+      wasm: path.resolve(__dirname, "./cap/cap-root/cap-root.wasm"),
+      canisterId: initArgs.canisterId ?? CapRootIds.local,
+    }
+  }).install(async ({ ctx, mode }) => {
+    const initArgs =
+      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+    return [
+      // args: [
+      //   contract, // Principal,
+      //   writers, // BTreeSet<Principal>
+      // ],
+    ]
+  })
 }
 
 CapRoot.id = CapRootIds
@@ -107,25 +115,28 @@ const CapRouterIds = {
   local: "lj532-6iaaa-aaaah-qcc7a-cai",
   ic: "lj532-6iaaa-aaaah-qcc7a-cai",
 }
-export type CapRouterActor = import("@dfinity/agent").ActorSubclass<import("./cap-router/types")._SERVICE>
+export type CapRouterActor = import("@dfinity/agent").ActorSubclass<
+  import("./cap-router/types")._SERVICE
+>
 
-type CapRouterInitArgs = {}
+type CapRouterInitArgs = {
+  canisterId?: string
+}
 
-export const CapRouter = (args?: CapRouterInitArgs, override = {}): ExtendedCanisterConfiguration => {
-  return {
-    type: "custom",
-    candid: path.resolve(__dirname, "./cap/cap-router/cap-router.did"),
-    wasm: path.resolve(__dirname, "./cap/cap-router/cap-router.wasm"),
-    build: "",
-    // remote: {
-    //   id: CapRouterIds,
-    // },
-    dfx_js: {
-      canister_id: CapRouterIds,
-      // args: [],
-    },
-    ...override,
-  }
+export const CapRouter = (initArgsOrFn: CapRouterInitArgs | ((ctx: TaskCtxShape) => CapRouterInitArgs)) => {
+  return customCanister<[]>((ctx) => {
+    const initArgs =
+      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+    return {
+      candid: path.resolve(__dirname, "./cap/cap-router/cap-router.did"),
+      wasm: path.resolve(__dirname, "./cap/cap-router/cap-router.wasm"),
+      canisterId: initArgs.canisterId ?? CapRouterIds.local,
+    }
+  }).install(async ({ ctx, mode }) => {
+    const initArgs =
+      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+    return []
+  })
 }
 
 CapRouter.id = CapRouterIds
@@ -136,33 +147,40 @@ CapRouter.scripts = {}
 
 //////////////////////////
 
-const CapRouterTestIds = {
-  local: "lhtux-ciaaa-aaaag-qakpa-cai",
-  ic: "lhtux-ciaaa-aaaag-qakpa-cai",
-}
+// const CapRouterTestIds = {
+//   local: "lhtux-ciaaa-aaaag-qakpa-cai",
+//   ic: "lhtux-ciaaa-aaaag-qakpa-cai",
+// }
 
-type CapRouterTestInitArgs = {}
+// type CapRouterTestInitArgs = {}
 
-export const CapRouterTest = (args: CapRouterTestInitArgs): ExtendedCanisterConfiguration => {
-  return {
-    type: "custom",
-    candid: path.resolve(__dirname, "./cap/cap-router-test/cap-router-test.did"),
-    wasm: path.resolve(__dirname, "./cap/cap-router-test/cap-router-test.wasm"),
-    build: "",
-    // remote: {
-    //   id: CapRouterTestIds,
-    // },
-    dfx_js: {
-      canister_id: CapRouterTestIds,
-      args: [],
-    },
-  }
-}
+// export const CapRouterTest = (args: CapRouterTestInitArgs): ExtendedCanisterConfiguration => {
+//   return {
+//     type: "custom",
+//     candid: path.resolve(__dirname, "./cap/cap-router-test/cap-router-test.did"),
+//     wasm: path.resolve(__dirname, "./cap/cap-router-test/cap-router-test.wasm"),
+//     build: "",
+//     // remote: {
+//     //   id: CapRouterTestIds,
+//     // },
+//     dfx_js: {
+//       canister_id: CapRouterTestIds,
+//       args: [],
+//     },
+//   }
+// }
 
-CapRouterTest.id = CapRouterTestIds
+// CapRouterTest.id = CapRouterTestIds
 
-CapRouterTest.idlFactory = capRouterTestIdlFactory
+// CapRouterTest.idlFactory = capRouterTestIdlFactory
 
-CapRouterTest.scripts = {}
+// CapRouterTest.scripts = {}
 
-export type CapRouterTestActor = import("@dfinity/agent").ActorSubclass<import("./cap-router-test/types")._SERVICE>
+// export type CapRouterTestActor = import("@dfinity/agent").ActorSubclass<import("./cap-router-test/types")._SERVICE>
+
+
+export const Cap = scope("Cap", {
+  bucket: CapBucket({}),
+  root: CapRoot({}),
+  router: CapRouter({}),
+})

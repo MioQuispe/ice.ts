@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "jsx": "react-jsx",
     "target": "esnext",
     "lib": [
       "DOM",
@@ -21,8 +22,8 @@
     "noImplicitAny": true,
     "forceConsistentCasingInFileNames": true,
     "exactOptionalPropertyTypes": true,
-    "module": "esnext",
-    "moduleResolution": "node",
+    "module": "Node16",
+    "moduleResolution": "node16",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "baseUrl": ".",
@@ -36,7 +37,12 @@
     ]
   },
   "include": [
-    "src/index.ts"
+    "src/index.ts",
+    "src/cli/**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules/**/*",
+    "dist/**/*",
   ],
   "ts-node": {
     "transpileOnly": true,
