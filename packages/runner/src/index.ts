@@ -1,7 +1,6 @@
-import { spawn as childSpawn } from "node:child_process"
 import { IDL } from "@dfinity/candid"
 import { Principal } from "@dfinity/principal"
-import type { DfxJson } from "./schema.js"
+import type { DfxJson } from "./types/schema.js"
 import type {
   AssetSpecificProperties,
   CanisterConfiguration,
@@ -11,7 +10,7 @@ import type {
   MotokoSpecificProperties,
   Profile,
   RustSpecificProperties,
-} from "./schema.js"
+} from "./types/schema.js"
 import fs from "node:fs"
 import {
   Actor,
@@ -25,7 +24,7 @@ import { idlFactory } from "./canisters/management_new/management.did.js"
 import { Ed25519KeyIdentity } from "@dfinity/identity"
 import * as os from "node:os"
 import find from "find-process"
-import { principalToAccountId } from "./utils"
+import { principalToAccountId } from "./utils/utils.js"
 import {
   Effect,
   Data,
@@ -39,10 +38,14 @@ import {
   Sink,
   Match,
   Chunk,
+  Cache,
   type Runtime,
+  Option,
+  LogLevel,
+  Duration,
 } from "effect"
 import { Schema, ParseResult } from "@effect/schema"
-import { NodeContext, NodeRuntime } from "@effect/platform-node"
+import { NodeContext, NodeFileSystem, NodeRuntime } from "@effect/platform-node"
 import {
   Path,
   HttpClient,
@@ -50,28 +53,40 @@ import {
   Command,
   CommandExecutor,
   Terminal,
+  PlatformLogger,
 } from "@effect/platform"
 // TODO: create abstraction after pic-js is done
 // import { ICService } from "./services/ic.js"
 import { DfxService } from "./services/dfx.js"
-import type { Task, Scope } from "./types.js"
+import type {
+  Task,
+  Scope,
+  BuilderResult,
+  TaskTree,
+  TaskTreeNode,
+  CrystalContext,
+} from "./types/types.js"
 import { Moc } from "./services/moc.js"
+import { runCli } from "./cli/index.js"
+import { TaskRegistry } from "./services/taskRegistry.js"
 
-export * from "./builder.js"
+export * from "./core/builder.js"
+// export * from "./plugins/withContext.js"
+
 import * as didc from "didc_js"
+import { Tags } from "./core/builder.js"
+export const configMap = new Map([
+  ["APP_DIR", fs.realpathSync(process.cwd())],
+  ["DFX_CONFIG_FILENAME", "crystal.config.ts"],
+  ["CANISTER_IDS_FILENAME", "canister_ids.json"],
+  // TODO: IC_PORT / IC_HOST
+  ["DFX_PORT", "8080"],
+  ["DFX_HOST", "http://0.0.0.0"],
+  ["REPLICA_PORT", "8080"],
+])
 
 export const configLayer = Layer.setConfigProvider(
-  ConfigProvider.fromMap(
-    new Map([
-      ["APP_DIR", fs.realpathSync(process.cwd())],
-      ["DFX_CONFIG_FILENAME", "crystal.config.ts"],
-      ["CANISTER_IDS_FILENAME", "canister_ids.json"],
-      // TODO: IC_PORT / IC_HOST
-      ["DFX_PORT", "8080"],
-      ["DFX_HOST", "http://0.0.0.0"],
-      ["REPLICA_PORT", "8080"],
-    ]),
-  ),
+  ConfigProvider.fromMap(configMap),
 )
 
 export class DeploymentError extends Data.TaggedError("DeploymentError")<{
@@ -82,84 +97,17 @@ export class ConfigError extends Data.TaggedError("ConfigError")<{
   message: string
 }> {}
 
-const getDfxPort = async (): Promise<number> => {
-  return new Promise((resolve, reject) => {
-    childSpawn("dfx", ["info", "webserver-port"], {
-      stdio: ["ignore", "pipe", "ignore"],
-    })
-      .stdout.on("data", (data) => {
-        const port = Number.parseInt(data.toString().trim(), 10)
-        if (Number.isNaN(port)) {
-          reject(new Error("Failed to parse DFX webserver port"))
-        } else {
-          resolve(port)
-        }
-      })
-      .on("error", (err) => {
-        reject(new Error(`Failed to get DFX webserver port: ${err.message}`))
-      })
-  })
-}
-
 type ManagementActor = import("@dfinity/agent").ActorSubclass<
   import("./canisters/management_new/management.types.js")._SERVICE
 >
-
-// TODO: change
-export type TaskContext = {
-  runTask: <T>(taskName: string) => Promise<T>
-  // TODO: identities & other context. agent, etc.
-  // users: {
-  //   [name: string]: {
-  //     identity: Identity
-  //     agent: HttpAgent
-  //     principal: Principal
-  //     accountId: string
-  //   }
-  // }
-
-  // config: DfxConfig
-
-  // [K in keyof DfxTs["canisters"]]: {
-  //   // actor: ActorSubclass<C[K]["idlFactory"]>
-  //   // canisterId: C[K]["canisterId"]
-  //   canisterId: string
-  //   actor: ActorSubclass<any>
-  //   // setControllers: (controllers: Array<string>) => Promise<void>,
-  //   // addControllers: (controllers: Array<string>) => Promise<void>
-  // }
-}
-
-// TODO: Service? can we override compile / build / install?
-// Or many that comes from canister which sets it in the runtime?
-// Has to be composable
-export type CrystalRuntime = {
-  agent: HttpAgent
-  identity: Identity
-  users: {
-    [key: string]: {
-      identity: Identity
-      principal: Principal
-      accountId: string
-    }
-  }
-  // fs: FileSystem
-  // path: Path
-  dfxConfig: DfxJson
-  runTask: <T>(taskName: string) => Promise<T>
-  /**
-   * Mapping between network names and their configurations. Networks 'ic' and 'local' are implicitly defined.
-   */
-  networks?: {
-    [k: string]: ConfigNetwork
-  } | null
-  profile?: Profile | null
-}
 
 export class TaskCtx extends Context.Tag("TaskCtx")<
   TaskCtx,
   {
     readonly network: string
+    networks?: {
+      [k: string]: ConfigNetwork
+    } | null
     readonly subnet: string
     readonly agent: HttpAgent
     readonly identity: SignIdentity
@@ -169,9 +117,10 @@ export class TaskCtx extends Context.Tag("TaskCtx")<
         agent: HttpAgent
         principal: Principal
         accountId: string
+        // TODO: neurons?
       }
     }
-    readonly runTask: (task: Task) => Effect.Effect<void, never, never>
+    readonly runTask: typeof runTask
   }
 >() {
   static Live = Layer.effect(
@@ -181,20 +130,22 @@ export class TaskCtx extends Context.Tag("TaskCtx")<
       const { agent, identity } = yield* DfxService
       // const crystalConfig = yield* getCrystalConfig()
       // TODO: get layers or runtime? we need access to the tasks dependencies here
+
+      // const runTask = <A = any, E = any, R = any>(
+      //   task: Task,
+      // ): Effect.Effect<A, E, R> => {
+      //   return Effect.gen(function* () {
+      //     // 1. Execute Dependencies
+      //   })
+      // }
+
       return {
         // TODO: get from config?
         network: "local",
         subnet: "system",
         agent,
         identity,
-        runTask: (task: Task) =>
-          Effect.gen(function* () {
-            // TODO: run task
-            // TODO: pass in layers?
-            // yield* runtime.runPromise(task.effect)
-            // yield* task.effect
-            Effect.log("running task")
-          }),
+        runTask,
         users: {
           default: {
             identity,
@@ -210,58 +161,10 @@ export class TaskCtx extends Context.Tag("TaskCtx")<
 }
 export type TaskCtxShape = Context.Tag.Service<typeof TaskCtx>
 
-// TODO: hmmmmm?
-// export type ExtendedCanisterConfiguration = (
-//   | CanisterConfiguration
-//   | RustSpecificProperties
-//   | MotokoSpecificProperties
-//   | AssetSpecificProperties
-// ) & {
-//   _metadata?: { standard?: string }
-//   dfx_js?: {
-//     args?: any[]
-//     canister_id?: {
-//       [network: string]: string
-//     }
-//   }
-// }
-
+// TODO: just one place to define this
 export type Opt<T> = [T] | []
 export const Opt = <T>(value?: T): Opt<T> => {
   return value || value === 0 ? [value] : []
-}
-
-export const getAccountId = (principal: string) =>
-  // TODO: get straight from ledger canister?
-  Effect.gen(function* (_) {
-    const command = Command.make(
-      "dfx",
-      "ledger",
-      "account-id",
-      "--of-principal",
-      principal,
-    )
-    const result = yield* Command.string(command)
-    return result.trim()
-  })
-
-export const getCurrentIdentityEffect = Effect.gen(function* () {
-  const command = Command.make("dfx", "identity", "whoami")
-  const result = yield* Command.string(command)
-  return result.trim()
-})
-
-export const getCurrentIdentity = Effect.gen(function* () {
-  // TODO: pass in dfx
-  const IC = yield* DfxService
-  const identity = yield* IC.getIdentity()
-  return identity
-})
-
-enum InstallMode {
-  install,
-  reinstall,
-  upgrade,
 }
 
 export const getCanisterInfo = (canisterId: string) =>
@@ -295,10 +198,9 @@ export const getCanisterInfo = (canisterId: string) =>
     return canisterInfo
   })
 
-export const createCanister = (canisterId: string) =>
+export const createCanister = (canisterId?: string) =>
   Effect.gen(function* () {
     const { mgmt, identity } = yield* DfxService
-    // TODO: canister needs to be created if it doesn't exist
     const createResult = yield* Effect.tryPromise({
       try: () =>
         mgmt.provisional_create_canister_with_cycles({
@@ -311,11 +213,14 @@ export const createCanister = (canisterId: string) =>
             },
           ],
           amount: Opt<bigint>(1_000_000_000_000n),
+          // TODO: dont generate here. because it doesnt work on mainnet
+          // instead expose the canisterId in the context for tasks which require it
+          // could be through dependencies
           specified_id: Opt<Principal>(
             canisterId ? Principal.fromText(canisterId) : undefined,
           ),
           sender_canister_version: Opt<bigint>(0n),
-        }),
+        }) as Promise<{ canister_id: Principal }>,
       catch: (error) =>
         new DeploymentError({
           message: `Failed to create canister: ${error instanceof Error ? error.message : String(error)}`,
@@ -324,19 +229,18 @@ export const createCanister = (canisterId: string) =>
     return createResult.canister_id.toText()
   })
 
-export const generateDIDJS = (canisterId: string, didPath: string) =>
+export const generateDIDJS = (canisterName: string, didPath: string) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const appDir = yield* Config.string("APP_DIR")
     const didString = yield* fs.readFileString(didPath)
     const didJSString = didc.did_to_js(didString)
-    // TODO: save it to file?
     const didJSPath = path.join(
       appDir,
       ".artifacts",
-      canisterId,
-      `${canisterId}.did.js`,
+      canisterName,
+      `${canisterName}.did.js`,
     )
     yield* fs.writeFile(didJSPath, Buffer.from(didJSString ?? "")) // TODO: check
 
@@ -382,6 +286,10 @@ export const installCanister = ({
     const wasm = Array.from(new Uint8Array(wasmContent))
 
     // Install code
+    yield* Effect.logInfo("Installing code", {
+      canisterId,
+      wasmPath,
+    })
     yield* Effect.tryPromise({
       try: () =>
         mgmt.install_code({
@@ -397,6 +305,7 @@ export const installCanister = ({
           message: `Failed to install code: ${error instanceof Error ? error.message : String(error)}`,
         }),
     })
+    yield* Effect.logInfo("Code installed", { canisterId })
 
     Effect.log(`Success with wasm bytes length: ${wasm.length}`)
     Effect.log(`Installed code for ${canisterId}`)
@@ -417,17 +326,6 @@ export const compileMotokoCanister = (
       `Successfully compiled ${src} ${canisterName} outputFilePath: ${wasmOutputFilePath}`,
     )
     return wasmOutputFilePath
-  })
-
-export const generateCandidJS = (canisterName: string) =>
-  Effect.gen(function* () {
-    const path = yield* Path.Path
-    const appDir = yield* Config.string("APP_DIR")
-    const candidDir = path.join(appDir, ".artifacts")
-    // TODO: generate candid as well
-    // didc.did_to_js()
-    // const candidOutputFilePath = path.join(candidDir, `${canisterName}.did`)
-    // yield* generateDeclarations(candidOutputFilePath)
   })
 
 export const writeCanisterIds = (canisterName: string, canisterId: string) =>
@@ -464,108 +362,124 @@ export const writeCanisterIds = (canisterName: string, canisterId: string) =>
     )
   })
 
-// TODO: Do we need this? or just call the tasks in sequence?
-// export const deployCanister = (
-//   canisterName: string,
-//   specifiedCanisterId: string,
-//   didPath: string,
-//   wasmPath: string,
-//   args: any[],
-// ) =>
-//   Effect.gen(function* () {
-//     const { agent, identity } = yield* DfxService
-//     const fs = yield* FileSystem.FileSystem
-//     const path = yield* Path.Path
+export const readCanisterIds = () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const appDir = yield* Config.string("APP_DIR")
+    const canisterIdsPath = path.join(appDir, "canister_ids.json")
+    const content = yield* fs.readFileString(canisterIdsPath)
+    return JSON.parse(content)
+  })
 
-//     // Check if canister exists and get its status
-//     let canisterId = specifiedCanisterId
-//     const canisterInfo = specifiedCanisterId
-//       ? yield* getCanisterInfo(specifiedCanisterId)
-//       : { status: "not_installed" }
+export class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
+  path: string[]
+  reason: string
+}> {}
 
-//     // Create new canister only if needed
-//     if (canisterInfo.status === "not_installed") {
-//       canisterId = yield* createCanister(specifiedCanisterId)
-//       Effect.log(`Created ${canisterName} with canister_id:`, canisterId)
-//     }
-
-//     const encodedArgs = encodeArgs(args, didPath)
-//     yield* installCanister({ encodedArgs, canisterId, wasmPath })
-//     // Import and verify canister DID
-//     yield* writeCanisterIds(canisterName, canisterId)
-
-//     // Update canister_ids.json
-//     return canisterId
-//   })
-
-type BuilderResult = {
-  _scope: Scope
-}
-
-// TODO: theres duplication now. we should have one place to define this, like in types.ts
-const matcher = Match.type<Task | Scope | BuilderResult>().pipe(
-  Match.when(
-    {
-      effect: Match.any,
-      description: Match.any,
-      tags: Match.any,
-    },
-    (task) => task,
-  ),
-  Match.when(
-    {
-      children: Match.any,
-      tags: Match.any,
-      description: Match.any,
-    },
-    (scope) => scope,
-  ),
-  Match.when(
-    {
-      _scope: Match.any,
-    },
-    (builderResult) => builderResult._scope,
-  ),
-  Match.exhaustive,
-)
-
-export const getTask = (
-  obj: Scope | Task,
+export const findTaskInTaskTree = (
+  obj: TaskTree,
   keys: Array<string>,
-): Task | undefined => {
-  // TODO: throw instead?
-  // TODO: pass in key as well?
-  const val = matcher(obj)
-  if (!val) {
-    return undefined
-  }
-  return Match.value(val).pipe(
-    Match.when({ children: Match.any }, (scope) =>
-      getTask(scope.children[keys[0]], keys.slice(1)),
-    ),
-    Match.when({ effect: Match.any }, (task) => task as Task),
-    Match.exhaustive,
-  )
+): Effect.Effect<Task, TaskNotFoundError> => {
+  const firstKey = keys[0]
+  const rest = keys.slice(1)
+  let currentNode = obj[firstKey]
+  return Effect.gen(function* () {
+    for (const key of rest) {
+      // TODO: this becomes undefined
+      const node = Match.value(currentNode).pipe(
+        Match.tag("task", (task): Task => task),
+        Match.tag("scope", (scope): Scope => scope),
+        Match.tag("builder", (result): Scope => result._scope),
+        Match.option,
+      )
+
+      if (Option.isNone(node)) {
+        return yield* Effect.fail(
+          new TaskNotFoundError({
+            path: keys,
+            reason: `Invalid node type encountered at key "${key}"`,
+          }),
+        )
+      }
+
+      const isLastKey = keys.indexOf(key) === keys.length - 1
+
+      if (node.value._tag === "scope") {
+        const nextNode = node.value.children[key]
+        if (!nextNode) {
+          return yield* Effect.fail(
+            new TaskNotFoundError({
+              path: keys,
+              reason: `No child found for key "${key}" in scope`,
+            }),
+          )
+        }
+        if (isLastKey && nextNode._tag === "task") {
+          return nextNode
+        }
+        currentNode = nextNode
+      } else if (node.value._tag === "task") {
+        if (!isLastKey) {
+          return yield* Effect.fail(
+            new TaskNotFoundError({
+              path: keys,
+              reason: `Found task before end of path at key "${key}"`,
+            }),
+          )
+        }
+        return node.value
+      } else {
+        return yield* Effect.fail(
+          new TaskNotFoundError({
+            path: keys,
+            reason: `Unexpected node type "${node.value}" at key "${key}"`,
+          }),
+        )
+      }
+    }
+
+    return yield* Effect.fail(
+      new TaskNotFoundError({
+        path: keys,
+        reason: "Path traversal completed without finding a task",
+      }),
+    )
+  })
 }
 
 // TODO: more accurate type
 type TaskFullName = string
 // TODO: figure out if multiple tasks are needed
-export const getTaskEffect = (taskPathString: TaskFullName) =>
+export const getTaskByPath = (taskPathString: TaskFullName) =>
   Effect.gen(function* () {
     const taskPath: string[] = taskPathString.split(":")
-    const firstKey = taskPath[0]
-    const rest = taskPath.slice(1)
     const crystalConfig = yield* getCrystalConfig()
-    // TODO: only works for scope, not task currently?
-    const task = getTask(crystalConfig[firstKey], rest)
-    if (!task) {
-      return yield* Effect.fail(new Error(`Task ${taskPathString} not found`))
-    }
-    // TODO: just store it in the task?
-    const scope = crystalConfig.crystal
-    return { task, scope }
+    const task = yield* findTaskInTaskTree(crystalConfig, taskPath)
+    return { task, crystalConfig: crystalConfig.crystal }
   })
+
+// const fileLogger = Logger.logfmtLogger.pipe(
+//   PlatformLogger.toFile("logs/crystal.log", { flag: "a" }),
+// )
+// const LoggerLive = Logger.replaceScoped(Logger.defaultLogger, fileLogger).pipe(
+//   Layer.provide(NodeFileSystem.layer)
+// )
+// const fileLogger = Logger.logfmtLogger.pipe(
+//   PlatformLogger.toFile("logs/crystal.log"),
+// )
+// const LoggerLive = Logger.addScoped(fileLogger).pipe(
+//   Layer.provide(NodeFileSystem.layer),
+// )
+// Convert the fileLogger Effect into a Layer
+// const FileLoggerLayer = Logger.zip(fileLogger)
+
+// const mainLogger = Logger.zip(Logger.prettyLogger(), LoggerLive)
+
+const customLogger = Logger.make((ctx) => {
+  // console.log("attempting to serialize:", ctx)
+  fs.appendFileSync("logs/crystal.log", `${JSON.stringify(ctx, null, 2)}\n`)
+})
 
 // TODO: layer memoization should work? do we need this?
 const DfxLayer = DfxService.Live.pipe(
@@ -573,9 +487,10 @@ const DfxLayer = DfxService.Live.pipe(
   Layer.provide(configLayer),
 )
 // TODO: construct later? or this is just defaults
-const DefaultsLayer = Layer.mergeAll(
+export const DefaultsLayer = Layer.mergeAll(
   NodeContext.layer,
   DfxLayer,
+  TaskRegistry.Live,
   // TODO: do not depend on DfxService directly?
   TaskCtx.Live.pipe(
     // Layer.provide(DfxService.Live),
@@ -584,37 +499,412 @@ const DefaultsLayer = Layer.mergeAll(
   ),
   Moc.Live.pipe(Layer.provide(NodeContext.layer)),
   configLayer,
+  Logger.pretty,
+  // Logger.add(customLogger),
+  // Layer.effect(fileLogger),
+  // LoggerLive,
+  // fileLogger,
 )
-const runtime = ManagedRuntime.make(DefaultsLayer)
+export const runtime = ManagedRuntime.make(DefaultsLayer)
 
-export const runCLI = async () => {
-  // TODO: we need to run setup first!
-  // TODO: should it have the runtime?
-  if (process.argv[2] === "run") {
-    const taskPath = process.argv.slice(3).join(":")
-    const task = Effect.gen(function* () {
-      const { task } = yield* getTaskEffect(taskPath)
-      return task
-    })
-    // TODO: run above
-    const result = await runtime.runPromise(task)
-    // const result = await runtime.runPromise(
-    //   Effect.gen(function* () {
-    //     // TODO: use effect-platform / cmd / cli
-    //     const { task, scope } = yield* getTaskEffect(taskPath)
-    //     // TODO: pass in Layers?
-    //     // const result = yield* task.effect
-    //     yield* Effect.provideLayer(task.effect, DefaultsLayer)
-    //     // Effect.fail(new Error("Invalid command"))
-    //   }),
-    // )
-    console.log(result)
+// export const runCLI = async () => {
+//   const result = await runtime.runPromise(cliProgram)
+//   console.log(result)
+// }
+
+export type LayerRequirements<L extends Layer.Layer<any, any, any>> =
+  L extends Layer.Layer<infer R, any, any> ? R : never
+
+// export const DependencyResultsArray = Context.Tag<DependencyResultsArray, any[]>("DependencyResultsArray") // Tag for the array
+// export type DependencyResultsArrayShape = Context.Tag.Service<typeof DependencyResultsArray>
+
+// class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
+//   message: string
+// }> {}
+
+// TODO: do we need to get by id? will symbol work?
+export const getTaskPathById = (id: Symbol) =>
+  Effect.gen(function* () {
+    // TODO: initialize with all tasks
+    const crystalConfig = yield* getCrystalConfig()
+    const result = yield* filterTasks(
+      crystalConfig,
+      (node) => node._tag === "task" && node.id === id,
+    )
+    // TODO: use effect Option?
+    if (result?.[0]) {
+      return result[0].path.join(":")
+    }
+    // return undefined
+    return yield* Effect.fail(
+      new TaskNotFoundError({
+        reason: "Task not found by id",
+        path: [""],
+      }),
+    )
+  })
+
+export const runTaskByPath = (taskPath: string) =>
+  Effect.gen(function* () {
+    const { task, crystalConfig } = yield* getTaskByPath(taskPath)
+    yield* runTask(task)
+  })
+
+export class DependencyResults extends Context.Tag("DependencyResults")<
+  DependencyResults,
+  {
+    readonly dependencies: any[]
   }
+>() {}
+
+export class TaskInfo extends Context.Tag("TaskInfo")<
+  TaskInfo,
+  {
+    readonly taskPath: string
+  }
+>() {}
+
+class RunTaskError extends Data.TaggedError("RunTaskError")<{
+  message: string
+}> {}
+
+// Type to extract success types from an array of Tasks
+type DependencySuccessTypes<Dependencies extends Task<any, any, any>[]> = {
+  [K in keyof Dependencies]: Dependencies[K] extends Task<infer A, any, any>
+    ? A
+    : never
 }
 
+export interface RunTaskOptions {
+  forceRun?: boolean
+}
+
+// // TODO: use Effect cache or kv store?
+// // TODO: use taskPath as cache key? no symbol
+// const taskMap = new Map<symbol, Task>()
+// const taskCache = Cache.make<[string, string], unknown>({
+//   capacity: 100_000,
+//   timeToLive: Duration.infinity,
+//   // lookup: (key) => Effect.succeed(taskMap.get(key))
+//   lookup: ([cacheKey, taskPath]) =>
+//     Effect.gen(function* () {
+//       const { task } = yield* getTaskByPath(taskPath)
+//       return yield* runTask(task)
+//     }),
+// })
+
+// export const runTaskCached = <A, E, R, I>(
+//   task: Task<A, E, R, I>,
+//   options: RunTaskOptions = { forceRun: false },
+// ) => {
+//   return Effect.gen(function* () {
+//     const taskPath = yield* getTaskPathById(task.id)
+//     const cacheKey = task.computeCacheKey ? task.computeCacheKey(task) : taskPath
+//     const cache = yield* taskCache
+//     return yield* cache.get([cacheKey, taskPath])
+//   })
+// }
+export const runTask = <A, E, R, I>(
+  task: Task<A, E, R, I>,
+  options: RunTaskOptions = { forceRun: false },
+): Effect.Effect<A, unknown, unknown> => {
+  return Effect.gen(function* () {
+    const cache = yield* TaskRegistry
+
+    // // const cacheKey = task.id
+    // // 1. If there is already a cached result, return it immediately.
+    // if (!options.forceRun && cache.contains(cacheKey)) {
+    //   return yield* cache.get(cacheKey)
+    // }
+    // type DepsSuccessTypes = DependencySuccessTypes<T["dependencies"]>
+    const dependencyResults = []
+    for (const dependency of task.dependencies) {
+      const dependencyResult = yield* runTask(dependency)
+      dependencyResults.push(dependencyResult)
+    }
+
+    const taskLayer = Layer.mergeAll(
+      // configLayer,
+      Layer.setConfigProvider(
+        ConfigProvider.fromMap(new Map([...Array.from(configMap.entries())])),
+      ),
+    )
+    const taskPath = yield* getTaskPathById(task.id)
+
+
+    // look here if cacheKey finds something. only after dependencies are run first
+    // TODO: do we need access to dependencyResults inside the computeCacheKey?
+    const cacheKey = `${task.computeCacheKey ? task.computeCacheKey(task) : taskPath}:${taskPath}`
+    // TODO: add taskPath
+    const isCached = yield* cache.has(cacheKey)
+    if (isCached && !options.forceRun) {
+      return (yield* cache.get(cacheKey)) as A
+    }
+
+    const result = yield* task.effect.pipe(
+      Effect.provide(taskLayer),
+      Effect.provide(
+        Layer.succeed(TaskInfo, {
+          taskPath,
+          // TODO: provide more?
+        }),
+      ),
+      Effect.provide(
+        Layer.succeed(DependencyResults, { dependencies: dependencyResults }),
+      ),
+    )
+    // TODO: how do handle tasks which return nothing?
+    yield* cache.set(cacheKey, result)
+
+    return result
+  })
+}
+
+const filterTasks = (
+  taskTree: TaskTree,
+  predicate: (task: TaskTreeNode) => boolean,
+  path: string[] = [],
+): Effect.Effect<Array<{ task: TaskTreeNode; path: string[] }>> =>
+  Effect.gen(function* () {
+    const matchingNodes: Array<{ task: TaskTreeNode; path: string[] }> = []
+    for (const key of Object.keys(taskTree)) {
+      const currentNode = taskTree[key]
+      const node = Match.value(currentNode).pipe(
+        Match.tag("task", (task): Task => task),
+        Match.tag("scope", (scope): Scope => scope),
+        // TODO: should we transform the whole tree once, and remove builders?
+        Match.tag("builder", (result): Scope => result._scope),
+        Match.option,
+      )
+      if (Option.isSome(node)) {
+        const fullPath = [...path, key]
+        if (predicate(node.value)) {
+          matchingNodes.push({ task: node.value, path: fullPath })
+        }
+        if (node.value._tag === "scope") {
+          const children = Object.keys(node.value.children)
+          // TODO: call itself recursively
+          const filteredChildren = yield* filterTasks(
+            node.value.children,
+            predicate,
+            fullPath,
+          )
+          matchingNodes.push(...filteredChildren)
+        }
+      }
+    }
+    return matchingNodes
+  })
+
+// const findTasksByTags = (config: CrystalConfigFile, tags: string[]) =>
+//   Effect.gen(function* () {
+//     return matchingTasks
+//   })
+
+export const canistersDeployTask = () =>
+  Effect.gen(function* () {
+    yield* Effect.log("Running canisters:deploy task")
+    const crystalConfig = yield* getCrystalConfig()
+    const taskTree = Object.fromEntries(
+      Object.entries(crystalConfig).filter(([key]) => key !== "default"),
+    ) as TaskTree
+    const tasksWithPath = yield* filterTasks(
+      taskTree,
+      (node) =>
+        node._tag === "task" &&
+        node.tags.includes(Tags.CANISTER) &&
+        node.tags.includes(Tags.DEPLOY),
+    )
+    for (const { task, path } of tasksWithPath) {
+      yield* Effect.log(`Running task ${path.join(":")}`)
+      yield* runTaskByPath(path.join(":"))
+    }
+  })
+
+export const canistersCreateTask = () =>
+  Effect.gen(function* () {
+    yield* Effect.log("Running canisters:create task")
+    const crystalConfig = yield* getCrystalConfig()
+    const taskTree = Object.fromEntries(
+      Object.entries(crystalConfig).filter(([key]) => key !== "default"),
+    ) as TaskTree
+    const tasksWithPath = yield* filterTasks(
+      taskTree,
+      (node) =>
+        node._tag === "task" &&
+        node.tags.includes(Tags.CANISTER) &&
+        node.tags.includes(Tags.CREATE),
+    )
+    for (const { task, path } of tasksWithPath) {
+      // TODO: parallelize? topological sort?
+      yield* Effect.log(`Running task ${path.join(":")}`)
+      yield* runTaskByPath(path.join(":"))
+    }
+  })
+
+export const canistersBuildTask = () =>
+  Effect.gen(function* () {
+    yield* Effect.log("Running canisters:build task")
+    const crystalConfig = yield* getCrystalConfig()
+    const taskTree = Object.fromEntries(
+      Object.entries(crystalConfig).filter(([key]) => key !== "default"),
+    ) as TaskTree
+    const tasksWithPath = yield* filterTasks(
+      taskTree,
+      (node) =>
+        node._tag === "task" &&
+        node.tags.includes(Tags.CANISTER) &&
+        node.tags.includes(Tags.BUILD),
+    )
+    for (const { task, path } of tasksWithPath) {
+      // TODO: parallelize? topological sort?
+      yield* Effect.log(`Running task ${path.join(":")}`)
+      yield* runTaskByPath(path.join(":"))
+    }
+  })
+
+export const canistersBindingsTask = () =>
+  Effect.gen(function* () {
+    yield* Effect.log("Running canisters:bindings task")
+    const crystalConfig = yield* getCrystalConfig()
+    const taskTree = Object.fromEntries(
+      Object.entries(crystalConfig).filter(([key]) => key !== "default"),
+    ) as TaskTree
+    const tasksWithPath = yield* filterTasks(
+      taskTree,
+      (node) =>
+        node._tag === "task" &&
+        node.tags.includes(Tags.CANISTER) &&
+        node.tags.includes(Tags.BINDINGS),
+    )
+    for (const { task, path } of tasksWithPath) {
+      // TODO: parallelize? topological sort?
+      yield* Effect.log(`Running task ${path.join(":")}`)
+      yield* runTaskByPath(path.join(":"))
+    }
+  })
+
+export const canistersInstallTask = () =>
+  Effect.gen(function* () {
+    yield* Effect.log("Running canisters:install task")
+    const crystalConfig = yield* getCrystalConfig()
+    const taskTree = Object.fromEntries(
+      Object.entries(crystalConfig).filter(([key]) => key !== "default"),
+    ) as TaskTree
+    const tasksWithPath = yield* filterTasks(
+      taskTree,
+      (node) =>
+        node._tag === "task" &&
+        node.tags.includes(Tags.CANISTER) &&
+        node.tags.includes(Tags.INSTALL),
+    )
+    for (const { task, path } of tasksWithPath) {
+      yield* Effect.log(`Running task ${path.join(":")}`)
+      yield* runTaskByPath(path.join(":"))
+    }
+  })
+
+export const canistersStatusTask = () =>
+  Effect.gen(function* () {
+    yield* Effect.log("Running canisters:status task")
+    const canisterIdsMap = yield* getCanisterIds
+    const dfx = yield* DfxService
+    // TODO: in parallel? are these tasks?
+    const canisterStatusesEffects = Object.keys(canisterIdsMap).map(
+      (canisterName) =>
+        Effect.gen(function* () {
+          const network = "local"
+          const canisterId = canisterIdsMap[canisterName]
+          const status = yield* Effect.tryPromise({
+            try: () =>
+              dfx.mgmt.canister_status({
+                canister_id: Principal.from(canisterId[network]),
+              }),
+            catch: (error) =>
+              new Error(
+                `Failed to get canister status for ${canisterName}: ${error}`,
+              ),
+          })
+          return { canisterName, canisterId: canisterId[network], status }
+        }),
+    )
+
+    const canisterStatuses = yield* Effect.all(canisterStatusesEffects, {
+      concurrency: "unbounded",
+    })
+
+    // TODO: print module hash
+    const statusLog = canisterStatuses
+      .map(
+        ({ canisterName, canisterId, status }) => `
+  ${canisterName} status:
+      ID: ${canisterId}
+      Status: ${Object.keys(status.status)[0]}
+      Memory Size: ${status.memory_size}
+      Cycles: ${status.cycles}
+      Idle Cycles Burned Per Day: ${status.idle_cycles_burned_per_day}
+      Module Hash: ${status.module_hash.length > 0 ? "Present" : "Not Present"}`,
+      )
+      .join("\n")
+
+    yield* Effect.log(statusLog)
+  })
+
+export const listTasksTask = () =>
+  Effect.gen(function* () {
+    const crystalConfig = yield* getCrystalConfig()
+    const taskTree = Object.fromEntries(
+      Object.entries(crystalConfig).filter(([key]) => key !== "default"),
+    ) as TaskTree
+    const tasksWithPath = yield* filterTasks(
+      taskTree,
+      (node) => node._tag === "task",
+    )
+
+    // TODO: format nicely
+    const taskList = tasksWithPath.map(({ task, path }) => {
+      const taskPath = path.join(":") // Use colon to represent hierarchy
+      return `  ${taskPath}` // Indent for better readability
+    })
+
+    const formattedTaskList = ["Available tasks:", ...taskList].join("\n")
+
+    yield* Effect.log(formattedTaskList)
+  })
+
+export const listCanistersTask = () =>
+  Effect.gen(function* () {
+    yield* Effect.log("Running list canisters task")
+    const crystalConfig = yield* getCrystalConfig()
+    const taskTree = Object.fromEntries(
+      Object.entries(crystalConfig).filter(([key]) => key !== "default"),
+    ) as TaskTree
+    const tasksWithPath = yield* filterTasks(
+      taskTree,
+      (node) => node._tag === "task" && node.tags.includes(Tags.CANISTER),
+    )
+
+    // TODO: format nicely
+    const taskList = tasksWithPath.map(({ task, path }) => {
+      const taskPath = path.join(":") // Use colon to represent hierarchy
+      return `  ${taskPath}` // Indent for better readability
+    })
+
+    const formattedTaskList = ["Available canister tasks:", ...taskList].join(
+      "\n",
+    )
+
+    yield* Effect.log(formattedTaskList)
+  })
+
+export { runCli } from "./cli/index.js"
+
+// TODO: fix
+type CrystalConfig = CrystalContext
 type CrystalConfigFile = {
-  [key: string]: Scope | Task
-  crystal: Scope
+  default: CrystalContext
+} & {
+  [key: string]: TaskTreeNode
 }
 
 // TODO: types
@@ -698,73 +988,6 @@ export const createActor = <T>({
     }
   })
 
-// export const createActors = <T>({
-//   canisterList,
-//   canisterConfig,
-// }: {
-//   canisterList: Array<string>
-//   canisterConfig: CanisterConfiguration
-// }) =>
-//   Effect.gen(function* () {
-//     const actors: Record<
-//       string,
-//       Effect.Effect.Success<ReturnType<typeof createActor>>
-//     > = {}
-//     for (const canisterName of canisterList) {
-//       actors[canisterName] = yield* createActor({
-//         canisterId: canisterId,
-//         canisterDID: canisterConfig.candid,
-//       })
-//     }
-//     return actors
-//   })
-
-// TODO: this is dfx specific
-export const getIdentity = (selection?: string) =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const identityName = selection ?? (yield* getCurrentIdentityEffect)
-    const identityPath = path.join(
-      os.homedir(),
-      ".config/dfx/identity",
-      identityName,
-      "identity.pem",
-    )
-
-    const exists = yield* fs.exists(identityPath)
-    if (!exists) {
-      return yield* Effect.fail(
-        new ConfigError({ message: "Identity does not exist" }),
-      )
-    }
-
-    const pem = yield* fs.readFileString(identityPath, "utf8")
-    const cleanedPem = pem
-      .replace("-----BEGIN PRIVATE KEY-----", "")
-      .replace("-----END PRIVATE KEY-----", "")
-      .replace("\n", "")
-      .trim()
-
-    const raw = Buffer.from(cleanedPem, "base64")
-      .toString("hex")
-      .replace("3053020101300506032b657004220420", "")
-      .replace("a123032100", "")
-    const key = new Uint8Array(Buffer.from(raw, "hex"))
-    // TODO: this is not working
-    const identity = Ed25519KeyIdentity.fromSecretKey(key)
-    const principal = identity.getPrincipal().toText()
-    const accountId = yield* getAccountId(principal)
-
-    return {
-      identity,
-      pem: cleanedPem,
-      name: identityName,
-      principal,
-      accountId,
-    }
-  })
-
 const CanisterIdsSchema = Schema.Record({
   key: Schema.String,
   value: Schema.Record({
@@ -801,6 +1024,8 @@ export const getCanisterIds = Effect.gen(function* () {
 
   return canisterIds
 })
+
+export { deployTaskPlugin } from "./plugins/deploy"
 
 export const dfxDefaults: DfxJson = {
   defaults: {

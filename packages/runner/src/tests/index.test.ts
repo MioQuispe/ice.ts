@@ -18,7 +18,7 @@ import {
   transformWildcards,
   getDeps,
   dfxDefaults,
-} from './index';
+} from '../index';
 import { Repeater } from '@repeaterjs/repeater';
 import fc from 'fast-check';
 import { Arbitrary } from 'fast-check';

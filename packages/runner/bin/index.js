@@ -16,8 +16,8 @@
 //   console.log("Done")
 // })()
 
-import { getTaskEffect, runCLI } from "../dist"
+import { runCli } from "../src"
 
 ;(async () => {
-  await runCLI()
+  await runCli()
 })()

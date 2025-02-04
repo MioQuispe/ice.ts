@@ -2,6 +2,7 @@ import path from "node:path"
 import { Opt } from "../types"
 import * as url from "node:url"
 import type { ExtendedCanisterConfiguration } from "../types"
+import { customCanister, type TaskCtxShape } from "@crystal/runner"
 
 export type {
   SnsInitPayload,
@@ -24,29 +25,22 @@ const NNSDappIds = {
 
 type NNSDappInitArgs = {}
 
-export const NNSDapp = (args: NNSDappInitArgs = {}, override = {}): ExtendedCanisterConfiguration => {
+export const NNSDapp = (
+  initArgsOrFn: NNSDappInitArgs | ((ctx: TaskCtxShape) => NNSDappInitArgs) = {},
+) => {
   // TODO: init args
-  return {
-    type: "custom",
+  return customCanister<[]>({
     candid: path.resolve(__dirname, "./nns/nns-ui/nns.did"),
     wasm: path.resolve(__dirname, "./nns/nns-ui/nns.wasm"),
-    build: "",
-    // TODO: principal has to be specified
-    // remote: {
-    //   id: NNSIds,
-    // },
-    dfx_js: {
-      canister_id: NNSDappIds,
-      args: [],
-    },
-    ...override,
-  }
+    canisterId: NNSDappIds.local,
+  })
 }
 
 NNSDapp.id = NNSDappIds
 
-export type NNSDappActor = import("@dfinity/agent").ActorSubclass<import("./nns-ui/nns.did.types")._SERVICE>
-
+export type NNSDappActor = import("@dfinity/agent").ActorSubclass<
+  import("./nns-ui/nns.did.types")._SERVICE
+>
 
 const NNSSNSWasmIds = {
   local: "qaa6y-5yaaa-aaaaa-aaafa-cai",
@@ -55,29 +49,22 @@ const NNSSNSWasmIds = {
 
 type NNSSNSInitArgs = {}
 
-export const NNSSNSWasm = (args: NNSSNSInitArgs = {}, override = {}): ExtendedCanisterConfiguration => {
+export const NNSSNSWasm = (
+  initArgsOrFn: NNSSNSInitArgs | ((ctx: TaskCtxShape) => NNSSNSInitArgs) = {},
+) => {
   // TODO: init args
-  return {
-    type: "custom",
+  return customCanister<[]>({
     candid: path.resolve(__dirname, "./nns/nns-sns-wasm/nns-sns-wasm.did"),
     wasm: path.resolve(__dirname, "./nns/nns-sns-wasm/nns-sns-wasm.wasm"),
-    build: "",
-    // TODO: principal has to be specified
-    // remote: {
-    //   id: NNSIds,
-    // },
-    dfx_js: {
-      canister_id: NNSSNSWasmIds,
-      args: [],
-    },
-    ...override,
-  }
+    canisterId: NNSSNSWasmIds.local,
+  })
 }
 
 NNSSNSWasm.id = NNSSNSWasmIds
 
-export type NNSSNSWasmActor = import("@dfinity/agent").ActorSubclass<import("./nns-sns-wasm/nns-sns-wasm.types")._SERVICE>
-
+export type NNSSNSWasmActor = import("@dfinity/agent").ActorSubclass<
+  import("./nns-sns-wasm/nns-sns-wasm.types")._SERVICE
+>
 
 // nns-registry          rwlgt-iiaaa-aaaaa-aaaaa-cai
 // nns-governance        rrkah-fqaaa-aaaaa-aaaaq-cai
@@ -91,7 +78,6 @@ export type NNSSNSWasmActor = import("@dfinity/agent").ActorSubclass<import("./n
 // nns-sns-wasm          qaa6y-5yaaa-aaaaa-aaafa-cai
 // nns-ic-ckbtc-minter   qjdve-lqaaa-aaaaa-aaaeq-cai
 
-
 const NNSRootIds = {
   local: "r7inp-6aaaa-aaaaa-aaabq-cai",
   ic: "r7inp-6aaaa-aaaaa-aaabq-cai",
@@ -99,25 +85,30 @@ const NNSRootIds = {
 
 type NNSRootInitArgs = {}
 
-export const NNSRoot = (args: NNSRootInitArgs = {}, override = {}): ExtendedCanisterConfiguration => {
+export const NNSRoot = (
+  initArgsOrFn: NNSRootInitArgs | ((ctx: TaskCtxShape) => NNSRootInitArgs) = {},
+) => {
   // TODO: init args
-  return {
-    type: "custom",
+  return customCanister<[]>({
     candid: path.resolve(__dirname, "./nns/nns-root/nns-root.did"),
     wasm: path.resolve(__dirname, "./nns/nns-root/nns-root.wasm"),
-    build: "",
-    // TODO: principal has to be specified
-    // remote: {
-    //   id: NNSIds,
-    // },
-    dfx_js: {
-      canister_id: NNSRootIds,
-      args: [],
-    },
-    ...override,
-  }
+    canisterId: NNSRootIds.local,
+  })
 }
 
 NNSRoot.id = NNSRootIds
 
-export type NNSRootActor = import("@dfinity/agent").ActorSubclass<import("./nns-root/nns-root.types")._SERVICE>
+export type NNSRootActor = import("@dfinity/agent").ActorSubclass<
+  import("./nns-root/nns-root.types")._SERVICE
+>
+
+// TODO: function?
+export const NNSScope = {
+  description: "NNS tasks",
+  tags: [],
+  tasks: {
+    NNSDapp,
+    NNSSNSWasm,
+    NNSRoot,
+  },
+}

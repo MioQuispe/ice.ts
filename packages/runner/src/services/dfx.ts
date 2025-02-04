@@ -1,19 +1,85 @@
 import { Effect, Layer, Context, Data, Config } from "effect"
 import { Command, CommandExecutor, Path, FileSystem } from "@effect/platform"
 import type { Principal } from "@dfinity/principal"
-import { Actor, HttpAgent, SignIdentity, type Identity } from "@dfinity/agent"
+import { Actor, HttpAgent, type SignIdentity } from "@dfinity/agent"
 import { IDL } from "@dfinity/candid"
 import find from "find-process"
 import { idlFactory } from "../canisters/management_new/management.did.js"
 import { Ed25519KeyIdentity } from "@dfinity/identity"
-import type { DfxJson } from "../schema.js"
-import {
-  getCurrentIdentity,
-  getIdentity,
-  ConfigError,
-} from "../index.js"
-import type { ManagementActor } from "../types.js"
+import type { DfxJson } from "../types/schema.js"
+import { ConfigError } from "../index.js"
+import type { ManagementActor } from "../types/types.js"
 import type { PlatformError } from "@effect/platform/Error"
+import os from "node:os"
+
+
+export const getAccountId = (principal: string) =>
+  // TODO: get straight from ledger canister?
+  Effect.gen(function* (_) {
+    const command = Command.make(
+      "dfx",
+      "ledger",
+      "account-id",
+      "--of-principal",
+      principal,
+    )
+    const result = yield* Command.string(command)
+    return result.trim()
+  })
+
+
+export const getCurrentIdentity = Effect.gen(function* () {
+  const command = Command.make("dfx", "identity", "whoami")
+  const result = yield* Command.string(command)
+  return result.trim()
+})
+
+// TODO: this is dfx specific
+export const getIdentity = (selection?: string) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const identityName = selection ?? (yield* getCurrentIdentity)
+    // TODO: can we use effect/platform?
+    const identityPath = path.join(
+      os.homedir(),
+      ".config/dfx/identity",
+      identityName,
+      "identity.pem",
+    )
+
+    const exists = yield* fs.exists(identityPath)
+    if (!exists) {
+      return yield* Effect.fail(
+        new ConfigError({ message: "Identity does not exist" }),
+      )
+    }
+
+    const pem = yield* fs.readFileString(identityPath, "utf8")
+    const cleanedPem = pem
+      .replace("-----BEGIN PRIVATE KEY-----", "")
+      .replace("-----END PRIVATE KEY-----", "")
+      .replace("\n", "")
+      .trim()
+
+    const raw = Buffer.from(cleanedPem, "base64")
+      .toString("hex")
+      .replace("3053020101300506032b657004220420", "")
+      .replace("a123032100", "")
+    const key = new Uint8Array(Buffer.from(raw, "hex"))
+    // TODO: this is not working
+    const identity = Ed25519KeyIdentity.fromSecretKey(key)
+    const principal = identity.getPrincipal().toText()
+    const accountId = yield* getAccountId(principal)
+
+    return {
+      identity,
+      pem: cleanedPem,
+      name: identityName,
+      principal,
+      accountId,
+    }
+  })
 
 // TODO: not just dfx?
 export const dfxDefaults: DfxJson = {
@@ -127,6 +193,7 @@ export class DfxService extends Context.Tag("DfxService")<
       yield* Effect.tryPromise({
         try: () => agent.fetchRootKey(),
         catch: (err) =>
+          // TODO: the CLI should not fail because of this
           new ConfigError({
             message: `Unable to fetch root key: ${err instanceof Error ? err.message : String(err)}`,
           }),

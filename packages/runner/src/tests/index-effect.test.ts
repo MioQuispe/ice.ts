@@ -35,7 +35,7 @@ import {
   type TaskCanisterConfiguration,
   type TaskContext,
   type TaskFullName,
-} from "./index"
+} from "../index"
 import { DIP721 } from "@crystal/canisters"
 import { Actor, ActorSubclass } from "@dfinity/agent"
 
