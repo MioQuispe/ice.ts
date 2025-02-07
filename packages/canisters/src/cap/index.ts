@@ -26,6 +26,7 @@ type CapBucketInitArgs = {
   canisterId?: string
 }
 
+// TODO: how do we get the effect or shape of this task without initializing?
 export const CapBucket = (
   initArgsOrFn: CapBucketInitArgs | ((ctx: TaskCtxShape) => CapBucketInitArgs),
 ) => {
@@ -78,7 +79,9 @@ type CapRootInitArgs = {
   canisterId?: string
 }
 
-export const CapRoot = (initArgsOrFn: CapRootInitArgs | ((ctx: TaskCtxShape) => CapRootInitArgs)) => {
+export const CapRoot = (
+  initArgsOrFn: CapRootInitArgs | ((ctx: TaskCtxShape) => CapRootInitArgs),
+) => {
   // const {
   //   contract,
   //   writers,
@@ -123,21 +126,36 @@ type CapRouterInitArgs = {
   canisterId?: string
 }
 
-export const CapRouter = (initArgsOrFn: CapRouterInitArgs | ((ctx: TaskCtxShape) => CapRouterInitArgs)) => {
-  return customCanister<[]>((ctx) => {
-    const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
-    return {
-      candid: path.resolve(__dirname, "./cap/cap-router/cap-router.did"),
-      wasm: path.resolve(__dirname, "./cap/cap-router/cap-router.wasm"),
-      canisterId: initArgs.canisterId ?? CapRouterIds.local,
-    }
-  }).install(async ({ ctx, mode }) => {
-    const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
-    return []
-  })
+// Here we create the shape
+const capRouter = customCanister<[]>({
+  candid: path.resolve(__dirname, "./cap/cap-router/cap-router.did"),
+  wasm: path.resolve(__dirname, "./cap/cap-router/cap-router.wasm"),
+  canisterId: CapRouterIds.local,
+}).install(async () => [])
+
+// TODO: how do we extract the shape of this task without initializing?
+export const CapRouter = (
+  initArgsOrFn: CapRouterInitArgs | ((ctx: TaskCtxShape) => CapRouterInitArgs),
+) => {
+  return capRouter
+    .create((ctx) => {
+      const initArgs =
+        typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      return {
+        candid: path.resolve(__dirname, "./cap/cap-router/cap-router.did"),
+        wasm: path.resolve(__dirname, "./cap/cap-router/cap-router.wasm"),
+        canisterId: initArgs.canisterId ?? CapRouterIds.local,
+      }
+    })
+    .install(async ({ ctx, mode }) => {
+      const initArgs =
+        typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      return []
+    })
 }
+
+// TODO: how should this look?
+CapRouter.shape = capRouter.done()
 
 CapRouter.id = CapRouterIds
 
@@ -178,9 +196,8 @@ CapRouter.scripts = {}
 
 // export type CapRouterTestActor = import("@dfinity/agent").ActorSubclass<import("./cap-router-test/types")._SERVICE>
 
-
 export const Cap = scope("Cap", {
-  bucket: CapBucket({}),
-  root: CapRoot({}),
+  // bucket: CapBucket({}),
+  // root: CapRoot({}),
   router: CapRouter({}),
 })

@@ -8,7 +8,7 @@ export type CanisterActor = {
   getControllers: () => Promise<void>
   addControllers: (controllers: string[]) => Promise<void>
   setControllers: (controllers: string[]) => Promise<void>
-} 
+}
 
 export type ManagementActor = import("@dfinity/agent").ActorSubclass<
   import("../canisters/management_new/management.types.js")._SERVICE
@@ -40,15 +40,22 @@ export type CrystalContext = {
   }
 }
 
-export interface Task<A = unknown, E = unknown, R = unknown, I = unknown> {
+export interface Task<
+  A = unknown,
+  E = unknown,
+  R = unknown,
+  I = unknown,
+> {
   _tag: "task"
   // TODO: how do we define args? do we just pass them in or inject into context?
   // task: (args: any) => Effect.Effect<A, E, R>
-  readonly id: symbol; // assigned by the builder
+  readonly id: symbol // assigned by the builder
   effect: Effect.Effect<A, E, R>
   description: string
   tags: Array<string | symbol>
+  // TODO: we only want the shape of the task here
   dependencies: Array<Task>
+  provide: Array<Task>
   // TODO: hmm? is this needed? hardhat has them but not sure if we need them
   // flags: {
   //   [key: `--${string}`]: any
@@ -56,8 +63,8 @@ export interface Task<A = unknown, E = unknown, R = unknown, I = unknown> {
   // TODO: not sure if we need this
   // transformArgs?: (args: string[]) => any[]
   // for caching
-  input?: I;  // optional input
-  computeCacheKey?: (task: Task<A, E, R, I>) => string;
+  input?: I // optional input
+  computeCacheKey?: (task: Task<A, E, R, I>) => string
 }
 
 export type Scope = {

@@ -22,8 +22,8 @@
     "noImplicitAny": true,
     "forceConsistentCasingInFileNames": true,
     "exactOptionalPropertyTypes": true,
-    "module": "Node16",
-    "moduleResolution": "node16",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "baseUrl": ".",
@@ -37,12 +37,7 @@
     ]
   },
   "include": [
-    "src/index.ts",
-    "src/cli/**/*.tsx"
-  ],
-  "exclude": [
-    "node_modules/**/*",
-    "dist/**/*",
+    "src/index.ts"
   ],
   "ts-node": {
     "transpileOnly": true,

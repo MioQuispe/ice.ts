@@ -11,6 +11,7 @@ import { ConfigError } from "../index.js"
 import type { ManagementActor } from "../types/types.js"
 import type { PlatformError } from "@effect/platform/Error"
 import os from "node:os"
+import psList from "ps-list"
 
 
 export const getAccountId = (principal: string) =>
@@ -163,6 +164,25 @@ export class DfxService extends Context.Tag("DfxService")<
       const path = yield* Path.Path
       const dfxPort = yield* Config.string("DFX_PORT")
       const host = yield* Config.string("DFX_HOST")
+
+      const processes = yield* Effect.tryPromise(() =>
+        psList({
+          all: true,
+        })
+      )
+      const dfxProcesses = processes.filter((process) => process.name === "dfx")
+      // yield* Effect.logInfo("dfxProcesses", { dfxProcesses })
+      if (dfxProcesses.length === 0) {
+        // yield* Effect.logInfo("DFX is not running, start DFX")
+        yield* Effect.fail(new DfxError({ message: "DFX is not running" }))
+      //   const command = Command.make(
+      //     "dfx",
+      //     "start",
+      //     "--background",
+      //     "--clean",
+      //   )
+      //   yield* commandExecutor.start(command).pipe(Effect.scoped)
+      }
 
       const getCurrentIdentity = () =>
         Effect.gen(function* () {

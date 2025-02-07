@@ -71,11 +71,11 @@ import { Moc } from "./services/moc.js"
 import { runCli } from "./cli/index.js"
 import { TaskRegistry } from "./services/taskRegistry.js"
 
-export * from "./core/builder.js"
+export * from "./builders/custom.js"
 // export * from "./plugins/withContext.js"
 
 import * as didc from "didc_js"
-import { Tags } from "./core/builder.js"
+import { Tags } from "./builders/custom.js"
 export const configMap = new Map([
   ["APP_DIR", fs.realpathSync(process.cwd())],
   ["DFX_CONFIG_FILENAME", "crystal.config.ts"],
@@ -122,6 +122,7 @@ export class TaskCtx extends Context.Tag("TaskCtx")<
       }
     }
     readonly runTask: typeof runTask
+    readonly dependencies: Array<Task>
   }
 >() {
   static Live = Layer.effect(
@@ -147,6 +148,7 @@ export class TaskCtx extends Context.Tag("TaskCtx")<
         agent,
         identity,
         runTask,
+        dependencies: [],
         users: {
           default: {
             identity,
@@ -409,6 +411,10 @@ export const findTaskInTaskTree = (
       if (node.value._tag === "scope") {
         const nextNode = node.value.children[key]
         if (!nextNode) {
+          yield* Effect.logError("No child found for key", {
+            key,
+            node: node.value,
+          })
           return yield* Effect.fail(
             new TaskNotFoundError({
               path: keys,
@@ -477,10 +483,10 @@ export const getTaskByPath = (taskPathString: TaskFullName) =>
 
 // const mainLogger = Logger.zip(Logger.prettyLogger(), LoggerLive)
 
-const customLogger = Logger.make((ctx) => {
-  // console.log("attempting to serialize:", ctx)
-  fs.appendFileSync("logs/crystal.log", `${JSON.stringify(ctx, null, 2)}\n`)
-})
+// const customLogger = Logger.make((ctx) => {
+//   // console.log("attempting to serialize:", ctx)
+//   fs.appendFileSync("logs/crystal.log", `${JSON.stringify(ctx, null, 2)}\n`)
+// })
 
 // TODO: layer memoization should work? do we need this?
 const DfxLayer = DfxService.Live.pipe(
@@ -500,7 +506,28 @@ export const DefaultsLayer = Layer.mergeAll(
   ),
   Moc.Live.pipe(Layer.provide(NodeContext.layer)),
   configLayer,
+  // Logger.replace(Logger.defaultLogger, Logger.zip(Logger.pretty)),
   Logger.pretty,
+  // TODO: set with flag?
+  Logger.minimumLogLevel(LogLevel.Debug),
+  // Logger.add(customLogger),
+  // Layer.effect(fileLogger),
+  // LoggerLive,
+  // fileLogger,
+)
+// TODO: construct later? or this is just defaults
+export const TUILayer = Layer.mergeAll(
+  NodeContext.layer,
+  DfxLayer,
+  TaskRegistry.Live,
+  // TODO: do not depend on DfxService directly?
+  TaskCtx.Live.pipe(
+    // Layer.provide(DfxService.Live),
+    Layer.provide(DfxLayer),
+    Layer.provide(NodeContext.layer),
+  ),
+  Moc.Live.pipe(Layer.provide(NodeContext.layer)),
+  configLayer,
   // Logger.add(customLogger),
   // Layer.effect(fileLogger),
   // LoggerLive,
@@ -611,6 +638,7 @@ export const runTask = <A, E, R, I>(
 ): Effect.Effect<A, unknown, unknown> => {
   return Effect.gen(function* () {
     const cache = yield* TaskRegistry
+    const taskPath = yield* getTaskPathById(task.id)
 
     // // const cacheKey = task.id
     // // 1. If there is already a cached result, return it immediately.
@@ -619,7 +647,11 @@ export const runTask = <A, E, R, I>(
     // }
     // type DepsSuccessTypes = DependencySuccessTypes<T["dependencies"]>
     const dependencyResults = []
-    for (const dependency of task.dependencies) {
+    yield* Effect.log("Running dependencies", {
+      dependencies: task.provide,
+      taskPath: taskPath,
+    })
+    for (const dependency of task.provide) {
       const dependencyResult = yield* runTask(dependency)
       dependencyResults.push(dependencyResult)
     }
@@ -630,8 +662,6 @@ export const runTask = <A, E, R, I>(
         ConfigProvider.fromMap(new Map([...Array.from(configMap.entries())])),
       ),
     )
-    const taskPath = yield* getTaskPathById(task.id)
-
 
     // look here if cacheKey finds something. only after dependencies are run first
     // TODO: do we need access to dependencyResults inside the computeCacheKey?
@@ -900,7 +930,6 @@ export const listCanistersTask = () =>
 
 export { runCli } from "./cli/index.js"
 
-
 // TODO: types
 export const getCrystalConfig = (configPath = "crystal.config.ts") =>
   Effect.gen(function* () {
@@ -1020,3 +1049,4 @@ export const getCanisterIds = Effect.gen(function* () {
 })
 
 export { deployTaskPlugin } from "./plugins/deploy.js"
+export { candidUITaskPlugin } from "./plugins/candid_ui.js"

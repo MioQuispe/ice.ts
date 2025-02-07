@@ -7,7 +7,7 @@ import type {
   TaskTreeNode,
 } from "../types/types.js"
 import { TaskCtx, getCanisterInfo, Tags, TaskInfo } from "../index.js"
-import { loadCanisterId } from "../core/builder.js"
+import { loadCanisterId } from "../builders/custom.js"
 
 type CanisterScope = Scope & {
   children: {
@@ -22,10 +22,11 @@ const makeDeployTask = (scope: CanisterScope): Task => {
   return {
     _tag: "task",
     // TODO: hmmm?
-    id: Symbol("customCanister/deploy"),
+    id: Symbol("canister/deploy"),
     dependencies: [
       // TODO: we only want to warn at a type level?
     ], // TODO: type Task
+    provide: [],
     effect: Effect.gen(function* () {
       const { runTask } = yield* TaskCtx
       yield* Effect.logInfo("Starting custom canister deployment")
@@ -44,6 +45,8 @@ const makeDeployTask = (scope: CanisterScope): Task => {
       } else {
         // TODO: check if canister has been created already
         const canisterInfo = yield* getCanisterInfo(canisterId)
+        // TODO: this may get out of sync when we change the name or taskPath
+        // fix somehow
         const canisterExists = canisterInfo.status !== "not_installed"
         if (canisterExists) {
           yield* Effect.logInfo("Canister already exists")
@@ -51,22 +54,23 @@ const makeDeployTask = (scope: CanisterScope): Task => {
           canisterId = (yield* runTask(scope.children.create)) as string
         }
       }
-      const bindings = yield* runTask(scope.children.bindings)
       const build = yield* runTask(scope.children.build)
+      const bindings = yield* runTask(scope.children.bindings)
       const install = yield* runTask(scope.children.install)
       yield* Effect.logInfo("Canister deployed successfully")
+      return canisterId
     }),
     description: "Deploy canister code",
     tags: [Tags.CANISTER, Tags.DEPLOY],
   }
 }
 
-const transformScopes = (
-  taskTreeNode: TaskTreeNode,
-  fn: (scope: Scope) => Scope,
-): TaskTreeNode => {
-  return Match.value(taskTreeNode).pipe(
-    Match.tag("scope", (scope) => {
+const transformScopes = <T extends TaskTreeNode, F extends (scope: Scope) => Scope>(
+  taskTreeNode: T,
+  fn: F,
+) => {
+  return Match.value(taskTreeNode as TaskTreeNode).pipe(
+    Match.tag("scope", (scope: Scope) => {
       const transformedChildren: Record<string, TaskTreeNode> = {}
       for (const [name, child] of Object.entries(scope.children)) {
         transformedChildren[name] = transformScopes(child, fn)
@@ -76,18 +80,18 @@ const transformScopes = (
         children: transformedChildren,
       })
     }),
-    Match.tag("builder", (builder) => {
+    Match.tag("builder", (builder: BuilderResult): BuilderResult => {
       return {
         ...builder,
         _scope: transformScopes(builder._scope, fn),
-      } as BuilderResult
+      }
     }),
     Match.tag("task", (task) => task),
     Match.orElse(() => taskTreeNode),
-  )
+  ) as T & { children: { deploy: Task } }
 }
 // TODO: should be a plugin instead? pass in scope / builder and transform it
-export const deployTaskPlugin = (taskTree: TaskTreeNode): TaskTreeNode => {
+export const deployTaskPlugin = <T extends TaskTreeNode>(taskTree: T) => {
   // TODO: take canister scope and add deploy task to it
   return transformScopes(taskTree, (scope) => {
     if (scope.tags.includes(Tags.CANISTER)) {

@@ -37,19 +37,40 @@ type InitArgs = {
 
 const canisterName = "dip20"
 export const DIP20 = (
-  initArgsOrFn: InitArgs | ((ctx: TaskCtxShape) => InitArgs),
+  initArgsOrFn:
+    | InitArgs
+    | ((ctx: TaskCtxShape) => InitArgs)
+    | ((ctx: TaskCtxShape) => Promise<InitArgs>),
 ) => {
-  return customCanister<DIP20InitArgs>((ctx) => {
-    const initArgs =
+  const result = customCanister<DIP20InitArgs>(async (ctx) => {
+    let initArgs: InitArgs
+    const initResult =
       typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+    if (initResult instanceof Promise) {
+      initArgs = await initResult
+    } else {
+      initArgs = initResult
+    }
     return {
       canisterId: initArgs.canisterId,
       wasm: path.resolve(__dirname, `./${canisterName}/${canisterName}.wasm`),
       candid: path.resolve(__dirname, `./${canisterName}/${canisterName}.did`),
     }
-  }).install(async ({ ctx, mode }) => {
-    const initArgs =
+  })
+  // TODO: how do we extract the Shape? do we need effect services / layers?
+  .deps(CapRouter.shape)
+  // .provide(CapRouter)
+  // TODO: install ctx should receive the dependencies in its type
+  .install(async ({ ctx, mode }) => {
+    let initArgs: InitArgs
+    const initResult =
       typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+    if (initResult instanceof Promise) {
+      initArgs = await initResult
+    } else {
+      initArgs = initResult
+    }
+    const [capRouterId] = ctx.dependencies
     return [
       initArgs.logo,
       initArgs.name,
@@ -59,9 +80,11 @@ export const DIP20 = (
       Principal.from(initArgs.owner),
       BigInt(initArgs.fee),
       Principal.from(initArgs.feeTo),
+      // TODO: extract from dependencies
       Principal.from(initArgs.capRouterId ?? CapRouter.id.ic),
     ]
   })
+  return result
 }
 
 // TODO:

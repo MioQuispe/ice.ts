@@ -1,6 +1,23 @@
-import { Effect, Console, Match, Option } from "effect"
+import {
+  Effect,
+  Console,
+  Match,
+  Option,
+  SubscriptionRef,
+  Stream,
+  Fiber,
+  ManagedRuntime,
+  Layer,
+  Logger,
+} from "effect"
 import { Spinner, ProgressBar, UnorderedList } from "@inkjs/ui"
-import React, { useState, useEffect } from "react"
+import React, {
+  useState,
+  useEffect,
+  useSyncExternalStore,
+  createContext,
+  useContext,
+} from "react"
 import {
   Box,
   render,
@@ -10,6 +27,7 @@ import {
   useInput,
   useFocus,
   useApp,
+  useStdout,
 } from "ink"
 import type {
   CrystalConfigFile,
@@ -18,78 +36,123 @@ import type {
   TaskTree,
   TaskTreeNode,
 } from "../../types/types.js"
-import { filterTasks } from "../../index.js"
+import { filterTasks, runTaskByPath, TUILayer } from "../../index.js"
 import { TaskList, Task } from "ink-task-list"
 import spinners from "cli-spinners"
 
-const App = () => {
-  const [counter, setCounter] = useState(0)
+export function useSynchronizedState<T>(defaultState: T) {
+  const [subscriptionRef] = useState(() =>
+    Effect.runSync(SubscriptionRef.make<T>(defaultState)),
+  )
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCounter((previousCounter) => previousCounter + 1)
-    }, 100)
+  const value = useSyncExternalStore(
+    (callback) =>
+      Stream.runForEach(subscriptionRef.changes, () =>
+        Effect.sync(callback),
+      ).pipe(Effect.runCallback),
+    () => {
+      return Effect.runSync(SubscriptionRef.get(subscriptionRef))
+    },
+  )
 
-    return () => {
-      clearInterval(timer)
-    }
-  }, [])
-
-  return <Text color="green">tests passed</Text>
-}
-
-const renderTasks = (
-  taskTree: TaskTree | Scope,
-  render: (node: TaskTreeNode, path: string[]) => React.ReactNode,
-  path: string[] = [],
-) => {
-  const keys =
-    taskTree._tag === "scope"
-      ? Object.keys(taskTree.children)
-      : Object.keys(taskTree)
-  for (const key of keys) {
-    const currentNode =
-      taskTree._tag === "scope"
-        ? (taskTree as Scope).children[key]
-        : (taskTree as TaskTree)[key]
-    const node = Match.value(currentNode).pipe(
-      Match.tag("task", (task): TaskType => task),
-      Match.tag("scope", (scope): Scope => scope),
-      // TODO: should we transform the whole tree once, and remove builders?
-      Match.tag("builder", (result): Scope => result._scope),
-      Match.option,
-    )
-    if (Option.isSome(node)) {
-      const fullPath = [...path, key]
-      // if (node.value._tag === "scope") {
-      //   const children = Object.keys(node.value.children)
-      //   // TODO: call itself recursively
-      //   render
-      // }
-      // TODO: this returns immediately
-      return render(node.value, fullPath)
-    }
-  }
+  return [value, subscriptionRef] as const
 }
 
 type StateOthers = "pending" | "success" | "warning" | "error" | "loading"
 
-const TaskTreeListItem = ({ label, ...props }: { label: string }) => {
+const TaskTreeListItem = <A, E, R, I>({
+  label,
+  task,
+  path,
+  ...props
+}: {
+  label: string
+  task: TaskType<A, E, R, I>
+  path: string[]
+}) => {
   const { isFocused } = useFocus()
   // TODO: get state
   const [state, setState] = useState<StateOthers>("pending")
+  const [logs, setLogs] = useState<string[]>([])
+  // TODO: should logs be separate for each task?
+  const { runTask } = useCrystal()
   useInput(
-    (input, key) => {
+    async (input, key) => {
       if (!isFocused) {
         return
       }
       if (key.return || input === " ") {
-        setState(currentState => currentState === "loading" ? "pending" : "loading")
+        setState((currentState) =>
+          currentState === "loading" ? "pending" : "loading",
+        )
+        try {
+          await runTask(path)
+          setState("success")
+        } catch (e) {
+          console.log(e)
+          setState("error")
+        }
       }
     },
     { isActive: isFocused },
   )
-  return <Task state={isFocused ? "success" : state} spinner={spinners.dots} label={label} {...props} />
+  return (
+    <>
+      <Task
+        state={isFocused ? "warning" : state}
+        spinner={spinners.dots}
+        label={label}
+        {...props}
+      />
+      <Text>{logs.join("\n")}</Text>
+    </>
+  )
+}
+const CrystalContext = createContext<{
+  logs: string[]
+  runTask: (path: string[]) => Promise<void>
+} | null>(null)
+
+// TODO: add generic type
+const CrystalProvider: React.FC<{
+  children: React.ReactNode
+}> = ({ children }) => {
+  const [logs, setLogs] = useState<string[]>([])
+  const [runtime] = useState(() => {
+    // TODO: create Logger here
+    const logger = Logger.make(({ logLevel, message }) => {
+      setLogs((prevLogs) => [...prevLogs, `${logLevel}: ${message}`])
+    })
+    const runtime = ManagedRuntime.make(
+      Layer.mergeAll(
+        TUILayer,
+        //   Logger.pretty,
+        // TODO: custom logger
+        Logger.replace(Logger.defaultLogger, logger),
+      ),
+    )
+    return runtime
+  })
+
+  const runTask = async (path: string[]) => {
+    // TODO: what do we return from this? async await?
+    // @ts-ignore
+    await runtime.runPromise(runTaskByPath(path.join(":")))
+  }
+
+  return (
+    <CrystalContext.Provider value={{ logs, runTask }}>
+      {children}
+    </CrystalContext.Provider>
+  )
+}
+
+export const useCrystal = () => {
+  const crystal = useContext(CrystalContext)
+  if (!crystal) {
+    throw new Error("useCrystal must be used within a CrystalProvider")
+  }
+  return crystal
 }
 
 const TaskTreeList = ({
@@ -122,6 +185,8 @@ const TaskTreeList = ({
               <TaskTreeListItem
                 key={fullPath.join(":")}
                 label={fullPath[fullPath.length - 1]}
+                task={node}
+                path={fullPath}
               />
               {/* <Text>
                 {node.description}
@@ -170,10 +235,43 @@ const TaskTreeList = ({
   )
 }
 
+function useStdoutDimensions(): [number, number] {
+  const { stdout } = useStdout()
+  const [dimensions, setDimensions] = useState<[number, number]>([
+    stdout.columns,
+    stdout.rows,
+  ])
+
+  useEffect(() => {
+    const handler = () => setDimensions([stdout.columns, stdout.rows])
+    stdout.on("resize", handler)
+    return () => {
+      stdout.off("resize", handler)
+    }
+  }, [stdout])
+
+  return dimensions
+}
+
+const Logs = () => {
+  const { logs } = useCrystal()
+  const [columns, rows] = useStdoutDimensions()
+  const offset = columns * rows * 0.25
+  // const offset = 40
+  const start = logs.length - offset > 0 ? logs.length - offset : 0
+  const end = logs.length - 1
+
+  return (
+    <Box>
+      <Text>{logs.slice(start, end).join("\n")}</Text>
+    </Box>
+  )
+}
+
 const CliApp = ({ crystalConfig }: { crystalConfig: CrystalConfigFile }) => {
   const focusManager = useFocusManager()
   const [editingField, setEditingField] = useState<string>()
-
+  const { exit } = useApp()
   useEffect(() => {
     focusManager.enableFocus()
   }, [focusManager])
@@ -184,23 +282,36 @@ const CliApp = ({ crystalConfig }: { crystalConfig: CrystalConfigFile }) => {
         focusManager.focusPrevious()
       } else if (key.downArrow) {
         focusManager.focusNext()
+      } else if (key.escape || input === "q") {
+        exit()
       }
     },
     { isActive: !editingField },
   )
 
   return (
-    <Box margin={2} flexDirection="column">
-      {/* <Static items={[crystalConfig]}>
+    <CrystalProvider>
+      <Box margin={2} rowGap={2} flexDirection="row">
+        {/* <Static items={[crystalConfig]}>
           {(item) => (
           )}
         </Static> */}
-      <TaskTreeList
-        key={"tasks"}
-        taskTree={crystalConfig}
-        title="Available tasks"
-      />
-    </Box>
+        <Box width="50%">
+          <TaskTreeList
+            key={"tasks"}
+            taskTree={crystalConfig}
+            title="Available tasks"
+          />
+        </Box>
+
+        <Box width="50%" height="100%" flexDirection="column">
+          <Text color="blue">Logs</Text>
+          <Box borderStyle="single" width="100%" height="100%">
+            <Logs />
+          </Box>
+        </Box>
+      </Box>
+    </CrystalProvider>
   )
 }
 
