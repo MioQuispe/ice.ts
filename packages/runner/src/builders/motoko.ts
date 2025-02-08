@@ -61,7 +61,7 @@ export type MotokoCanisterBuilder<
     canisterConfigOrFn:
       | MotokoCanisterConfig
       | ((ctx: TaskCtxShape) => MotokoCanisterConfig)
-      | ((ctx: TaskCtxShape) => Promise<MotokoCanisterConfig>)
+      | ((ctx: TaskCtxShape) => Promise<MotokoCanisterConfig>),
   ) => CanisterBuilder<S, Deps, Prov, I>
   install: (
     installArgsOrFn:
@@ -73,7 +73,7 @@ export type MotokoCanisterBuilder<
     canisterConfigOrFn:
       | MotokoCanisterConfig
       | ((ctx: TaskCtxShape) => MotokoCanisterConfig)
-      | ((ctx: TaskCtxShape) => Promise<MotokoCanisterConfig>)
+      | ((ctx: TaskCtxShape) => Promise<MotokoCanisterConfig>),
   ) => CanisterBuilder<S, Deps, Prov, I>
   deps: (...deps: Deps) => CanisterBuilder<S, Deps, Prov, I>
   provide: (...providedDeps: Prov) => CanisterBuilder<S, Deps, Prov, I>
@@ -88,64 +88,6 @@ export type MotokoCanisterBuilder<
 
 const plugins = <T extends TaskTreeNode>(taskTree: T) =>
   deployTaskPlugin(taskTree)
-
-// const makeMotokoInstallTask = (
-//   fn?: (args: { ctx: TaskCtxShape }) => Promise<I>,
-// ): Task => {
-//   return {
-//     _tag: "task",
-//     id: Symbol("motokoCanister/install"),
-//     dependencies: [],
-//     provide: [],
-//     effect: Effect.gen(function* () {
-//       const path = yield* Path.Path
-//       const fs = yield* FileSystem.FileSystem
-//       const appDir = yield* Config.string("APP_DIR")
-//       const taskCtx = yield* TaskCtx
-//       // TODO: this is needed for args
-//       const canisterConfig =
-//         typeof canisterConfigOrFn === "function"
-//           ? canisterConfigOrFn(taskCtx)
-//           : canisterConfigOrFn
-
-//       const { taskPath } = yield* TaskInfo
-//       const canisterId = yield* loadCanisterId(taskPath)
-//       const canisterName = taskPath.split(":").slice(0, -1).join(":")
-//       yield* canisterBuildGuard
-//       const didJSPath = path.join(
-//         appDir,
-//         ".artifacts",
-//         canisterName,
-//         `${canisterName}.did.js`,
-//       )
-//       const canisterDID = yield* Effect.tryPromise({
-//         try: () => import(didJSPath),
-//         catch: Effect.fail,
-//       })
-//       const args = (typeof fn === "function"
-//         ? yield* Effect.tryPromise({
-//             try: () => fn({ ctx: taskCtx }),
-//             catch: Effect.fail,
-//           })
-//         : []) as unknown as I
-//       // @ts-ignore
-//       const encodedArgs = encodeArgs(args, canisterDID)
-//       const wasmPath = path.join(
-//         appDir,
-//         ".artifacts",
-//         canisterName,
-//         `${canisterName}.wasm`,
-//       )
-//       yield* installCanister({
-//         encodedArgs,
-//         canisterId,
-//         wasmPath,
-//       })
-//     }),
-//     description: "some description",
-//     tags: [Tags.CANISTER, Tags.INSTALL],
-//   }
-// }
 
 const makeMotokoBuildTask = (
   canisterConfigOrFn:
@@ -213,16 +155,14 @@ export const makeMotokoBuilder = <
         | ((args: { ctx: TaskCtxShape }) => I)
         | I,
     ) => {
-      return makeMotokoBuilder<S, D, P, I>(
-        {
-          ...scope,
-          children: {
-            ...scope.children,
-            install: makeInstallTask(installArgsOrFn),
-          },
+      const updatedScope = {
+        ...scope,
+        children: {
+          ...scope.children,
+          install: makeInstallTask(installArgsOrFn),
         },
-        deps,
-      )
+      } satisfies CanisterScope
+      return makeMotokoBuilder<typeof updatedScope, D, P, I>(updatedScope, deps)
     },
 
     create: (
@@ -231,16 +171,14 @@ export const makeMotokoBuilder = <
         | ((ctx: TaskCtxShape) => MotokoCanisterConfig)
         | MotokoCanisterConfig,
     ) => {
-      return makeMotokoBuilder<S, D, P, I>(
-        {
-          ...scope,
-          children: {
-            ...scope.children,
-            create: makeCreateTask(canisterConfigOrFn),
-          },
+      const updatedScope = {
+        ...scope,
+        children: {
+          ...scope.children,
+          create: makeCreateTask(canisterConfigOrFn),
         },
-        deps,
-      )
+      }
+      return makeMotokoBuilder<typeof updatedScope, D, P, I>(updatedScope, deps)
     },
 
     build: (
@@ -249,16 +187,14 @@ export const makeMotokoBuilder = <
         | ((ctx: TaskCtxShape) => MotokoCanisterConfig)
         | MotokoCanisterConfig,
     ) => {
-      return makeMotokoBuilder<S, D, P, I>(
-        {
-          ...scope,
-          children: {
-            ...scope.children,
-            build: makeMotokoBuildTask(canisterConfigOrFn),
-          },
+      const updatedScope = {
+        ...scope,
+        children: {
+          ...scope.children,
+          build: makeMotokoBuildTask(canisterConfigOrFn),
         },
-        deps,
-      )
+      } satisfies CanisterScope
+      return makeMotokoBuilder<typeof updatedScope, D, P, I>(updatedScope, deps)
     },
 
     deps: (...deps: Array<Task | CanisterScope>) => {
@@ -273,7 +209,7 @@ export const makeMotokoBuilder = <
         return dep
       }) satisfies Task[]
       // TODO: do we create a service out of these?
-      return {
+      const updatedScope = {
         ...scope,
         children: {
           ...scope.children,
@@ -282,12 +218,14 @@ export const makeMotokoBuilder = <
             dependencies,
           },
         },
-      }
+      } satisfies CanisterScope
+      return makeMotokoBuilder<typeof updatedScope, typeof dependencies, P, I>(
+        updatedScope,
+        dependencies,
+      )
     },
 
-    provide: (
-      ...providedDeps: Array<Task | CanisterScope>
-    ) => {
+    provide: (...providedDeps: Array<Task | CanisterScope>) => {
       // TODO: do we transform here?
       // TODO: do we type check here?
       const finalDeps = providedDeps.map((dep) => {
@@ -299,17 +237,18 @@ export const makeMotokoBuilder = <
         }
         return dep as Task
       }) satisfies Array<Task>
-      return makeMotokoBuilder<S, D, typeof finalDeps, I>(
-        {
-          ...scope,
-          children: {
-            ...scope.children,
-            install: {
-              ...scope.children.install,
-              provide: finalDeps,
-            },
+      const updatedScope = {
+        ...scope,
+        children: {
+          ...scope.children,
+          install: {
+            ...scope.children.install,
+            provide: finalDeps,
           },
         },
+      } satisfies CanisterScope
+      return makeMotokoBuilder<typeof updatedScope, D, typeof finalDeps, I>(
+        updatedScope,
         deps,
       )
     },

@@ -103,32 +103,35 @@ export function isUniformScope<S extends CanisterScope>(
 }
 
 export type CanisterBuilder<
+  I,
   S extends CanisterScope,
-  Deps extends Array<Task>,
-  Prov extends Array<Task>,
-  I = unknown,
+  D extends Array<Task>,
+  P extends Array<Task>,
 > = {
   create: (
     canisterConfigOrFn:
       | CustomCanisterConfig
       | ((ctx: TaskCtxShape) => CustomCanisterConfig)
-      | ((ctx: TaskCtxShape) => Promise<CustomCanisterConfig>)
-  ) => CanisterBuilder<S, Deps, Prov, I>
+      | ((ctx: TaskCtxShape) => Promise<CustomCanisterConfig>),
+  ) => CanisterBuilder<I, S, D, P>
   install: (
     installArgsOrFn:
       | ((args: { ctx: TaskCtxShape; mode: string }) => Promise<I>)
       | ((args: { ctx: TaskCtxShape; mode: string }) => I)
       | I,
-  ) => CanisterBuilder<S, Deps, Prov, I>
+  ) => CanisterBuilder<I, S, D, P>
   build: (
     canisterConfigOrFn:
       | CustomCanisterConfig
       | ((ctx: TaskCtxShape) => CustomCanisterConfig)
-      | ((ctx: TaskCtxShape) => Promise<CustomCanisterConfig>)
-  ) => CanisterBuilder<S, Deps, Prov, I>
-  deps: (...deps: Deps) => CanisterBuilder<S, Deps, Prov, I>
-  provide: (...providedDeps: Prov) => CanisterBuilder<S, Deps, Prov, I>
-  done: () => UniformScope<S>
+      | ((ctx: TaskCtxShape) => Promise<CustomCanisterConfig>),
+  ) => CanisterBuilder<I, S, D, P>
+  deps: (...deps: Array<Task | CanisterScope>) => CanisterBuilder<I, S, D, P>
+  provide: (
+    ...providedDeps: Array<Task | CanisterScope>
+  ) => CanisterBuilder<I, S, D, P>
+  // done: () => UniformScope<S>
+  done: () => S
   // TODO:
   //   bindings: (fn: (args: { ctx: TaskCtxShape }) => Promise<I>) => CanisterBuilder<I>
   // Internal property to store the current scope
@@ -238,9 +241,10 @@ export const makeInstallTask = <I>(
         yield* Effect.logInfo("Executing install args function")
 
         if (typeof installArgsOrFn === "function") {
-          const installFn = installArgsOrFn as (
-            args: { ctx: TaskCtxShape; mode: string },
-          ) => Promise<I> | I
+          const installFn = installArgsOrFn as (args: {
+            ctx: TaskCtxShape
+            mode: string
+          }) => Promise<I> | I
           // TODO: handle different modes
           const installResult = installFn({
             mode: "install",
@@ -413,76 +417,61 @@ export const makeCreateTask = (
 }
 
 const makeCustomCanisterBuilder = <
+  I,
   S extends CanisterScope,
   D extends Array<Task>,
   P extends Array<Task>,
-  I = unknown,
 >(
   scope: S,
   deps: D,
-) => {
+): CanisterBuilder<I, S, D, P> => {
   return {
-    create: (
-      canisterConfigOrFn:
-        | ((ctx: TaskCtxShape) => Promise<CustomCanisterConfig>)
-        | ((ctx: TaskCtxShape) => CustomCanisterConfig)
-        | CustomCanisterConfig,
-    ) => {
-      return makeCustomCanisterBuilder<S, D, P, I>(
-        {
-          ...scope,
-          children: {
-            ...scope.children,
-            create: makeCreateTask(canisterConfigOrFn),
-          },
+    create: (canisterConfigOrFn) => {
+      const updatedScope = {
+        ...scope,
+        children: {
+          ...scope.children,
+          create: makeCreateTask(canisterConfigOrFn),
         },
+      } satisfies CanisterScope
+      return makeCustomCanisterBuilder<I, typeof updatedScope, D, P>(
+        updatedScope,
         deps,
       )
     },
-    install: (
-      installArgsOrFn:
-        | ((args: { ctx: TaskCtxShape; mode: string }) => Promise<I>)
-        | ((args: { ctx: TaskCtxShape; mode: string }) => I)
-        | I,
-    ) => {
+    install: (installArgsOrFn) => {
       // TODO: is this a flag, arg, or what?
       const mode = "install"
       // TODO: passing in I makes the return type: any
-      return makeCustomCanisterBuilder<S, D, P, I>(
-        {
-          ...scope,
-          children: {
-            ...scope.children,
-            install: makeInstallTask(installArgsOrFn, deps),
-          },
+      const updatedScope = {
+        ...scope,
+        children: {
+          ...scope.children,
+          install: makeInstallTask(installArgsOrFn, deps),
         },
+      } satisfies CanisterScope
+      // TODO: updatedScope is not typed correctly
+      return makeCustomCanisterBuilder<I, typeof updatedScope, D, P>(
+        updatedScope,
         deps,
       )
     },
-    build: (
-      canisterConfigOrFn:
-        | ((ctx: TaskCtxShape) => Promise<CustomCanisterConfig>)
-        | ((ctx: TaskCtxShape) => CustomCanisterConfig)
-        | CustomCanisterConfig,
-    ) => {
-      return makeCustomCanisterBuilder<S, D, P, I>(
-        {
-          ...scope,
-          children: {
-            ...scope.children,
-            build: makeBuildTask(canisterConfigOrFn),
-          },
+    build: (canisterConfigOrFn) => {
+      const updatedScope = {
+        ...scope,
+        children: {
+          ...scope.children,
+          build: makeBuildTask(canisterConfigOrFn),
         },
+      } satisfies CanisterScope
+      return makeCustomCanisterBuilder<I, typeof updatedScope, D, P>(
+        updatedScope,
         deps,
       )
     },
     // Here we extract the real tasks from the deps
     // is it enough to compare symbols?
-    deps: (
-      ...deps: Array<
-        Task | CanisterScope
-      >
-    ) => {
+    deps: (...deps) => {
       // TODO: check that its a canister builder
       const dependencies = deps.map((dep) => {
         // if (dep._tag === "builder") {
@@ -496,25 +485,27 @@ const makeCustomCanisterBuilder = <
         }
         return dep
       }) satisfies Array<Task>
-      // TODO: do we create a service out of these?
-      return makeCustomCanisterBuilder<S, typeof dependencies, P, I>(
-        {
-          ...scope,
-          children: {
-            ...scope.children,
-            install: {
-              ...scope.children.install,
-              dependencies,
-            },
+
+      const updatedScope = {
+        ...scope,
+        children: {
+          ...scope.children,
+          install: {
+            ...scope.children.install,
+            dependencies,
           },
         },
-        dependencies,
-      )
+      } satisfies CanisterScope
+
+      return makeCustomCanisterBuilder<
+        I,
+        typeof updatedScope,
+        typeof dependencies,
+        P
+      >(updatedScope, dependencies)
     },
 
-    provide: (
-      ...providedDeps: Array<Task | CanisterScope>
-    ) => {
+    provide: (...providedDeps) => {
       // TODO: do we transform here?
       // TODO: do we type check here?
       const finalDeps = providedDeps.map((dep) => {
@@ -526,19 +517,24 @@ const makeCustomCanisterBuilder = <
         }
         return dep as Task
       }) satisfies Array<Task>
-      return makeCustomCanisterBuilder<S, D, typeof finalDeps, I>(
-        {
-          ...scope,
-          children: {
-            ...scope.children,
-            install: {
-              ...scope.children.install,
-              provide: finalDeps,
-            },
+
+      const updatedScope = {
+        ...scope,
+        children: {
+          ...scope.children,
+          install: {
+            ...scope.children.install,
+            provide: finalDeps,
           },
         },
-        deps,
-      )
+      } satisfies CanisterScope
+
+      return makeCustomCanisterBuilder<
+        I,
+        typeof updatedScope,
+        D,
+        typeof finalDeps
+      >(updatedScope, deps)
     },
 
     done: () => {
@@ -563,7 +559,7 @@ export const customCanister = <I = unknown>(
     | ((ctx: TaskCtxShape) => Promise<CustomCanisterConfig>)
     | ((ctx: TaskCtxShape) => CustomCanisterConfig)
     | CustomCanisterConfig,
-) => {
+): CanisterBuilder<I, typeof initialScope, Array<Task>, Array<Task>> => {
   const initialScope = {
     _tag: "scope",
     tags: [Tags.CANISTER],
@@ -586,10 +582,7 @@ export const customCanister = <I = unknown>(
     },
   } satisfies CanisterScope
 
-  return makeCustomCanisterBuilder<typeof initialScope, [], [], I>(
-    initialScope,
-    [],
-  )
+  return makeCustomCanisterBuilder<I, typeof initialScope, Array<Task>, Array<Task>>(initialScope, [])
 }
 
 export const loadCanisterId = (taskPath: string) =>
@@ -635,7 +628,6 @@ export const canisterBuildGuard = Effect.gen(function* () {
   }
   return true
 })
-
 
 type CrystalConfig = CrystalContext & {
   setup?: () => Promise<CrystalContext>

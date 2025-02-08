@@ -59,7 +59,7 @@ export const DIP20 = (
   })
   // TODO: how do we extract the Shape? do we need effect services / layers?
   .deps(CapRouter.shape)
-  // .provide(CapRouter)
+  .provide(CapRouter.shape)
   // TODO: install ctx should receive the dependencies in its type
   .install(async ({ ctx, mode }) => {
     let initArgs: InitArgs
