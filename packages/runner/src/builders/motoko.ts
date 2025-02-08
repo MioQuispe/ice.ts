@@ -43,7 +43,7 @@ import {
   loadCanisterId,
   resolveConfig,
 } from "./custom.js"
-import type { CanisterBuilder, CanisterScope, UniformScope } from "./custom.js"
+import type { CanisterScope, UniformScope } from "./custom.js"
 import { Tags } from "./custom.js"
 
 type MotokoCanisterConfig = {
@@ -52,34 +52,34 @@ type MotokoCanisterConfig = {
 }
 
 export type MotokoCanisterBuilder<
+  I,
   S extends CanisterScope,
-  Deps extends Array<Task>,
-  Prov extends Array<Task>,
-  I = unknown,
+  D extends Array<Task>,
+  P extends Array<Task>,
 > = {
   create: (
     canisterConfigOrFn:
       | MotokoCanisterConfig
       | ((ctx: TaskCtxShape) => MotokoCanisterConfig)
       | ((ctx: TaskCtxShape) => Promise<MotokoCanisterConfig>),
-  ) => CanisterBuilder<S, Deps, Prov, I>
+  ) => MotokoCanisterBuilder<I, S, D, P>
   install: (
     installArgsOrFn:
       | ((args: { ctx: TaskCtxShape; mode: string }) => Promise<I>)
       | ((args: { ctx: TaskCtxShape; mode: string }) => I)
       | I,
-  ) => CanisterBuilder<S, Deps, Prov, I>
+  ) => MotokoCanisterBuilder<I, S, D, P>
   build: (
     canisterConfigOrFn:
       | MotokoCanisterConfig
       | ((ctx: TaskCtxShape) => MotokoCanisterConfig)
       | ((ctx: TaskCtxShape) => Promise<MotokoCanisterConfig>),
-  ) => CanisterBuilder<S, Deps, Prov, I>
-  deps: (...deps: Deps) => CanisterBuilder<S, Deps, Prov, I>
-  provide: (...providedDeps: Prov) => CanisterBuilder<S, Deps, Prov, I>
-  done: () => UniformScope<S>
+  ) => MotokoCanisterBuilder<I, S, D, P>
+  deps: (...deps: Array<Task | CanisterScope>) => MotokoCanisterBuilder<I, S, D, P>
+  provide: (...providedDeps: Array<Task | CanisterScope>) => MotokoCanisterBuilder<I, S, D, P>
+  done: () => S
   // TODO:
-  //   bindings: (fn: (args: { ctx: TaskCtxShape }) => Promise<I>) => CanisterBuilder<I>
+  //   bindings: (fn: (args: { ctx: TaskCtxShape }) => Promise<I>) => MotokoCanisterBuilder<I>
   // Internal property to store the current scope
   _scope: S
   // TODO: use BuilderResult?
@@ -140,21 +140,16 @@ const makeMotokoDeleteTask = (): Task => {
 }
 
 export const makeMotokoBuilder = <
+  I,
   S extends CanisterScope,
   D extends Array<Task>,
   P extends Array<Task>,
-  I = unknown,
 >(
   scope: S,
   deps: D,
-) => {
+): MotokoCanisterBuilder<I, S, D, P> => {
   return {
-    install: (
-      installArgsOrFn:
-        | ((args: { ctx: TaskCtxShape }) => Promise<I>)
-        | ((args: { ctx: TaskCtxShape }) => I)
-        | I,
-    ) => {
+    install: (installArgsOrFn) => {
       const updatedScope = {
         ...scope,
         children: {
@@ -162,15 +157,10 @@ export const makeMotokoBuilder = <
           install: makeInstallTask(installArgsOrFn),
         },
       } satisfies CanisterScope
-      return makeMotokoBuilder<typeof updatedScope, D, P, I>(updatedScope, deps)
+      return makeMotokoBuilder<I, typeof updatedScope, D, P>(updatedScope, deps)
     },
 
-    create: (
-      canisterConfigOrFn:
-        | ((ctx: TaskCtxShape) => Promise<MotokoCanisterConfig>)
-        | ((ctx: TaskCtxShape) => MotokoCanisterConfig)
-        | MotokoCanisterConfig,
-    ) => {
+    create: (canisterConfigOrFn) => {
       const updatedScope = {
         ...scope,
         children: {
@@ -178,15 +168,10 @@ export const makeMotokoBuilder = <
           create: makeCreateTask(canisterConfigOrFn),
         },
       }
-      return makeMotokoBuilder<typeof updatedScope, D, P, I>(updatedScope, deps)
+      return makeMotokoBuilder<I, typeof updatedScope, D, P>(updatedScope, deps)
     },
 
-    build: (
-      canisterConfigOrFn:
-        | ((ctx: TaskCtxShape) => Promise<MotokoCanisterConfig>)
-        | ((ctx: TaskCtxShape) => MotokoCanisterConfig)
-        | MotokoCanisterConfig,
-    ) => {
+    build: (canisterConfigOrFn) => {
       const updatedScope = {
         ...scope,
         children: {
@@ -194,10 +179,10 @@ export const makeMotokoBuilder = <
           build: makeMotokoBuildTask(canisterConfigOrFn),
         },
       } satisfies CanisterScope
-      return makeMotokoBuilder<typeof updatedScope, D, P, I>(updatedScope, deps)
+      return makeMotokoBuilder<I, typeof updatedScope, D, P>(updatedScope, deps)
     },
 
-    deps: (...deps: Array<Task | CanisterScope>) => {
+    deps: (...deps) => {
       // TODO: check that its a canister builder
       const dependencies = deps.map((dep) => {
         if (dep._tag === "scope") {
@@ -219,13 +204,13 @@ export const makeMotokoBuilder = <
           },
         },
       } satisfies CanisterScope
-      return makeMotokoBuilder<typeof updatedScope, typeof dependencies, P, I>(
+      return makeMotokoBuilder<I, typeof updatedScope, typeof dependencies, P>(
         updatedScope,
         dependencies,
       )
     },
 
-    provide: (...providedDeps: Array<Task | CanisterScope>) => {
+    provide: (...providedDeps) => {
       // TODO: do we transform here?
       // TODO: do we type check here?
       const finalDeps = providedDeps.map((dep) => {
@@ -247,7 +232,7 @@ export const makeMotokoBuilder = <
           },
         },
       } satisfies CanisterScope
-      return makeMotokoBuilder<typeof updatedScope, D, typeof finalDeps, I>(
+      return makeMotokoBuilder<I, typeof updatedScope, D, typeof finalDeps>(
         updatedScope,
         deps,
       )
@@ -283,7 +268,7 @@ export const motokoCanister = <I = unknown>(
     | MotokoCanisterConfig
     | ((ctx: TaskCtxShape) => MotokoCanisterConfig)
     | ((ctx: TaskCtxShape) => Promise<MotokoCanisterConfig>),
-) => {
+): MotokoCanisterBuilder<I, typeof initialScope, Array<Task>, Array<Task>> => {
   // TODO: maybe just the return value of install? like a cleanup
   // delete: {
   //   task: deleteCanister(config),
@@ -304,5 +289,5 @@ export const motokoCanister = <I = unknown>(
     },
   } satisfies CanisterScope
 
-  return makeMotokoBuilder<typeof initialScope, [], [], I>(initialScope, [])
+  return makeMotokoBuilder<I, typeof initialScope, Array<Task>, Array<Task>>(initialScope, [])
 }
