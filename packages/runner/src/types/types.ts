@@ -1,4 +1,4 @@
-import type { Effect } from "effect"
+import type { Effect, Option } from "effect"
 import type { ActorSubclass, Agent, Identity } from "@dfinity/agent"
 import type { Principal } from "@dfinity/principal"
 
@@ -66,6 +66,9 @@ export interface Task<
   input?: I // optional input
   // TODO: causes type issues in builders
   // computeCacheKey?: (task: Task<A, E, R, I>) => string
+  computeCacheKey: Option.Option<
+    (task: Task<A, E, R, I>) => string
+  >
 }
 
 export type Scope = {

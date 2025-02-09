@@ -1,4 +1,4 @@
-import { Layer, Effect, Context, Data, Config, Match } from "effect"
+import { Effect, Context, Config, Option } from "effect"
 import {
   createCanister,
   installCanister,
@@ -43,7 +43,7 @@ import {
   loadCanisterId,
   resolveConfig,
 } from "./custom.js"
-import type { CanisterScope } from "./custom.js"
+import type { CanisterScope, UniformScopeCheck, DependencyMismatchError, IsValid, MergeScopeDependencies, MergeScopeProvide } from "./types.js"
 import { Tags } from "./custom.js"
 
 type MotokoCanisterConfig = {
@@ -54,8 +54,8 @@ type MotokoCanisterConfig = {
 export type MotokoCanisterBuilder<
   I,
   S extends CanisterScope,
-  D extends Array<Task>,
-  P extends Array<Task>,
+  D extends Record<string, Task>,
+  P extends Record<string, Task>,
 > = {
   create: (
     canisterConfigOrFn:
@@ -75,10 +75,26 @@ export type MotokoCanisterBuilder<
       | ((ctx: TaskCtxShape) => MotokoCanisterConfig)
       | ((ctx: TaskCtxShape) => Promise<MotokoCanisterConfig>),
   ) => MotokoCanisterBuilder<I, S, D, P>
-  deps: (...deps: Array<Task | CanisterScope>) => MotokoCanisterBuilder<I, S, D, P>
-  provide: (...providedDeps: Array<Task | CanisterScope>) => MotokoCanisterBuilder<I, S, D, P>
-  // TODO: UniformScopeCheck
-  done: () => S
+  deps: <ND extends Record<string, Task>>(
+    deps: ND,
+  ) => MotokoCanisterBuilder<I, MergeScopeDependencies<S, ND>, D & ND, P>
+  provide: <NP extends Record<string, Task>>(
+    providedDeps: NP,
+  ) => MotokoCanisterBuilder<I, MergeScopeProvide<S, NP>, D, P & NP>
+  /**
+   * Finalizes the builder state.
+   *
+   * This method is only callable if the builder is in a valid state. If not,
+   * the builder does not have the required dependency fields and this method
+   * will produce a compile-time error with a descriptive message.
+   *
+   * @returns The finalized builder state if valid.
+   */
+  done(
+    this: IsValid<S> extends true
+      ? MotokoCanisterBuilder<I, S, D, P>
+      : DependencyMismatchError,
+  ): UniformScopeCheck<S>
   // TODO:
   //   bindings: (fn: (args: { ctx: TaskCtxShape }) => Promise<I>) => MotokoCanisterBuilder<I>
   // Internal property to store the current scope
@@ -101,6 +117,7 @@ const makeMotokoBuildTask = (
     id: Symbol("motokoCanister/build"),
     dependencies: {},
     provide: {},
+    computeCacheKey: Option.none(),
     effect: Effect.gen(function* () {
       const path = yield* Path.Path
       const appDir = yield* Config.string("APP_DIR")
@@ -132,6 +149,7 @@ const makeMotokoDeleteTask = (): Task => {
     id: Symbol("motokoCanister/delete"),
     dependencies: {},
     provide: {},
+    computeCacheKey: Option.none(),
     effect: Effect.gen(function* () {
       // yield* deleteCanister(canisterId)
     }),
@@ -143,11 +161,10 @@ const makeMotokoDeleteTask = (): Task => {
 export const makeMotokoBuilder = <
   I,
   S extends CanisterScope,
-  D extends Array<Task>,
-  P extends Array<Task>,
+  D extends Record<string, Task>,
+  P extends Record<string, Task>,
 >(
   scope: S,
-  deps: D,
 ): MotokoCanisterBuilder<I, S, D, P> => {
   return {
     install: (installArgsOrFn) => {
@@ -158,7 +175,7 @@ export const makeMotokoBuilder = <
           install: makeInstallTask(installArgsOrFn),
         },
       } satisfies CanisterScope
-      return makeMotokoBuilder<I, typeof updatedScope, D, P>(updatedScope, deps)
+      return makeMotokoBuilder<I, typeof updatedScope, D, P>(updatedScope)
     },
 
     create: (canisterConfigOrFn) => {
@@ -169,7 +186,7 @@ export const makeMotokoBuilder = <
           create: makeCreateTask(canisterConfigOrFn),
         },
       }
-      return makeMotokoBuilder<I, typeof updatedScope, D, P>(updatedScope, deps)
+      return makeMotokoBuilder<I, typeof updatedScope, D, P>(updatedScope)
     },
 
     build: (canisterConfigOrFn) => {
@@ -180,21 +197,26 @@ export const makeMotokoBuilder = <
           build: makeMotokoBuildTask(canisterConfigOrFn),
         },
       } satisfies CanisterScope
-      return makeMotokoBuilder<I, typeof updatedScope, D, P>(updatedScope, deps)
+      return makeMotokoBuilder<I, typeof updatedScope, D, P>(updatedScope)
     },
 
-    deps: (...deps) => {
+    deps: (dependencies) => {
       // TODO: check that its a canister builder
-      const dependencies = deps.map((dep) => {
-        if (dep._tag === "scope") {
-          return dep.children.deploy
-        }
-        if (dep._tag === "task") {
-          return dep
-        }
-        return dep
-      }) satisfies Task[]
-      // TODO: do we create a service out of these?
+      // const dependencies = Object.fromEntries(
+      //   Object.entries(deps).map(([key, dep]) => {
+      //     // if (dep._tag === "builder") {
+      //     //   return dep._scope.children.deploy
+      //     // }
+      //     // if (dep._tag === "scope") {
+      //     //   return [key, dep.children.deploy]
+      //     // }
+      //     if (dep._tag === "task") {
+      //       return [key, dep]
+      //     }
+      //     return [key, dep]
+      //   }),
+      // ) satisfies Record<string, Task> as MergeScopeDependencies<S, typeof deps>
+
       const updatedScope = {
         ...scope,
         children: {
@@ -204,39 +226,55 @@ export const makeMotokoBuilder = <
             dependencies,
           },
         },
-      } satisfies CanisterScope
-      return makeMotokoBuilder<I, typeof updatedScope, typeof dependencies, P>(
-        updatedScope,
-        dependencies,
-      )
+      } satisfies CanisterScope as MergeScopeDependencies<
+        S,
+        typeof dependencies
+      >
+
+      return makeMotokoBuilder<
+        I,
+        typeof updatedScope,
+        // TODO: update type?
+        typeof dependencies,
+        P
+      >(updatedScope)
     },
 
-    provide: (...providedDeps) => {
+    provide: (providedDeps) => {
       // TODO: do we transform here?
       // TODO: do we type check here?
-      const finalDeps = providedDeps.map((dep) => {
-        // if (dep._tag === "builder") {
-        //   return dep._scope.children.deploy
-        // }
-        if (dep._tag === "scope" && dep.children.deploy) {
-          return dep.children.deploy
-        }
-        return dep as Task
-      }) satisfies Array<Task>
+      // const finalDeps = Object.fromEntries(
+      //   Object.entries(providedDeps).map(([key, dep]) => {
+      //     // if (dep._tag === "builder") {
+      //     //   return dep._scope.children.deploy
+      //     // }
+      //     // if (dep._tag === "scope" && dep.children.deploy) {
+      //     //   return [key, dep.children.deploy]
+      //     // }
+      //     return [key, dep as Task]
+      //   }),
+      // ) satisfies Record<string, Task>
+      // const finalDeps = providedDeps
+
+      // TODO: do we need to pass in to create as well?
       const updatedScope = {
         ...scope,
         children: {
           ...scope.children,
           install: {
             ...scope.children.install,
-            provide: finalDeps,
+            provide: providedDeps,
           },
         },
-      } satisfies CanisterScope
-      return makeMotokoBuilder<I, typeof updatedScope, D, typeof finalDeps>(
-        updatedScope,
-        deps,
-      )
+      } satisfies CanisterScope as MergeScopeProvide<S, typeof providedDeps>
+
+      return makeMotokoBuilder<
+        I,
+        typeof updatedScope,
+        D,
+        // TODO: update type?
+        typeof providedDeps
+      >(updatedScope)
     },
 
     //   delete: (task) => {
@@ -250,12 +288,7 @@ export const makeMotokoBuilder = <
     //   },
 
     done: () => {
-      // TODO: type check dependencies
-      // provide should match dependencies
-
-      // TODO: enable plugins
-      // return plugins(scope)
-      return scope
+      return scope as unknown as UniformScopeCheck<S>
     },
 
     // Add scope property to the initial builder
@@ -269,7 +302,7 @@ export const motokoCanister = <I = unknown>(
     | MotokoCanisterConfig
     | ((ctx: TaskCtxShape) => MotokoCanisterConfig)
     | ((ctx: TaskCtxShape) => Promise<MotokoCanisterConfig>),
-): MotokoCanisterBuilder<I, typeof initialScope, Array<Task>, Array<Task>> => {
+) => {
   // TODO: maybe just the return value of install? like a cleanup
   // delete: {
   //   task: deleteCanister(config),
@@ -290,5 +323,146 @@ export const motokoCanister = <I = unknown>(
     },
   } satisfies CanisterScope
 
-  return makeMotokoBuilder<I, typeof initialScope, Array<Task>, Array<Task>>(initialScope, [])
+  return makeMotokoBuilder<I, typeof initialScope, Record<string, Task>, Record<string, Task>>(initialScope)
 }
+
+const testTask = {
+  _tag: "task",
+  id: Symbol("test"),
+  dependencies: {},
+  provide: {},
+  effect: Effect.gen(function* () {}),
+  description: "",
+  tags: [],
+  computeCacheKey: Option.none(),
+} satisfies Task
+
+const testTask2 = {
+  _tag: "task",
+  id: Symbol("test"),
+  dependencies: {},
+  provide: {},
+  effect: Effect.gen(function* () {}),
+  description: "",
+  tags: [],
+  computeCacheKey: Option.none(),
+} satisfies Task
+
+const providedTask = {
+  _tag: "task",
+  id: Symbol("test"),
+  effect: Effect.gen(function* () {}),
+  description: "",
+  tags: [],
+  computeCacheKey: Option.none(),
+  dependencies: {
+    test: testTask,
+  },
+  provide: {
+    test: testTask,
+  },
+} satisfies Task
+
+const unProvidedTask = {
+  _tag: "task",
+  id: Symbol("test"),
+  effect: Effect.gen(function* () {}),
+  description: "",
+  tags: [],
+  computeCacheKey: Option.none(),
+  dependencies: {
+    test: testTask,
+    test2: testTask,
+  },
+  provide: {
+    test: testTask,
+    // TODO: does not raise a warning?
+    // test2: testTask2,
+    // test2: testTask,
+    // test3: testTask,
+  },
+} satisfies Task
+
+const unProvidedTask2 = {
+  _tag: "task",
+  id: Symbol("test"),
+  effect: Effect.gen(function* () {}),
+  description: "",
+  tags: [],
+  computeCacheKey: Option.none(),
+  dependencies: {
+    test: testTask,
+    // test2: testTask,
+  },
+  provide: {
+    // test: testTask,
+    // TODO: does not raise a warning?
+    // test2: testTask2,
+    // test2: testTask,
+    // test3: testTask,
+  },
+} satisfies Task
+
+const testScope = {
+  _tag: "scope",
+  tags: [Tags.CANISTER],
+  description: "",
+  children: {
+    providedTask,
+    unProvidedTask,
+  },
+} satisfies CanisterScope
+
+const testScope2 = {
+  _tag: "scope",
+  tags: [Tags.CANISTER],
+  description: "",
+  children: {
+    unProvidedTask2,
+  },
+} satisfies CanisterScope
+
+const providedTestScope = {
+  _tag: "scope",
+  tags: [Tags.CANISTER],
+  description: "",
+  children: {
+    providedTask,
+  },
+} satisfies CanisterScope
+
+// Type checks
+// const pt = providedTask satisfies DepBuilder<typeof providedTask>
+// const upt = unProvidedTask satisfies DepBuilder<typeof unProvidedTask>
+// const uts = testScope satisfies UniformScopeCheck<typeof testScope>
+// const pts = providedTestScope satisfies UniformScopeCheck<
+//   typeof providedTestScope
+// >
+// const uts2 = testScope2 satisfies UniformScopeCheck<typeof testScope2>
+
+// const test = customCanister(async () => ({
+//   wasm: "",
+//   candid: "",
+// }))
+
+// // test._scope.children.install.computeCacheKey = (task) => {
+// //   return task.id.toString()
+// // }
+
+// const t = test.deps({ asd: test._scope.children.create }).provide({
+//   asd: test._scope.children.create,
+//   // TODO: extras also cause errors? should it be allowed?
+//   // asd2: test._scope.children.create,
+// }).done()
+// t.children.install.computeCacheKey
+// // t.children.install.dependencies
+
+
+// const testMotokoCanister = motokoCanister(async () => ({ src: "src/motoko/canister.mo" }))
+// .deps({
+//   providedTask: providedTask,
+// })
+// .provide({
+//   providedTask: providedTask,
+// })
+// .done()

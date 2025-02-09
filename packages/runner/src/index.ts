@@ -665,7 +665,11 @@ export const runTask = <A, E, R, I>(
 
     // look here if cacheKey finds something. only after dependencies are run first
     // TODO: do we need access to dependencyResults inside the computeCacheKey?
-    const cacheKey = `${task.computeCacheKey ? task.computeCacheKey(task) : taskPath}:${taskPath}`
+    // const cacheKey = `${task.computeCacheKey ? task.computeCacheKey(task) : taskPath}:${taskPath}`
+    const cacheKey = `${Option.match(task.computeCacheKey, {
+      onSome: (computeCacheKey) => computeCacheKey(task),
+      onNone: () => taskPath,
+    })}:${taskPath}`
     // TODO: add taskPath
     const isCached = yield* cache.has(cacheKey)
     if (isCached && !options.forceRun) {

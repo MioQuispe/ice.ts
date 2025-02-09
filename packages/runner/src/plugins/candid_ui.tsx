@@ -1,4 +1,4 @@
-import { Effect, Match } from "effect"
+import { Effect, Match, Option } from "effect"
 import type {
   BuilderResult,
   Scope,
@@ -60,6 +60,7 @@ const makeCandidUITask = (scope: CanisterScope): Task => {
     id: Symbol("canister/candid_ui"),
     provide: {},
     dependencies: {},
+    computeCacheKey: Option.none(),
     // TODO: do we only want to warn at a type level?
     // TODO: type Task
     effect: Effect.gen(function* () {

@@ -85,7 +85,6 @@ export const DIP20 = (
       Principal.from(initArgs.capRouterId ?? CapRouter.id.ic),
     ]
   })
-  // result.provide({ asd: CapRouter.shape.children.build }).done()
   return result
 }
 

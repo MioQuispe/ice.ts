@@ -1,4 +1,4 @@
-import { Effect, Match } from "effect"
+import { Effect, Match, Option } from "effect"
 import type {
   BuilderResult,
   Scope,
@@ -24,6 +24,7 @@ const makeDeployTask = (scope: CanisterScope): Task => {
     // TODO: hmmm?
     id: Symbol("canister/deploy"),
     dependencies: {},
+    computeCacheKey: Option.none(),
     // TODO: we only want to warn at a type level?
     // TODO: type Task
     provide: {},

@@ -1,4 +1,4 @@
-import { Layer, Effect, Context, Data, Config, Match } from "effect"
+import { Effect, Context, Data, Config, Match, Option } from "effect"
 import {
   createCanister,
   installCanister,
@@ -29,13 +29,9 @@ import type {
 } from "../types/types.js"
 import { Principal } from "@dfinity/principal"
 // import mo from "motoko"
-import process from "node:process"
-import { execFileSync } from "node:child_process"
 import { Path, FileSystem, Command, CommandExecutor } from "@effect/platform"
-import fsnode from "node:fs"
-import { Moc } from "../services/moc.js"
 import { DfxService } from "../services/dfx.js"
-
+import type { CanisterScope, UniformScopeCheck, DependencyMismatchError, IsValid, MergeScopeDependencies, MergeScopeProvide } from "./types.js"
 export const Tags = {
   CANISTER: "$$crystal/canister",
   CREATE: "$$crystal/create",
@@ -53,235 +49,6 @@ export const Tags = {
 // candidUITaskPlugin()
 const plugins = <T extends TaskTreeNode>(taskTree: T) =>
   deployTaskPlugin(taskTree)
-
-const testTask = {
-  _tag: "task",
-  id: Symbol("test"),
-  dependencies: {},
-  provide: {},
-  effect: Effect.gen(function* () {}),
-  description: "",
-  tags: [],
-} satisfies Task
-
-const testTask2 = {
-  _tag: "task",
-  id: Symbol("test"),
-  dependencies: {},
-  provide: {},
-  effect: Effect.gen(function* () {}),
-  description: "",
-  tags: [],
-} satisfies Task
-
-const providedTask = {
-  _tag: "task",
-  id: Symbol("test"),
-  effect: Effect.gen(function* () {}),
-  description: "",
-  tags: [],
-  dependencies: {
-    test: testTask,
-  },
-  provide: {
-    test: testTask,
-  },
-} satisfies Task
-
-const unProvidedTask = {
-  _tag: "task",
-  id: Symbol("test"),
-  effect: Effect.gen(function* () {}),
-  description: "",
-  tags: [],
-  dependencies: {
-    test: testTask,
-    test2: testTask,
-  },
-  provide: {
-    test: testTask,
-    // TODO: does not raise a warning?
-    // test2: testTask2,
-    // test2: testTask,
-    // test3: testTask,
-  },
-} satisfies Task
-
-const unProvidedTask2 = {
-  _tag: "task",
-  id: Symbol("test"),
-  effect: Effect.gen(function* () {}),
-  description: "",
-  tags: [],
-  dependencies: {
-    test: testTask,
-    // test2: testTask,
-  },
-  provide: {
-    // test: testTask,
-    // TODO: does not raise a warning?
-    // test2: testTask2,
-    // test2: testTask,
-    // test3: testTask,
-  },
-} satisfies Task
-
-const testScope = {
-  _tag: "scope",
-  tags: [Tags.CANISTER],
-  description: "",
-  children: {
-    providedTask,
-    unProvidedTask,
-  },
-} satisfies CanisterScope
-
-const testScope2 = {
-  _tag: "scope",
-  tags: [Tags.CANISTER],
-  description: "",
-  children: {
-    unProvidedTask2,
-  },
-} satisfies CanisterScope
-
-const providedTestScope = {
-  _tag: "scope",
-  tags: [Tags.CANISTER],
-  description: "",
-  children: {
-    providedTask,
-  },
-} satisfies CanisterScope
-
-type DependenciesOf<T> = T extends { dependencies: infer D } ? D : never
-type ProvideOf<T> = T extends { provide: infer P } ? P : never
-export type DepBuilder<T> =
-  DependenciesOf<T> extends ProvideOf<T>
-    ? ProvideOf<T> extends DependenciesOf<T>
-      ? T
-      : never
-    : never
-export type UniformScopeCheck<S extends CanisterScope> = S extends {
-  children: infer C
-}
-  ? C extends { [K in keyof C]: DepBuilder<C[K]> }
-    ? S
-    : DependencyMismatchError
-  : DependencyMismatchError
-
-/**
- * Update a task's dependencies by merging its current dependencies with ND.
- */
-// type MergeTaskDependencies<
-//   T extends { dependencies: Record<string, Task> },
-//   ND extends Record<string, Task>,
-// > = Omit<T, "dependencies"> & {
-//   dependencies: T["dependencies"] & ND
-// }
-
-// /**
-//  * For each key in the children record (which are tasks),
-//  * update the task's dependencies using MergeTaskDependencies.
-//  */
-// type UpdateChildrenDeps<
-//   C extends Record<string, Task>,
-//   ND extends Record<string, Task>,
-// > = {
-//   [K in keyof C]: C[K] extends { dependencies: Record<string, Task> }
-//     ? MergeTaskDependencies<C[K], ND>
-//     : C[K]
-// }
-
-/**
- * Merge new dependencies ND into the entire scope, updating
- * each task in `children` so that its dependencies become:
- * its existing dependencies & ND.
- */
-// type MergeScopeDependencies<
-//   S extends CanisterScope,
-//   ND extends Record<string, Task>,
-// > = Omit<S, "children"> & {
-//   children: UpdateChildrenDeps<S["children"], ND>
-// }
-
-/**
- * Merge a task's dependencies with a new dependency record ND,
- * preserving exact optional property modifiers.
- */
-// type MergeTaskDeps<
-//   T extends Task,
-//   ND extends Record<string, Task>
-// > = {
-//   [K in keyof T]: K extends "dependencies" ? T[K] & ND : T[K]
-// }
-
-type MergeTaskDeps<T extends Task, ND extends Record<string, Task>> = 
-  Omit<T, "dependencies"> & { dependencies: ND }
-
-type MergeTaskProvide<T extends Task, NP extends Record<string, Task>> = 
-  Omit<T, "provide"> & { provide: NP }
-
-/**
- * Update every task in the children record by merging in ND.
- */
-type MergeAllChildrenDeps<
-  C extends Record<string, Task>,
-  ND extends Record<string, Task>
-> = {
-  [K in keyof C]: MergeTaskDeps<C[K], ND>
-}
-
-type MergeAllChildrenProvide<
-  C extends Record<string, Task>,
-  NP extends Record<string, Task>
-> = {
-  [K in keyof C]: MergeTaskProvide<C[K], NP>
-}
-/**
- * Merge new dependencies ND into the entire scope S by updating its children.
- */
-type MergeScopeDependencies<
-  S extends CanisterScope,
-  ND extends Record<string, Task>
-> = Omit<S, "children"> & {
-  children: MergeAllChildrenDeps<S["children"], ND>
-}
-
-type MergeScopeProvide<S extends CanisterScope, NP extends Record<string, Task>> = Omit<S, "children"> & {
-  children: MergeAllChildrenProvide<S["children"], NP>
-}
-
-// export type UpdatedDeps<S extends CanisterScope, ND extends Record<string, Task>> = {
-//   [K in keyof S["children"]]: S["children"][K] extends Task
-//     ? ND[K] extends S["children"][K]
-//       ? S["children"][K]
-//       : never
-//     : never
-// }
-
-// Type checks
-// const pt = providedTask satisfies DepBuilder<typeof providedTask>
-// const upt = unProvidedTask satisfies DepBuilder<typeof unProvidedTask>
-// const uts = testScope satisfies UniformScopeCheck<typeof testScope>
-// const pts = providedTestScope satisfies UniformScopeCheck<
-//   typeof providedTestScope
-// >
-// const uts2 = testScope2 satisfies UniformScopeCheck<typeof testScope2>
-
-/**
- * @doc
- * [ERROR] Missing required dependencies:
- * Please call .setDependencies() with all required keys before finalizing the builder.
- */
-export type DependencyMismatchError = {
-  // This property key is your custom error message.
-  "[CRYSTAL-ERROR: Dependency mismatch. Please provide all required dependencies.]": true
-}
-
-// Compute a boolean flag from our check.
-export type IsValid<S extends CanisterScope> =
-  UniformScopeCheck<S> extends DependencyMismatchError ? false : true
 
 export interface CanisterBuilder<
   I,
@@ -345,14 +112,6 @@ type CustomCanisterConfig = {
   canisterId?: string
 }
 
-export type CanisterScope = {
-  _tag: "scope"
-  tags: Array<string>
-  description: string
-  // only limited to tasks
-  children: Record<string, Task>
-}
-
 export const makeBindingsTask = () => {
   return {
     _tag: "task",
@@ -388,6 +147,7 @@ export const makeBindingsTask = () => {
     }),
     description: "some description",
     tags: [Tags.CANISTER, Tags.BINDINGS],
+    computeCacheKey: Option.none(),
   } satisfies Task
 }
 
@@ -402,6 +162,7 @@ export const makeInstallTask = <I>(
     id: Symbol("customCanister/install"),
     dependencies: {},
     provide: {},
+    computeCacheKey: Option.none(),
     effect: Effect.gen(function* () {
       yield* Effect.logInfo("Starting custom canister installation")
       const taskCtx = yield* TaskCtx
@@ -550,6 +311,7 @@ const makeBuildTask = (
     }),
     description: "some description",
     tags: [Tags.CANISTER, Tags.BUILD],
+    computeCacheKey: Option.none(),
   } satisfies Task
 }
 
@@ -611,6 +373,7 @@ export const makeCreateTask = (
     }),
     description: "some description",
     tags: [Tags.CANISTER, Tags.CREATE],
+    computeCacheKey: Option.none(),
   } satisfies Task
 }
 
@@ -691,7 +454,10 @@ const makeCustomCanisterBuilder = <
             dependencies,
           },
         },
-      } satisfies CanisterScope as MergeScopeDependencies<S, typeof dependencies>
+      } satisfies CanisterScope as MergeScopeDependencies<
+        S,
+        typeof dependencies
+      >
 
       return makeCustomCanisterBuilder<
         I,
@@ -856,12 +622,135 @@ export const Crystal = (config?: CrystalConfig) => {
   )
 }
 
-const test = customCanister(async () => ({
-  wasm: "",
-  candid: "",
-}))
 
-const t = test.deps({ asd: test._scope.children.create }).provide({
-  asd: test._scope.children.create,
-}).done()
-// t.children.install.dependencies
+
+const testTask = {
+  _tag: "task",
+  id: Symbol("test"),
+  dependencies: {},
+  provide: {},
+  effect: Effect.gen(function* () {}),
+  description: "",
+  tags: [],
+  computeCacheKey: Option.none(),
+} satisfies Task
+
+const testTask2 = {
+  _tag: "task",
+  id: Symbol("test"),
+  dependencies: {},
+  provide: {},
+  effect: Effect.gen(function* () {}),
+  description: "",
+  tags: [],
+  computeCacheKey: Option.none(),
+} satisfies Task
+
+const providedTask = {
+  _tag: "task",
+  id: Symbol("test"),
+  effect: Effect.gen(function* () {}),
+  description: "",
+  tags: [],
+  computeCacheKey: Option.none(),
+  dependencies: {
+    test: testTask,
+  },
+  provide: {
+    test: testTask,
+  },
+} satisfies Task
+
+const unProvidedTask = {
+  _tag: "task",
+  id: Symbol("test"),
+  effect: Effect.gen(function* () {}),
+  description: "",
+  tags: [],
+  computeCacheKey: Option.none(),
+  dependencies: {
+    test: testTask,
+    test2: testTask,
+  },
+  provide: {
+    test: testTask,
+    // TODO: does not raise a warning?
+    // test2: testTask2,
+    // test2: testTask,
+    // test3: testTask,
+  },
+} satisfies Task
+
+const unProvidedTask2 = {
+  _tag: "task",
+  id: Symbol("test"),
+  effect: Effect.gen(function* () {}),
+  description: "",
+  tags: [],
+  computeCacheKey: Option.none(),
+  dependencies: {
+    test: testTask,
+    // test2: testTask,
+  },
+  provide: {
+    // test: testTask,
+    // TODO: does not raise a warning?
+    // test2: testTask2,
+    // test2: testTask,
+    // test3: testTask,
+  },
+} satisfies Task
+
+const testScope = {
+  _tag: "scope",
+  tags: [Tags.CANISTER],
+  description: "",
+  children: {
+    providedTask,
+    unProvidedTask,
+  },
+} satisfies CanisterScope
+
+const testScope2 = {
+  _tag: "scope",
+  tags: [Tags.CANISTER],
+  description: "",
+  children: {
+    unProvidedTask2,
+  },
+} satisfies CanisterScope
+
+const providedTestScope = {
+  _tag: "scope",
+  tags: [Tags.CANISTER],
+  description: "",
+  children: {
+    providedTask,
+  },
+} satisfies CanisterScope
+
+// Type checks
+// const pt = providedTask satisfies DepBuilder<typeof providedTask>
+// const upt = unProvidedTask satisfies DepBuilder<typeof unProvidedTask>
+// const uts = testScope satisfies UniformScopeCheck<typeof testScope>
+// const pts = providedTestScope satisfies UniformScopeCheck<
+//   typeof providedTestScope
+// >
+// const uts2 = testScope2 satisfies UniformScopeCheck<typeof testScope2>
+
+// const test = customCanister(async () => ({
+//   wasm: "",
+//   candid: "",
+// }))
+
+// // test._scope.children.install.computeCacheKey = (task) => {
+// //   return task.id.toString()
+// // }
+
+// const t = test.deps({ asd: test._scope.children.create }).provide({
+//   asd: test._scope.children.create,
+//   // TODO: extras also cause errors? should it be allowed?
+//   // asd2: test._scope.children.create,
+// }).done()
+// t.children.install.computeCacheKey
+// // t.children.install.dependencies
