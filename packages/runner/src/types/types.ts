@@ -64,7 +64,8 @@ export interface Task<
   // transformArgs?: (args: string[]) => any[]
   // for caching
   input?: I // optional input
-  computeCacheKey?: (task: Task<A, E, R, I>) => string
+  // TODO: causes type issues in builders
+  // computeCacheKey?: (task: Task<A, E, R, I>) => string
 }
 
 export type Scope = {

@@ -171,38 +171,85 @@ export type UniformScopeCheck<S extends CanisterScope> = S extends {
   : DependencyMismatchError
 
 /**
- * Update a task’s dependencies by merging its current dependencies with ND.
+ * Update a task's dependencies by merging its current dependencies with ND.
  */
-type MergeTaskDependencies<
-  T extends { dependencies: Record<string, Task> },
-  ND extends Record<string, Task>,
-> = Omit<T, "dependencies"> & {
-  dependencies: T["dependencies"] & ND
-}
+// type MergeTaskDependencies<
+//   T extends { dependencies: Record<string, Task> },
+//   ND extends Record<string, Task>,
+// > = Omit<T, "dependencies"> & {
+//   dependencies: T["dependencies"] & ND
+// }
 
-/**
- * For each key in the children record (which are tasks),
- * update the task's dependencies using MergeTaskDependencies.
- */
-type UpdateChildrenDeps<
-  C extends Record<string, Task>,
-  ND extends Record<string, Task>,
-> = {
-  [K in keyof C]: C[K] extends { dependencies: Record<string, Task> }
-    ? MergeTaskDependencies<C[K], ND>
-    : C[K]
-}
+// /**
+//  * For each key in the children record (which are tasks),
+//  * update the task's dependencies using MergeTaskDependencies.
+//  */
+// type UpdateChildrenDeps<
+//   C extends Record<string, Task>,
+//   ND extends Record<string, Task>,
+// > = {
+//   [K in keyof C]: C[K] extends { dependencies: Record<string, Task> }
+//     ? MergeTaskDependencies<C[K], ND>
+//     : C[K]
+// }
 
 /**
  * Merge new dependencies ND into the entire scope, updating
  * each task in `children` so that its dependencies become:
  * its existing dependencies & ND.
  */
+// type MergeScopeDependencies<
+//   S extends CanisterScope,
+//   ND extends Record<string, Task>,
+// > = Omit<S, "children"> & {
+//   children: UpdateChildrenDeps<S["children"], ND>
+// }
+
+/**
+ * Merge a task's dependencies with a new dependency record ND,
+ * preserving exact optional property modifiers.
+ */
+// type MergeTaskDeps<
+//   T extends Task,
+//   ND extends Record<string, Task>
+// > = {
+//   [K in keyof T]: K extends "dependencies" ? T[K] & ND : T[K]
+// }
+
+type MergeTaskDeps<T extends Task, ND extends Record<string, Task>> = 
+  Omit<T, "dependencies"> & { dependencies: ND }
+
+type MergeTaskProvide<T extends Task, NP extends Record<string, Task>> = 
+  Omit<T, "provide"> & { provide: NP }
+
+/**
+ * Update every task in the children record by merging in ND.
+ */
+type MergeAllChildrenDeps<
+  C extends Record<string, Task>,
+  ND extends Record<string, Task>
+> = {
+  [K in keyof C]: MergeTaskDeps<C[K], ND>
+}
+
+type MergeAllChildrenProvide<
+  C extends Record<string, Task>,
+  NP extends Record<string, Task>
+> = {
+  [K in keyof C]: MergeTaskProvide<C[K], NP>
+}
+/**
+ * Merge new dependencies ND into the entire scope S by updating its children.
+ */
 type MergeScopeDependencies<
   S extends CanisterScope,
-  ND extends Record<string, Task>,
+  ND extends Record<string, Task>
 > = Omit<S, "children"> & {
-  children: UpdateChildrenDeps<S["children"], ND>
+  children: MergeAllChildrenDeps<S["children"], ND>
+}
+
+type MergeScopeProvide<S extends CanisterScope, NP extends Record<string, Task>> = Omit<S, "children"> & {
+  children: MergeAllChildrenProvide<S["children"], NP>
 }
 
 // export type UpdatedDeps<S extends CanisterScope, ND extends Record<string, Task>> = {
@@ -262,10 +309,10 @@ export interface CanisterBuilder<
   ) => CanisterBuilder<I, S, D, P>
   deps: <ND extends Record<string, Task>>(
     deps: ND,
-  ) => CanisterBuilder<I, S, D, P>
+  ) => CanisterBuilder<I, MergeScopeDependencies<S, ND>, D & ND, P>
   provide: <NP extends Record<string, Task>>(
     providedDeps: NP,
-  ) => CanisterBuilder<I, S, D, P & NP>
+  ) => CanisterBuilder<I, MergeScopeProvide<S, NP>, D, P & NP>
   // done: () => UniformScopeCheck<S extends CanisterScope ? S : never>
   // done: () => S
   /**
@@ -349,12 +396,11 @@ export const makeInstallTask = <I>(
     | ((args: { ctx: TaskCtxShape; mode: string }) => Promise<I>)
     | ((args: { ctx: TaskCtxShape; mode: string }) => I)
     | I,
-  deps: Record<string, Task> = {},
 ) => {
   return {
     _tag: "task",
     id: Symbol("customCanister/install"),
-    dependencies: deps,
+    dependencies: {},
     provide: {},
     effect: Effect.gen(function* () {
       yield* Effect.logInfo("Starting custom canister installation")
@@ -575,7 +621,6 @@ const makeCustomCanisterBuilder = <
   P extends Record<string, Task>,
 >(
   scope: S,
-  deps: D,
 ): CanisterBuilder<I, S, D, P> => {
   return {
     create: (canisterConfigOrFn) => {
@@ -588,7 +633,6 @@ const makeCustomCanisterBuilder = <
       } satisfies CanisterScope
       return makeCustomCanisterBuilder<I, typeof updatedScope, D, P>(
         updatedScope,
-        deps,
       )
     },
     install: (installArgsOrFn) => {
@@ -599,13 +643,12 @@ const makeCustomCanisterBuilder = <
         ...scope,
         children: {
           ...scope.children,
-          install: makeInstallTask(installArgsOrFn, deps),
+          install: makeInstallTask(installArgsOrFn),
         },
       } satisfies CanisterScope
       // TODO: updatedScope is not typed correctly
       return makeCustomCanisterBuilder<I, typeof updatedScope, D, P>(
         updatedScope,
-        deps,
       )
     },
     build: (canisterConfigOrFn) => {
@@ -618,7 +661,6 @@ const makeCustomCanisterBuilder = <
       } satisfies CanisterScope
       return makeCustomCanisterBuilder<I, typeof updatedScope, D, P>(
         updatedScope,
-        deps,
       )
     },
     // Here we extract the real tasks from the deps
@@ -649,31 +691,31 @@ const makeCustomCanisterBuilder = <
             dependencies,
           },
         },
-      } satisfies CanisterScope
+      } satisfies CanisterScope as MergeScopeDependencies<S, typeof dependencies>
 
       return makeCustomCanisterBuilder<
         I,
         typeof updatedScope,
         // TODO: update type?
-        typeof deps,
+        typeof dependencies,
         P
-      >(updatedScope, dependencies)
+      >(updatedScope)
     },
 
     provide: (providedDeps) => {
       // TODO: do we transform here?
       // TODO: do we type check here?
-      const finalDeps = Object.fromEntries(
-        Object.entries(providedDeps).map(([key, dep]) => {
-          // if (dep._tag === "builder") {
-          //   return dep._scope.children.deploy
-          // }
-          // if (dep._tag === "scope" && dep.children.deploy) {
-          //   return [key, dep.children.deploy]
-          // }
-          return [key, dep as Task]
-        }),
-      ) satisfies Record<string, Task>
+      // const finalDeps = Object.fromEntries(
+      //   Object.entries(providedDeps).map(([key, dep]) => {
+      //     // if (dep._tag === "builder") {
+      //     //   return dep._scope.children.deploy
+      //     // }
+      //     // if (dep._tag === "scope" && dep.children.deploy) {
+      //     //   return [key, dep.children.deploy]
+      //     // }
+      //     return [key, dep as Task]
+      //   }),
+      // ) satisfies Record<string, Task>
       // const finalDeps = providedDeps
 
       // TODO: do we need to pass in to create as well?
@@ -683,18 +725,18 @@ const makeCustomCanisterBuilder = <
           ...scope.children,
           install: {
             ...scope.children.install,
-            provide: finalDeps,
+            provide: providedDeps,
           },
         },
-      } satisfies CanisterScope
+      } satisfies CanisterScope as MergeScopeProvide<S, typeof providedDeps>
 
       return makeCustomCanisterBuilder<
         I,
         typeof updatedScope,
         D,
         // TODO: update type?
-        typeof finalDeps
-      >(updatedScope, deps)
+        typeof providedDeps
+      >(updatedScope)
     },
 
     done: () => {
@@ -742,7 +784,7 @@ export const customCanister = <I = unknown>(
     typeof initialScope,
     Record<string, Task>,
     Record<string, Task>
-  >(initialScope, {})
+  >(initialScope)
 }
 
 export const loadCanisterId = (taskPath: string) =>
@@ -819,5 +861,7 @@ const test = customCanister(async () => ({
   candid: "",
 }))
 
-const t = test.deps({ asd: test._scope.children.create }).done()
-t.children.install.dependencies
+const t = test.deps({ asd: test._scope.children.create }).provide({
+  asd: test._scope.children.create,
+}).done()
+// t.children.install.dependencies
