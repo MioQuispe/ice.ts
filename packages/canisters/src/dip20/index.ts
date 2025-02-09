@@ -58,8 +58,8 @@ export const DIP20 = (
     }
   })
   // TODO: how do we extract the Shape? do we need effect services / layers?
-  .deps(CapRouter.shape)
-  .provide(CapRouter.shape)
+  .deps({ capRouter: CapRouter.shape.children.install })
+  // .provide({ capRouter: CapRouter.shape.children.build })
   // TODO: install ctx should receive the dependencies in its type
   .install(async ({ ctx, mode }) => {
     let initArgs: InitArgs
@@ -70,7 +70,8 @@ export const DIP20 = (
     } else {
       initArgs = initResult
     }
-    const [capRouterId] = ctx.dependencies
+    // TODO: fix
+    const { capRouter: capRouterId } = ctx.dependencies
     return [
       initArgs.logo,
       initArgs.name,
@@ -84,6 +85,7 @@ export const DIP20 = (
       Principal.from(initArgs.capRouterId ?? CapRouter.id.ic),
     ]
   })
+  // result.provide({ asd: CapRouter.shape.children.build }).done()
   return result
 }
 

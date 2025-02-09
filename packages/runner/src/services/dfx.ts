@@ -69,7 +69,7 @@ export const getIdentity = (selection?: string) =>
       .replace("a123032100", "")
     const key = new Uint8Array(Buffer.from(raw, "hex"))
     // TODO: this is not working
-    const identity = Ed25519KeyIdentity.fromSecretKey(key)
+    const identity = Ed25519KeyIdentity.fromSecretKey(key.buffer)
     const principal = identity.getPrincipal().toText()
     const accountId = yield* getAccountId(principal)
 
@@ -328,7 +328,7 @@ export class DfxService extends Context.Tag("DfxService")<
               .replace("a123032100", "")
             const key = new Uint8Array(Buffer.from(raw, "hex"))
             // TODO: this is not working
-            const identity = Ed25519KeyIdentity.fromSecretKey(key)
+            const identity = Ed25519KeyIdentity.fromSecretKey(key.buffer)
             const principal = identity.getPrincipal().toText()
             const accountId = yield* getAccountId(principal)
 

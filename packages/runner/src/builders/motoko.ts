@@ -43,7 +43,7 @@ import {
   loadCanisterId,
   resolveConfig,
 } from "./custom.js"
-import type { CanisterScope, UniformScope } from "./custom.js"
+import type { CanisterScope } from "./custom.js"
 import { Tags } from "./custom.js"
 
 type MotokoCanisterConfig = {
@@ -77,6 +77,7 @@ export type MotokoCanisterBuilder<
   ) => MotokoCanisterBuilder<I, S, D, P>
   deps: (...deps: Array<Task | CanisterScope>) => MotokoCanisterBuilder<I, S, D, P>
   provide: (...providedDeps: Array<Task | CanisterScope>) => MotokoCanisterBuilder<I, S, D, P>
+  // TODO: UniformScopeCheck
   done: () => S
   // TODO:
   //   bindings: (fn: (args: { ctx: TaskCtxShape }) => Promise<I>) => MotokoCanisterBuilder<I>
@@ -98,8 +99,8 @@ const makeMotokoBuildTask = (
   return {
     _tag: "task",
     id: Symbol("motokoCanister/build"),
-    dependencies: [],
-    provide: [],
+    dependencies: {},
+    provide: {},
     effect: Effect.gen(function* () {
       const path = yield* Path.Path
       const appDir = yield* Config.string("APP_DIR")
@@ -129,8 +130,8 @@ const makeMotokoDeleteTask = (): Task => {
   return {
     _tag: "task",
     id: Symbol("motokoCanister/delete"),
-    dependencies: [],
-    provide: [],
+    dependencies: {},
+    provide: {},
     effect: Effect.gen(function* () {
       // yield* deleteCanister(canisterId)
     }),

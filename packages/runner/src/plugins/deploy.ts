@@ -23,10 +23,10 @@ const makeDeployTask = (scope: CanisterScope): Task => {
     _tag: "task",
     // TODO: hmmm?
     id: Symbol("canister/deploy"),
-    dependencies: [
-      // TODO: we only want to warn at a type level?
-    ], // TODO: type Task
-    provide: [],
+    dependencies: {},
+    // TODO: we only want to warn at a type level?
+    // TODO: type Task
+    provide: {},
     effect: Effect.gen(function* () {
       const { runTask } = yield* TaskCtx
       yield* Effect.logInfo("Starting custom canister deployment")

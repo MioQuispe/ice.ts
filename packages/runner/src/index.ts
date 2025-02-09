@@ -71,7 +71,7 @@ import { Moc } from "./services/moc.js"
 import { runCli } from "./cli/index.js"
 import { TaskRegistry } from "./services/taskRegistry.js"
 
-export * from "./builders/custom.js"
+export * from "./builders/index.js"
 // export * from "./plugins/withContext.js"
 
 import * as didc from "didc_js"
@@ -122,7 +122,7 @@ export class TaskCtx extends Context.Tag("TaskCtx")<
       }
     }
     readonly runTask: typeof runTask
-    readonly dependencies: Array<Task>
+    readonly dependencies: Record<string, unknown>
   }
 >() {
   static Live = Layer.effect(
@@ -148,7 +148,7 @@ export class TaskCtx extends Context.Tag("TaskCtx")<
         agent,
         identity,
         runTask,
-        dependencies: [],
+        dependencies: {},
         users: {
           default: {
             identity,
@@ -581,7 +581,7 @@ export const runTaskByPath = (taskPath: string) =>
 export class DependencyResults extends Context.Tag("DependencyResults")<
   DependencyResults,
   {
-    readonly dependencies: any[]
+    readonly dependencies: Record<string, unknown>
   }
 >() {}
 
@@ -646,14 +646,14 @@ export const runTask = <A, E, R, I>(
     //   return yield* cache.get(cacheKey)
     // }
     // type DepsSuccessTypes = DependencySuccessTypes<T["dependencies"]>
-    const dependencyResults = []
+    const dependencyResults: Record<string, unknown> = {}
     yield* Effect.log("Running dependencies", {
       dependencies: task.provide,
       taskPath: taskPath,
     })
-    for (const dependency of task.provide) {
+    for (const [dependencyName, dependency] of Object.entries(task.provide)) {
       const dependencyResult = yield* runTask(dependency)
-      dependencyResults.push(dependencyResult)
+      dependencyResults[dependencyName] = dependencyResult
     }
 
     const taskLayer = Layer.mergeAll(

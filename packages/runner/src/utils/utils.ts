@@ -29,5 +29,5 @@ export const principalToAccountId = (principal: Principal | string, subAccount?:
   // Prepend the checksum of the hash and convert to a hex string
   const checksum = calculateCrc32(hash)
   const bytes = new Uint8Array([...checksum, ...hash])
-  return toHexString(bytes)
+  return toHexString(bytes.buffer)
 }

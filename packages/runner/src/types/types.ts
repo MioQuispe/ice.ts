@@ -54,8 +54,8 @@ export interface Task<
   description: string
   tags: Array<string | symbol>
   // TODO: we only want the shape of the task here
-  dependencies: Array<Task>
-  provide: Array<Task>
+  dependencies: Record<string, Task>
+  provide: Record<string, Task>
   // TODO: hmm? is this needed? hardhat has them but not sure if we need them
   // flags: {
   //   [key: `--${string}`]: any
@@ -73,6 +73,8 @@ export type Scope = {
   tags: Array<string | symbol>
   description: string
   children: Record<string, TaskTreeNode>
+  // TODO:
+  defaultTask?: string
 }
 
 export type BuilderResult = {

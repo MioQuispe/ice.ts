@@ -49,65 +49,199 @@ export const Tags = {
   SCRIPT: "$$crystal/script",
 }
 
-export type AssertEqual<T, U> =
-  (<X>() => X extends T ? 1 : 2) extends <X>() => X extends U ? 1 : 2
-    ? true
-    : never
-
 // TODO: later
 // candidUITaskPlugin()
 const plugins = <T extends TaskTreeNode>(taskTree: T) =>
   deployTaskPlugin(taskTree)
 
+const testTask = {
+  _tag: "task",
+  id: Symbol("test"),
+  dependencies: {},
+  provide: {},
+  effect: Effect.gen(function* () {}),
+  description: "",
+  tags: [],
+} satisfies Task
+
+const testTask2 = {
+  _tag: "task",
+  id: Symbol("test"),
+  dependencies: {},
+  provide: {},
+  effect: Effect.gen(function* () {}),
+  description: "",
+  tags: [],
+} satisfies Task
+
+const providedTask = {
+  _tag: "task",
+  id: Symbol("test"),
+  effect: Effect.gen(function* () {}),
+  description: "",
+  tags: [],
+  dependencies: {
+    test: testTask,
+  },
+  provide: {
+    test: testTask,
+  },
+} satisfies Task
+
+const unProvidedTask = {
+  _tag: "task",
+  id: Symbol("test"),
+  effect: Effect.gen(function* () {}),
+  description: "",
+  tags: [],
+  dependencies: {
+    test: testTask,
+    test2: testTask,
+  },
+  provide: {
+    test: testTask,
+    // TODO: does not raise a warning?
+    // test2: testTask2,
+    // test2: testTask,
+    // test3: testTask,
+  },
+} satisfies Task
+
+const unProvidedTask2 = {
+  _tag: "task",
+  id: Symbol("test"),
+  effect: Effect.gen(function* () {}),
+  description: "",
+  tags: [],
+  dependencies: {
+    test: testTask,
+    // test2: testTask,
+  },
+  provide: {
+    // test: testTask,
+    // TODO: does not raise a warning?
+    // test2: testTask2,
+    // test2: testTask,
+    // test3: testTask,
+  },
+} satisfies Task
+
+const testScope = {
+  _tag: "scope",
+  tags: [Tags.CANISTER],
+  description: "",
+  children: {
+    providedTask,
+    unProvidedTask,
+  },
+} satisfies CanisterScope
+
+const testScope2 = {
+  _tag: "scope",
+  tags: [Tags.CANISTER],
+  description: "",
+  children: {
+    unProvidedTask2,
+  },
+} satisfies CanisterScope
+
+const providedTestScope = {
+  _tag: "scope",
+  tags: [Tags.CANISTER],
+  description: "",
+  children: {
+    providedTask,
+  },
+} satisfies CanisterScope
+
+type DependenciesOf<T> = T extends { dependencies: infer D } ? D : never
+type ProvideOf<T> = T extends { provide: infer P } ? P : never
+export type DepBuilder<T> =
+  DependenciesOf<T> extends ProvideOf<T>
+    ? ProvideOf<T> extends DependenciesOf<T>
+      ? T
+      : never
+    : never
+export type UniformScopeCheck<S extends CanisterScope> = S extends {
+  children: infer C
+}
+  ? C extends { [K in keyof C]: DepBuilder<C[K]> }
+    ? S
+    : DependencyMismatchError
+  : DependencyMismatchError
+
 /**
- * Represents a task where the dependencies and provided tasks are of the same type.
+ * Update a task’s dependencies by merging its current dependencies with ND.
  */
-export type UniformTask<
-  U extends Task,
-  A = unknown,
-  E = unknown,
-  R = unknown,
+type MergeTaskDependencies<
+  T extends { dependencies: Record<string, Task> },
+  ND extends Record<string, Task>,
+> = Omit<T, "dependencies"> & {
+  dependencies: T["dependencies"] & ND
+}
+
+/**
+ * For each key in the children record (which are tasks),
+ * update the task's dependencies using MergeTaskDependencies.
+ */
+type UpdateChildrenDeps<
+  C extends Record<string, Task>,
+  ND extends Record<string, Task>,
 > = {
-  _tag: "task"
-  id: symbol
-  // TODO: these may differ
-  dependencies: Array<U>
-  provide: Array<U>
-  effect: Effect.Effect<A, E, R>
-  description: string
-  tags: Array<string | symbol>
+  [K in keyof C]: C[K] extends { dependencies: Record<string, Task> }
+    ? MergeTaskDependencies<C[K], ND>
+    : C[K]
 }
 
 /**
- * A scope whose children tasks all enforce that the dependency type equals the provided type.
+ * Merge new dependencies ND into the entire scope, updating
+ * each task in `children` so that its dependencies become:
+ * its existing dependencies & ND.
  */
-export type UniformScope<S extends CanisterScope> = {
-  _tag: "scope"
-  tags: Array<string | symbol>
-  description: string
-  children: Record<string, UniformTask<S["children"][keyof S["children"]]>>
+type MergeScopeDependencies<
+  S extends CanisterScope,
+  ND extends Record<string, Task>,
+> = Omit<S, "children"> & {
+  children: UpdateChildrenDeps<S["children"], ND>
 }
 
-export function isUniformScope<S extends CanisterScope>(
-  scope: any,
-): scope is UniformScope<S> {
-  return (
-    scope !== null &&
-    typeof scope === "object" &&
-    scope._tag === "scope" &&
-    Array.isArray(scope.tags) &&
-    typeof scope.description === "string" &&
-    scope.children !== undefined &&
-    typeof scope.children === "object"
-  )
+// export type UpdatedDeps<S extends CanisterScope, ND extends Record<string, Task>> = {
+//   [K in keyof S["children"]]: S["children"][K] extends Task
+//     ? ND[K] extends S["children"][K]
+//       ? S["children"][K]
+//       : never
+//     : never
+// }
+
+// Type checks
+// const pt = providedTask satisfies DepBuilder<typeof providedTask>
+// const upt = unProvidedTask satisfies DepBuilder<typeof unProvidedTask>
+// const uts = testScope satisfies UniformScopeCheck<typeof testScope>
+// const pts = providedTestScope satisfies UniformScopeCheck<
+//   typeof providedTestScope
+// >
+// const uts2 = testScope2 satisfies UniformScopeCheck<typeof testScope2>
+
+/**
+ * @doc
+ * [ERROR] Missing required dependencies:
+ * Please call .setDependencies() with all required keys before finalizing the builder.
+ */
+export type DependencyMismatchError = {
+  // This property key is your custom error message.
+  "[CRYSTAL-ERROR: Dependency mismatch. Please provide all required dependencies.]": true
 }
 
-export type CanisterBuilder<
+// Compute a boolean flag from our check.
+export type IsValid<S extends CanisterScope> =
+  UniformScopeCheck<S> extends DependencyMismatchError ? false : true
+
+export interface CanisterBuilder<
   I,
   S extends CanisterScope,
-  D extends Array<Task>,
-  P extends Array<Task>,
-> = {
+  D extends Record<string, Task>,
+  P extends Record<string, Task>,
+> {
   create: (
     canisterConfigOrFn:
       | CustomCanisterConfig
@@ -126,12 +260,29 @@ export type CanisterBuilder<
       | ((ctx: TaskCtxShape) => CustomCanisterConfig)
       | ((ctx: TaskCtxShape) => Promise<CustomCanisterConfig>),
   ) => CanisterBuilder<I, S, D, P>
-  deps: (...deps: Array<Task | CanisterScope>) => CanisterBuilder<I, S, D, P>
-  provide: (
-    ...providedDeps: Array<Task | CanisterScope>
+  deps: <ND extends Record<string, Task>>(
+    deps: ND,
   ) => CanisterBuilder<I, S, D, P>
-  // done: () => UniformScope<S>
-  done: () => S
+  provide: <NP extends Record<string, Task>>(
+    providedDeps: NP,
+  ) => CanisterBuilder<I, S, D, P & NP>
+  // done: () => UniformScopeCheck<S extends CanisterScope ? S : never>
+  // done: () => S
+  /**
+   * Finalizes the builder state.
+   *
+   * This method is only callable if the builder is in a valid state. If not,
+   * the builder does not have the required dependency fields and this method
+   * will produce a compile-time error with a descriptive message.
+   *
+   * @returns The finalized builder state if valid.
+   */
+  done(
+    this: IsValid<S> extends true
+      ? CanisterBuilder<I, S, D, P>
+      : DependencyMismatchError,
+  ): UniformScopeCheck<S>
+
   // TODO:
   //   bindings: (fn: (args: { ctx: TaskCtxShape }) => Promise<I>) => CanisterBuilder<I>
   // Internal property to store the current scope
@@ -149,7 +300,7 @@ type CustomCanisterConfig = {
 
 export type CanisterScope = {
   _tag: "scope"
-  tags: Array<string | symbol>
+  tags: Array<string>
   description: string
   // only limited to tasks
   children: Record<string, Task>
@@ -159,7 +310,8 @@ export const makeBindingsTask = () => {
   return {
     _tag: "task",
     id: Symbol("customCanister/bindings"),
-    dependencies: [],
+    dependencies: {},
+    provide: {},
     // TODO: do we allow a fn as args here?
     effect: Effect.gen(function* () {
       const path = yield* Path.Path
@@ -189,20 +341,21 @@ export const makeBindingsTask = () => {
     }),
     description: "some description",
     tags: [Tags.CANISTER, Tags.BINDINGS],
-    provide: [],
   } satisfies Task
 }
+
 export const makeInstallTask = <I>(
   installArgsOrFn?:
     | ((args: { ctx: TaskCtxShape; mode: string }) => Promise<I>)
     | ((args: { ctx: TaskCtxShape; mode: string }) => I)
     | I,
-  deps: Array<Task> = [],
+  deps: Record<string, Task> = {},
 ) => {
   return {
     _tag: "task",
     id: Symbol("customCanister/install"),
     dependencies: deps,
+    provide: {},
     effect: Effect.gen(function* () {
       yield* Effect.logInfo("Starting custom canister installation")
       const taskCtx = yield* TaskCtx
@@ -300,7 +453,6 @@ export const makeInstallTask = <I>(
     }),
     description: "Install canister code",
     tags: [Tags.CANISTER, Tags.INSTALL],
-    provide: [],
   } satisfies Task
 }
 
@@ -313,7 +465,8 @@ const makeBuildTask = (
   return {
     _tag: "task",
     id: Symbol("customCanister/build"),
-    dependencies: [],
+    dependencies: {},
+    provide: {},
     effect: Effect.gen(function* () {
       const taskCtx = yield* TaskCtx
       const fs = yield* FileSystem.FileSystem
@@ -351,7 +504,6 @@ const makeBuildTask = (
     }),
     description: "some description",
     tags: [Tags.CANISTER, Tags.BUILD],
-    provide: [],
   } satisfies Task
 }
 
@@ -393,7 +545,8 @@ export const makeCreateTask = (
   return {
     _tag: "task",
     id,
-    dependencies: [],
+    dependencies: {},
+    provide: {},
     effect: Effect.gen(function* () {
       const path = yield* Path.Path
       const fs = yield* FileSystem.FileSystem
@@ -412,15 +565,14 @@ export const makeCreateTask = (
     }),
     description: "some description",
     tags: [Tags.CANISTER, Tags.CREATE],
-    provide: [],
   } satisfies Task
 }
 
 const makeCustomCanisterBuilder = <
   I,
   S extends CanisterScope,
-  D extends Array<Task>,
-  P extends Array<Task>,
+  D extends Record<string, Task>,
+  P extends Record<string, Task>,
 >(
   scope: S,
   deps: D,
@@ -471,20 +623,22 @@ const makeCustomCanisterBuilder = <
     },
     // Here we extract the real tasks from the deps
     // is it enough to compare symbols?
-    deps: (...deps) => {
+    deps: (dependencies) => {
       // TODO: check that its a canister builder
-      const dependencies = deps.map((dep) => {
-        // if (dep._tag === "builder") {
-        //   return dep._scope.children.deploy
-        // }
-        if (dep._tag === "scope") {
-          return dep.children.deploy
-        }
-        if (dep._tag === "task") {
-          return dep
-        }
-        return dep
-      }) satisfies Array<Task>
+      // const dependencies = Object.fromEntries(
+      //   Object.entries(deps).map(([key, dep]) => {
+      //     // if (dep._tag === "builder") {
+      //     //   return dep._scope.children.deploy
+      //     // }
+      //     // if (dep._tag === "scope") {
+      //     //   return [key, dep.children.deploy]
+      //     // }
+      //     if (dep._tag === "task") {
+      //       return [key, dep]
+      //     }
+      //     return [key, dep]
+      //   }),
+      // ) satisfies Record<string, Task> as MergeScopeDependencies<S, typeof deps>
 
       const updatedScope = {
         ...scope,
@@ -500,24 +654,29 @@ const makeCustomCanisterBuilder = <
       return makeCustomCanisterBuilder<
         I,
         typeof updatedScope,
-        typeof dependencies,
+        // TODO: update type?
+        typeof deps,
         P
       >(updatedScope, dependencies)
     },
 
-    provide: (...providedDeps) => {
+    provide: (providedDeps) => {
       // TODO: do we transform here?
       // TODO: do we type check here?
-      const finalDeps = providedDeps.map((dep) => {
-        // if (dep._tag === "builder") {
-        //   return dep._scope.children.deploy
-        // }
-        if (dep._tag === "scope" && dep.children.deploy) {
-          return dep.children.deploy
-        }
-        return dep as Task
-      }) satisfies Array<Task>
+      const finalDeps = Object.fromEntries(
+        Object.entries(providedDeps).map(([key, dep]) => {
+          // if (dep._tag === "builder") {
+          //   return dep._scope.children.deploy
+          // }
+          // if (dep._tag === "scope" && dep.children.deploy) {
+          //   return [key, dep.children.deploy]
+          // }
+          return [key, dep as Task]
+        }),
+      ) satisfies Record<string, Task>
+      // const finalDeps = providedDeps
 
+      // TODO: do we need to pass in to create as well?
       const updatedScope = {
         ...scope,
         children: {
@@ -533,17 +692,13 @@ const makeCustomCanisterBuilder = <
         I,
         typeof updatedScope,
         D,
+        // TODO: update type?
         typeof finalDeps
       >(updatedScope, deps)
     },
 
     done: () => {
-      // TODO: type check dependencies
-      // provide should match dependencies
-
-      // TODO: enable plugins
-      // return plugins(scope)
-      return scope
+      return scope as unknown as UniformScopeCheck<S>
     },
 
     // Add scope property to the initial builder
@@ -559,7 +714,7 @@ export const customCanister = <I = unknown>(
     | ((ctx: TaskCtxShape) => Promise<CustomCanisterConfig>)
     | ((ctx: TaskCtxShape) => CustomCanisterConfig)
     | CustomCanisterConfig,
-): CanisterBuilder<I, typeof initialScope, Array<Task>, Array<Task>> => {
+) => {
   const initialScope = {
     _tag: "scope",
     tags: [Tags.CANISTER],
@@ -582,7 +737,12 @@ export const customCanister = <I = unknown>(
     },
   } satisfies CanisterScope
 
-  return makeCustomCanisterBuilder<I, typeof initialScope, Array<Task>, Array<Task>>(initialScope, [])
+  return makeCustomCanisterBuilder<
+    I,
+    typeof initialScope,
+    Record<string, Task>,
+    Record<string, Task>
+  >(initialScope, {})
 }
 
 export const loadCanisterId = (taskPath: string) =>
@@ -653,3 +813,11 @@ export const Crystal = (config?: CrystalConfig) => {
     }
   )
 }
+
+const test = customCanister(async () => ({
+  wasm: "",
+  candid: "",
+}))
+
+const t = test.deps({ asd: test._scope.children.create }).done()
+t.children.install.dependencies

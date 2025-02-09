@@ -58,10 +58,10 @@ const makeCandidUITask = (scope: CanisterScope): Task => {
     _tag: "task",
     // TODO: get from task?
     id: Symbol("canister/candid_ui"),
-    provide: [],
-    dependencies: [
-      // TODO: do we only want to warn at a type level?
-    ], // TODO: type Task
+    provide: {},
+    dependencies: {},
+    // TODO: do we only want to warn at a type level?
+    // TODO: type Task
     effect: Effect.gen(function* () {
       const { runTask, agent, identity } = yield* TaskCtx
       const { taskPath } = yield* TaskInfo
