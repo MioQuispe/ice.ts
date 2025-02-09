@@ -43,64 +43,12 @@ import {
   loadCanisterId,
   resolveConfig,
 } from "./custom.js"
-import type { CanisterScope, UniformScopeCheck, DependencyMismatchError, IsValid, MergeScopeDependencies, MergeScopeProvide } from "./types.js"
+import type { CanisterBuilder, CanisterScope, UniformScopeCheck, DependencyMismatchError, IsValid, MergeScopeDependencies, MergeScopeProvide } from "./types.js"
 import { Tags } from "./custom.js"
 
 type MotokoCanisterConfig = {
   src: string
   canisterId?: string
-}
-
-export type MotokoCanisterBuilder<
-  I,
-  S extends CanisterScope,
-  D extends Record<string, Task>,
-  P extends Record<string, Task>,
-> = {
-  create: (
-    canisterConfigOrFn:
-      | MotokoCanisterConfig
-      | ((ctx: TaskCtxShape) => MotokoCanisterConfig)
-      | ((ctx: TaskCtxShape) => Promise<MotokoCanisterConfig>),
-  ) => MotokoCanisterBuilder<I, S, D, P>
-  install: (
-    installArgsOrFn:
-      | ((args: { ctx: TaskCtxShape; mode: string }) => Promise<I>)
-      | ((args: { ctx: TaskCtxShape; mode: string }) => I)
-      | I,
-  ) => MotokoCanisterBuilder<I, S, D, P>
-  build: (
-    canisterConfigOrFn:
-      | MotokoCanisterConfig
-      | ((ctx: TaskCtxShape) => MotokoCanisterConfig)
-      | ((ctx: TaskCtxShape) => Promise<MotokoCanisterConfig>),
-  ) => MotokoCanisterBuilder<I, S, D, P>
-  deps: <ND extends Record<string, Task>>(
-    deps: ND,
-  ) => MotokoCanisterBuilder<I, MergeScopeDependencies<S, ND>, D & ND, P>
-  provide: <NP extends Record<string, Task>>(
-    providedDeps: NP,
-  ) => MotokoCanisterBuilder<I, MergeScopeProvide<S, NP>, D, P & NP>
-  /**
-   * Finalizes the builder state.
-   *
-   * This method is only callable if the builder is in a valid state. If not,
-   * the builder does not have the required dependency fields and this method
-   * will produce a compile-time error with a descriptive message.
-   *
-   * @returns The finalized builder state if valid.
-   */
-  done(
-    this: IsValid<S> extends true
-      ? MotokoCanisterBuilder<I, S, D, P>
-      : DependencyMismatchError,
-  ): UniformScopeCheck<S>
-  // TODO:
-  //   bindings: (fn: (args: { ctx: TaskCtxShape }) => Promise<I>) => MotokoCanisterBuilder<I>
-  // Internal property to store the current scope
-  _scope: S
-  // TODO: use BuilderResult?
-  _tag: "builder"
 }
 
 const plugins = <T extends TaskTreeNode>(taskTree: T) =>
@@ -163,9 +111,10 @@ export const makeMotokoBuilder = <
   S extends CanisterScope,
   D extends Record<string, Task>,
   P extends Record<string, Task>,
+  Config extends MotokoCanisterConfig,
 >(
   scope: S,
-): MotokoCanisterBuilder<I, S, D, P> => {
+): CanisterBuilder<I, S, D, P, Config> => {
   return {
     install: (installArgsOrFn) => {
       const updatedScope = {
@@ -175,7 +124,7 @@ export const makeMotokoBuilder = <
           install: makeInstallTask(installArgsOrFn),
         },
       } satisfies CanisterScope
-      return makeMotokoBuilder<I, typeof updatedScope, D, P>(updatedScope)
+      return makeMotokoBuilder<I, typeof updatedScope, D, P, Config>(updatedScope)
     },
 
     create: (canisterConfigOrFn) => {
@@ -186,7 +135,7 @@ export const makeMotokoBuilder = <
           create: makeCreateTask(canisterConfigOrFn),
         },
       }
-      return makeMotokoBuilder<I, typeof updatedScope, D, P>(updatedScope)
+      return makeMotokoBuilder<I, typeof updatedScope, D, P, Config>(updatedScope)
     },
 
     build: (canisterConfigOrFn) => {
@@ -197,7 +146,7 @@ export const makeMotokoBuilder = <
           build: makeMotokoBuildTask(canisterConfigOrFn),
         },
       } satisfies CanisterScope
-      return makeMotokoBuilder<I, typeof updatedScope, D, P>(updatedScope)
+      return makeMotokoBuilder<I, typeof updatedScope, D, P, Config>(updatedScope)
     },
 
     deps: (dependencies) => {
@@ -236,7 +185,8 @@ export const makeMotokoBuilder = <
         typeof updatedScope,
         // TODO: update type?
         typeof dependencies,
-        P
+        P,
+        Config
       >(updatedScope)
     },
 
@@ -273,7 +223,8 @@ export const makeMotokoBuilder = <
         typeof updatedScope,
         D,
         // TODO: update type?
-        typeof providedDeps
+        typeof providedDeps,
+        Config
       >(updatedScope)
     },
 
@@ -323,7 +274,7 @@ export const motokoCanister = <I = unknown>(
     },
   } satisfies CanisterScope
 
-  return makeMotokoBuilder<I, typeof initialScope, Record<string, Task>, Record<string, Task>>(initialScope)
+  return makeMotokoBuilder<I, typeof initialScope, Record<string, Task>, Record<string, Task>, MotokoCanisterConfig>(initialScope)
 }
 
 const testTask = {

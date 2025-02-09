@@ -31,7 +31,7 @@ import { Principal } from "@dfinity/principal"
 // import mo from "motoko"
 import { Path, FileSystem, Command, CommandExecutor } from "@effect/platform"
 import { DfxService } from "../services/dfx.js"
-import type { CanisterScope, UniformScopeCheck, DependencyMismatchError, IsValid, MergeScopeDependencies, MergeScopeProvide } from "./types.js"
+import type { CanisterBuilder, CanisterScope, UniformScopeCheck, DependencyMismatchError, IsValid, MergeScopeDependencies, MergeScopeProvide } from "./types.js"
 export const Tags = {
   CANISTER: "$$crystal/canister",
   CREATE: "$$crystal/create",
@@ -50,65 +50,9 @@ export const Tags = {
 const plugins = <T extends TaskTreeNode>(taskTree: T) =>
   deployTaskPlugin(taskTree)
 
-export interface CanisterBuilder<
-  I,
-  S extends CanisterScope,
-  D extends Record<string, Task>,
-  P extends Record<string, Task>,
-> {
-  create: (
-    canisterConfigOrFn:
-      | CustomCanisterConfig
-      | ((ctx: TaskCtxShape) => CustomCanisterConfig)
-      | ((ctx: TaskCtxShape) => Promise<CustomCanisterConfig>),
-  ) => CanisterBuilder<I, S, D, P>
-  install: (
-    installArgsOrFn:
-      | ((args: { ctx: TaskCtxShape; mode: string }) => Promise<I>)
-      | ((args: { ctx: TaskCtxShape; mode: string }) => I)
-      | I,
-  ) => CanisterBuilder<I, S, D, P>
-  build: (
-    canisterConfigOrFn:
-      | CustomCanisterConfig
-      | ((ctx: TaskCtxShape) => CustomCanisterConfig)
-      | ((ctx: TaskCtxShape) => Promise<CustomCanisterConfig>),
-  ) => CanisterBuilder<I, S, D, P>
-  deps: <ND extends Record<string, Task>>(
-    deps: ND,
-  ) => CanisterBuilder<I, MergeScopeDependencies<S, ND>, D & ND, P>
-  provide: <NP extends Record<string, Task>>(
-    providedDeps: NP,
-  ) => CanisterBuilder<I, MergeScopeProvide<S, NP>, D, P & NP>
-  // done: () => UniformScopeCheck<S extends CanisterScope ? S : never>
-  // done: () => S
-  /**
-   * Finalizes the builder state.
-   *
-   * This method is only callable if the builder is in a valid state. If not,
-   * the builder does not have the required dependency fields and this method
-   * will produce a compile-time error with a descriptive message.
-   *
-   * @returns The finalized builder state if valid.
-   */
-  done(
-    this: IsValid<S> extends true
-      ? CanisterBuilder<I, S, D, P>
-      : DependencyMismatchError,
-  ): UniformScopeCheck<S>
-
-  // TODO:
-  //   bindings: (fn: (args: { ctx: TaskCtxShape }) => Promise<I>) => CanisterBuilder<I>
-  // Internal property to store the current scope
-  _scope: S
-  // TODO: use BuilderResult?
-  _tag: "builder"
-}
-
 type CustomCanisterConfig = {
   wasm: string
   candid: string
-  // TODO: make optional
   canisterId?: string
 }
 
@@ -382,9 +326,10 @@ const makeCustomCanisterBuilder = <
   S extends CanisterScope,
   D extends Record<string, Task>,
   P extends Record<string, Task>,
+  Config extends CustomCanisterConfig,
 >(
   scope: S,
-): CanisterBuilder<I, S, D, P> => {
+): CanisterBuilder<I, S, D, P, Config> => {
   return {
     create: (canisterConfigOrFn) => {
       const updatedScope = {
@@ -394,7 +339,7 @@ const makeCustomCanisterBuilder = <
           create: makeCreateTask(canisterConfigOrFn),
         },
       } satisfies CanisterScope
-      return makeCustomCanisterBuilder<I, typeof updatedScope, D, P>(
+      return makeCustomCanisterBuilder<I, typeof updatedScope, D, P, Config>(
         updatedScope,
       )
     },
@@ -410,7 +355,7 @@ const makeCustomCanisterBuilder = <
         },
       } satisfies CanisterScope
       // TODO: updatedScope is not typed correctly
-      return makeCustomCanisterBuilder<I, typeof updatedScope, D, P>(
+      return makeCustomCanisterBuilder<I, typeof updatedScope, D, P, Config>(
         updatedScope,
       )
     },
@@ -422,7 +367,7 @@ const makeCustomCanisterBuilder = <
           build: makeBuildTask(canisterConfigOrFn),
         },
       } satisfies CanisterScope
-      return makeCustomCanisterBuilder<I, typeof updatedScope, D, P>(
+      return makeCustomCanisterBuilder<I, typeof updatedScope, D, P, Config>(
         updatedScope,
       )
     },
@@ -464,7 +409,8 @@ const makeCustomCanisterBuilder = <
         typeof updatedScope,
         // TODO: update type?
         typeof dependencies,
-        P
+        P,
+        Config
       >(updatedScope)
     },
 
@@ -501,7 +447,8 @@ const makeCustomCanisterBuilder = <
         typeof updatedScope,
         D,
         // TODO: update type?
-        typeof providedDeps
+        typeof providedDeps,
+        Config
       >(updatedScope)
     },
 
@@ -549,7 +496,8 @@ export const customCanister = <I = unknown>(
     I,
     typeof initialScope,
     Record<string, Task>,
-    Record<string, Task>
+    Record<string, Task>,
+    CustomCanisterConfig
   >(initialScope)
 }
 
@@ -743,9 +691,9 @@ const providedTestScope = {
 //   candid: "",
 // }))
 
-// // test._scope.children.install.computeCacheKey = (task) => {
-// //   return task.id.toString()
-// // }
+// // // test._scope.children.install.computeCacheKey = (task) => {
+// // //   return task.id.toString()
+// // // }
 
 // const t = test.deps({ asd: test._scope.children.create }).provide({
 //   asd: test._scope.children.create,

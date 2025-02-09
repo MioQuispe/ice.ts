@@ -1,3 +1,4 @@
+import { TaskCtxShape } from "src/index.js"
 import type { Task } from "../types/types.js"
 
 type DependenciesOf<T> = T extends { dependencies: infer D } ? D : never
@@ -77,4 +78,62 @@ export type CanisterScope = {
   description: string
   // only limited to tasks
   children: Record<string, Task>
+}
+
+
+
+
+export interface CanisterBuilder<
+  I,
+  S extends CanisterScope,
+  D extends Record<string, Task>,
+  P extends Record<string, Task>,
+  Config
+> {
+  create: (
+    canisterConfigOrFn:
+      | Config
+      | ((ctx: TaskCtxShape) => Config)
+      | ((ctx: TaskCtxShape) => Promise<Config>),
+  ) => CanisterBuilder<I, S, D, P, Config>
+  install: (
+    installArgsOrFn:
+      | ((args: { ctx: TaskCtxShape; mode: string }) => Promise<I>)
+      | ((args: { ctx: TaskCtxShape; mode: string }) => I)
+      | I,
+  ) => CanisterBuilder<I, S, D, P, Config>
+  build: (
+    canisterConfigOrFn:
+      | Config
+      | ((ctx: TaskCtxShape) => Config)
+      | ((ctx: TaskCtxShape) => Promise<Config>),
+  ) => CanisterBuilder<I, S, D, P, Config>
+  deps: <ND extends Record<string, Task>>(
+    deps: ND,
+  ) => CanisterBuilder<I, MergeScopeDependencies<S, ND>, D & ND, P, Config>
+  provide: <NP extends Record<string, Task>>(
+    providedDeps: NP,
+  ) => CanisterBuilder<I, MergeScopeProvide<S, NP>, D, P & NP, Config>
+  // done: () => UniformScopeCheck<S extends CanisterScope ? S : never>
+  // done: () => S
+  /**
+   * Finalizes the builder state.
+   *
+   * This method is only callable if the builder is in a valid state. If not,
+   * the builder does not have the required dependency fields and this method
+   * will produce a compile-time error with a descriptive message.
+   *
+   * @returns The finalized builder state if valid.
+   */
+  done(
+    this: IsValid<S> extends true
+      ? CanisterBuilder<I, S, D, P, Config>
+      : DependencyMismatchError,
+  ): UniformScopeCheck<S>
+
+  // TODO:
+  //   bindings: (fn: (args: { ctx: TaskCtxShape }) => Promise<I>) => CanisterBuilder<I>
+  // Internal property to store the current scope
+  _scope: S
+  _tag: "builder"
 }
