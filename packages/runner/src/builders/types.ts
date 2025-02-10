@@ -1,13 +1,28 @@
-import type { Task } from "../types/types.js"
+import type {
+  BuilderResult,
+  Task,
+  CanisterConstructor,
+} from "../types/types.js"
 import type { TaskCtxShape } from "../index.js"
 // import type { Effect } from "effect"
 import { Effect, Option } from "effect"
 import { customCanister } from "./custom.js"
 
-export type CompareTaskReturnValues<T extends Task> =
-  T extends { effect: Effect.Effect<infer S, any, any> }
-    ? S
-    : never
+export type ExtractProvidedDeps<
+  NP extends Record<string, Task | CanisterConstructor>,
+> = {
+  [K in keyof NP]: NP[K] extends CanisterConstructor
+    ? NP[K]["provides"]
+    : NP[K] extends Task
+      ? NP[K]
+      : never
+}
+
+export type CompareTaskReturnValues<T extends Task> = T extends {
+  effect: Effect.Effect<infer S, any, any>
+}
+  ? S
+  : never
 
 type DependenciesOf<T> = T extends { dependencies: infer D } ? D : never
 type ProvideOf<T> = T extends { provide: infer P } ? P : never
@@ -162,12 +177,24 @@ export interface CanisterBuilder<
       | ((ctx: TaskCtxShape) => Promise<Config>),
   ) => CanisterBuilder<I, S, D, P, Config>
   // TODO: allow passing in a CanisterScope and extract from it
-  deps: <ND extends Record<string, Task>>(
+  deps: <ND extends Record<string, Task | CanisterConstructor>>(
     deps: ND,
-  ) => CanisterBuilder<I, MergeScopeDependencies<S, ND>, ND, P, Config>
-  provide: <NP extends Record<string, Task>>(
+  ) => CanisterBuilder<
+  I, 
+  MergeScopeDependencies<S, ExtractProvidedDeps<ND>>, 
+  ExtractProvidedDeps<ND>, 
+  P, 
+  Config
+  >
+  provide: <NP extends Record<string, Task | CanisterConstructor>>(
     providedDeps: NP,
-  ) => CanisterBuilder<I, MergeScopeProvide<S, NP>, D, NP, Config>
+  ) => CanisterBuilder<
+    I,
+    MergeScopeProvide<S, ExtractProvidedDeps<NP>>,
+    D,
+    ExtractProvidedDeps<NP>,
+    Config
+  >
   // done: () => UniformScopeCheck<S extends CanisterScope ? S : never>
   // done: () => S
   /**
@@ -323,21 +350,40 @@ const providedTestScope = {
 // >
 // const uts2 = testScope2 satisfies UniformScopeCheck<typeof testScope2>
 
+// const Canister = {
+//   provides: testTask2
+// } satisfies CanisterConstructor
+
+// const providedMap = {
+//   Canister,
+//   testTask2,
+// } satisfies Record<string, Task | CanisterConstructor>
+
+// const debugType = {} as ExtractProvidedDeps<typeof providedMap>
+
+// debugType.Canister
+// debugType.testTask2
+
 // const test = customCanister(async () => ({
 //   wasm: "",
 //   candid: "",
 // }))
 
-// // // test._scope.children.install.computeCacheKey = (task) => {
-// // //   return task.id.toString()
-// // // }
+// // // // test._scope.children.install.computeCacheKey = (task) => {
+// // // //   return task.id.toString()
+// // // // }
 
 // const t = test
-//   .deps({ asd: testTask })
+//   .deps({
+//     Canister: Canister.provides,
+//     testTask: testTask,
+//   })
 //   .provide({
 //     // asd: testTask
 //     // TODO: extras also cause errors? should it be allowed?
-//     asd: testTask2,
+//     // asd: testTask2,
+//     Canister: Canister.provides,
+//     testTask: testTask,
 //   })
 //   // ._scope.children
 //   .install(async ({ ctx, mode }) => {
@@ -345,10 +391,11 @@ const providedTestScope = {
 //     // to pass in context?
 //     // ctx.users.default
 //     // TODO: type the actors
-//     ctx.dependencies.asd.testTask
+//     ctx.dependencies.Canister
+//     ctx.dependencies.testTask
 //   })
 //   .done()
 
-// t.children.install.effect
+// // t.children.install.effect
 
-// const debugType = {} as CompareTaskReturnValues<typeof t.children.install>
+// // const debugType = {} as CompareTaskReturnValues<typeof t.children.install>

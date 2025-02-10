@@ -104,3 +104,8 @@ export type CrystalConfigFile = {
 } & {
   [key: string]: TaskTreeNode
 }
+
+export type CanisterConstructor = {
+  // _tag: "canister-constructor"
+  provides: Task
+}

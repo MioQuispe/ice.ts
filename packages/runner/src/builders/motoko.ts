@@ -51,6 +51,7 @@ import type {
   IsValid,
   MergeScopeDependencies,
   MergeScopeProvide,
+  ExtractProvidedDeps,
 } from "./types.js"
 import { Tags } from "./types.js"
 
@@ -192,14 +193,14 @@ export const makeMotokoBuilder = <
         },
       } satisfies CanisterScope as MergeScopeDependencies<
         S,
-        typeof dependencies
+        ExtractProvidedDeps<typeof dependencies>
       >
 
       return makeMotokoBuilder<
         I,
         typeof updatedScope,
         // TODO: update type?
-        typeof dependencies,
+        ExtractProvidedDeps<typeof dependencies>,
         P,
         Config
       >(updatedScope)
@@ -231,14 +232,14 @@ export const makeMotokoBuilder = <
             provide: providedDeps,
           },
         },
-      } satisfies CanisterScope as MergeScopeProvide<S, typeof providedDeps>
+      } satisfies CanisterScope as MergeScopeProvide<S, ExtractProvidedDeps<typeof providedDeps>>
 
       return makeMotokoBuilder<
         I,
         typeof updatedScope,
         D,
         // TODO: update type?
-        typeof providedDeps,
+        ExtractProvidedDeps<typeof providedDeps>,
         Config
       >(updatedScope)
     },

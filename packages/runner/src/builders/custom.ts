@@ -40,6 +40,7 @@ import type {
   MergeScopeDependencies,
   MergeScopeProvide,
   ExtractTaskEffectSuccess,
+  ExtractProvidedDeps,
 } from "./types.js"
 import { Tags } from "./types.js"
 // TODO: later
@@ -405,14 +406,14 @@ const makeCustomCanisterBuilder = <
         },
       } satisfies CanisterScope as MergeScopeDependencies<
         S,
-        typeof dependencies
+        ExtractProvidedDeps<typeof dependencies>
       >
 
       return makeCustomCanisterBuilder<
         I,
         typeof updatedScope,
         // TODO: update type?
-        typeof dependencies,
+        ExtractProvidedDeps<typeof dependencies>,
         P,
         Config
       >(updatedScope)
@@ -421,18 +422,23 @@ const makeCustomCanisterBuilder = <
     provide: (providedDeps) => {
       // TODO: do we transform here?
       // TODO: do we type check here?
+      
       // const finalDeps = Object.fromEntries(
       //   Object.entries(providedDeps).map(([key, dep]) => {
-      //     // if (dep._tag === "builder") {
-      //     //   return dep._scope.children.deploy
-      //     // }
-      //     // if (dep._tag === "scope" && dep.children.deploy) {
-      //     //   return [key, dep.children.deploy]
-      //     // }
-      //     return [key, dep as Task]
+      //     if (dep._tag === "builder") {
+      //       return dep._scope.children.deploy
+      //     }
+      //     if (dep._tag === "scope" && dep.children.deploy) {
+      //       return [key, dep.children.deploy]
+      //     }
+      //     if (dep._tag === "canister-constructor") {
+      //       return [key, dep.shape]
+      //     }
+      //     return [key, dep satisfies Task]
       //   }),
       // ) satisfies Record<string, Task>
-      // const finalDeps = providedDeps
+      // TODO: transform providedDeps to a record of tasks
+      const finalDeps = providedDeps
 
       // TODO: do we need to pass in to create as well?
       const updatedScope = {
@@ -441,17 +447,24 @@ const makeCustomCanisterBuilder = <
           ...scope.children,
           install: {
             ...scope.children.install,
-            provide: providedDeps,
+            provide: finalDeps,
           },
         },
-      } satisfies CanisterScope as MergeScopeProvide<S, typeof providedDeps>
-
+      } satisfies CanisterScope as MergeScopeProvide<S, ExtractProvidedDeps<typeof providedDeps>>
+      // return makeCustomCanisterBuilder<
+      //   I,
+      //   typeof updatedScope,
+      //   D,
+      //   // TODO: update type?
+      //   typeof finalDeps,
+      //   Config
+      // >(updatedScope)
       return makeCustomCanisterBuilder<
         I,
         typeof updatedScope,
         D,
         // TODO: update type?
-        typeof providedDeps,
+        ExtractProvidedDeps<typeof providedDeps>,
         Config
       >(updatedScope)
     },

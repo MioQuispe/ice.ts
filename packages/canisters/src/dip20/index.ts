@@ -4,6 +4,7 @@ import { Principal } from "@dfinity/principal"
 import { customCanister, type TaskCtxShape } from "@crystal/runner"
 import { CapRouter } from "../cap"
 import type { _SERVICE } from "./dip20.did"
+import { CanisterConstructor } from "@crystal/runner/dist/types/types"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 
@@ -60,8 +61,7 @@ export const DIP20 = (
     }
   })
   // TODO: support passing in CanisterScopes
-  // TODO: Do we just check the return type of the task?
-  .deps({ capRouter: CapRouter.shape })
+  .deps({ CapRouter })
   // .provide({ capRouter: CapRouter.shape })
   // TODO: install ctx should receive the dependencies in its type
   .install(async ({ ctx, mode }) => {
@@ -73,7 +73,7 @@ export const DIP20 = (
     } else {
       initArgs = initResult
     }
-    const { capRouter: { canisterId: capRouterId, actor } } = ctx.dependencies
+    const { CapRouter } = ctx.dependencies
     return [
       initArgs.logo,
       initArgs.name,
@@ -83,11 +83,11 @@ export const DIP20 = (
       Principal.from(initArgs.owner),
       BigInt(initArgs.fee),
       Principal.from(initArgs.feeTo),
-      Principal.from(capRouterId),
+      Principal.from(CapRouter.canisterId),
     ]
   })
-  // tests:
-  // .provide({ capRouter: CapRouter.failShape }).done().children.install.dependencies.capRouter.effect
+  // // tests:
+  // .provide({ CapRouter }).done()
   return result
 }
 
