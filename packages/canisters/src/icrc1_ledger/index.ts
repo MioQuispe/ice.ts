@@ -55,7 +55,7 @@ export const ICRC1Ledger = (
     | ICRC1LedgerInitArgs
     | ((ctx: TaskCtxShape) => ICRC1LedgerInitArgs),
 ) => {
-  return customCanister<LedgerArg, _SERVICE>((ctx) => {
+  return customCanister<[LedgerArg], _SERVICE>((ctx) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
     return {
@@ -72,7 +72,7 @@ export const ICRC1Ledger = (
     }
     const controllerId = Principal.from(initArgs.controller_id)
     // TODO: proper types
-    return {
+    return [{
       Init: {
         // Opt({
         // custodians: Opt(custodians),
@@ -105,7 +105,7 @@ export const ICRC1Ledger = (
         token_name: "Token",
         feature_flags: Opt<FeatureFlags>({ icrc2: true }),
       },
-    }
+    }]
     // satisfies InitArgs
   })
 }

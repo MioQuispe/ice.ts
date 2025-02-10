@@ -71,12 +71,14 @@ import { Moc } from "./services/moc.js"
 import { runCli } from "./cli/index.js"
 import { TaskRegistry } from "./services/taskRegistry.js"
 import type * as ActorTypes from "./types/actor.js"
-
+import { CrystalConfigService } from "./services/crystalConfig.js"
 export * from "./builders/index.js"
 // export * from "./plugins/withContext.js"
 
 import * as didc from "didc_js"
 import { Tags } from "./builders/types.js"
+import { deployTaskPlugin } from "./plugins/deploy.js"
+import { candidUITaskPlugin } from "./plugins/candid_ui.js"
 export const configMap = new Map([
   ["APP_DIR", fs.realpathSync(process.cwd())],
   ["DFX_CONFIG_FILENAME", "crystal.config.ts"],
@@ -104,30 +106,29 @@ type ManagementActor = import("@dfinity/agent").ActorSubclass<
 >
 
 // export type TaskCtxShape = Context.Tag.Service<typeof TaskCtx>
-export type TaskCtxShape<D extends Record<string, unknown> = Record<string, unknown>> = {
-    readonly network: string
-    networks?: {
-      [k: string]: ConfigNetwork
-    } | null
-    readonly subnet: string
-    readonly agent: HttpAgent
-    readonly identity: SignIdentity
-    readonly users: {
-      [name: string]: {
-        identity: Identity
-        agent: HttpAgent
-        principal: Principal
-        accountId: string
-        // TODO: neurons?
-      }
+export type TaskCtxShape<
+  D extends Record<string, unknown> = Record<string, unknown>,
+> = {
+  readonly network: string
+  networks?: {
+    [k: string]: ConfigNetwork
+  } | null
+  readonly subnet: string
+  readonly agent: HttpAgent
+  readonly identity: SignIdentity
+  readonly users: {
+    [name: string]: {
+      identity: Identity
+      agent: HttpAgent
+      principal: Principal
+      accountId: string
+      // TODO: neurons?
     }
-    readonly runTask: typeof runTask
-    readonly dependencies: D
+  }
+  readonly runTask: typeof runTask
+  readonly dependencies: D
 }
-export class TaskCtx extends Context.Tag("TaskCtx")<
-  TaskCtx,
-  TaskCtxShape
->() {
+export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {
   static Live = Layer.effect(
     TaskCtx,
     Effect.gen(function* () {
@@ -463,9 +464,11 @@ type TaskFullName = string
 export const getTaskByPath = (taskPathString: TaskFullName) =>
   Effect.gen(function* () {
     const taskPath: string[] = taskPathString.split(":")
-    const crystalConfig = yield* getCrystalConfig()
-    const task = yield* findTaskInTaskTree(crystalConfig, taskPath)
-    return { task, crystalConfig: crystalConfig.crystal }
+    const { taskTree, config } = yield* CrystalConfigService
+    yield* Effect.log("finding task by path", { taskPath })
+    const task = yield* findTaskInTaskTree(taskTree, taskPath)
+    yield* Effect.log("found task", { task })
+    return { task, config }
   })
 
 // const fileLogger = Logger.logfmtLogger.pipe(
@@ -510,8 +513,11 @@ export const DefaultsLayer = Layer.mergeAll(
   configLayer,
   // Logger.replace(Logger.defaultLogger, Logger.zip(Logger.pretty)),
   Logger.pretty,
+  CrystalConfigService.Live.pipe(Layer.provide(NodeContext.layer)),
+
   // TODO: set with flag?
-  Logger.minimumLogLevel(LogLevel.Debug),
+  // Logger.minimumLogLevel(LogLevel.Debug),
+
   // Logger.add(customLogger),
   // Layer.effect(fileLogger),
   // LoggerLive,
@@ -530,6 +536,7 @@ export const TUILayer = Layer.mergeAll(
   ),
   Moc.Live.pipe(Layer.provide(NodeContext.layer)),
   configLayer,
+  CrystalConfigService.Live.pipe(Layer.provide(NodeContext.layer)),
   // Logger.add(customLogger),
   // Layer.effect(fileLogger),
   // LoggerLive,
@@ -556,11 +563,20 @@ export type LayerRequirements<L extends Layer.Layer<any, any, any>> =
 export const getTaskPathById = (id: Symbol) =>
   Effect.gen(function* () {
     // TODO: initialize with all tasks
-    const crystalConfig = yield* getCrystalConfig()
+    const { taskTree } = yield* CrystalConfigService
     const result = yield* filterTasks(
-      crystalConfig,
+      taskTree,
       (node) => node._tag === "task" && node.id === id,
     )
+    yield* Effect.log("getTaskPathById", {
+      result,
+      id,
+      taskTree,
+      //@ts-ignore
+      dip20Task: taskTree.dip20.children.deploy,
+      //@ts-ignore
+      doesMatchId: taskTree.dip20.children.deploy.id === id,
+    })
     // TODO: use effect Option?
     if (result?.[0]) {
       return result[0].path.join(":")
@@ -576,7 +592,7 @@ export const getTaskPathById = (id: Symbol) =>
 
 export const runTaskByPath = (taskPath: string) =>
   Effect.gen(function* () {
-    const { task, crystalConfig } = yield* getTaskByPath(taskPath)
+    const { task } = yield* getTaskByPath(taskPath)
     yield* runTask(task)
   })
 
@@ -640,6 +656,7 @@ export const runTask = <A, E, R, I>(
 ): Effect.Effect<A, unknown, unknown> => {
   return Effect.gen(function* () {
     const cache = yield* TaskRegistry
+    yield* Effect.log("runTask", { task, options })
     const taskPath = yield* getTaskPathById(task.id)
 
     // // const cacheKey = task.id
@@ -741,10 +758,7 @@ export const filterTasks = (
 export const canistersDeployTask = () =>
   Effect.gen(function* () {
     yield* Effect.log("Running canisters:deploy task")
-    const crystalConfig = yield* getCrystalConfig()
-    const taskTree = Object.fromEntries(
-      Object.entries(crystalConfig).filter(([key]) => key !== "default"),
-    ) as TaskTree
+    const { taskTree } = yield* CrystalConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
       (node) =>
@@ -761,10 +775,7 @@ export const canistersDeployTask = () =>
 export const canistersCreateTask = () =>
   Effect.gen(function* () {
     yield* Effect.log("Running canisters:create task")
-    const crystalConfig = yield* getCrystalConfig()
-    const taskTree = Object.fromEntries(
-      Object.entries(crystalConfig).filter(([key]) => key !== "default"),
-    ) as TaskTree
+    const { taskTree } = yield* CrystalConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
       (node) =>
@@ -782,10 +793,7 @@ export const canistersCreateTask = () =>
 export const canistersBuildTask = () =>
   Effect.gen(function* () {
     yield* Effect.log("Running canisters:build task")
-    const crystalConfig = yield* getCrystalConfig()
-    const taskTree = Object.fromEntries(
-      Object.entries(crystalConfig).filter(([key]) => key !== "default"),
-    ) as TaskTree
+    const { taskTree } = yield* CrystalConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
       (node) =>
@@ -803,10 +811,7 @@ export const canistersBuildTask = () =>
 export const canistersBindingsTask = () =>
   Effect.gen(function* () {
     yield* Effect.log("Running canisters:bindings task")
-    const crystalConfig = yield* getCrystalConfig()
-    const taskTree = Object.fromEntries(
-      Object.entries(crystalConfig).filter(([key]) => key !== "default"),
-    ) as TaskTree
+    const { taskTree } = yield* CrystalConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
       (node) =>
@@ -824,10 +829,7 @@ export const canistersBindingsTask = () =>
 export const canistersInstallTask = () =>
   Effect.gen(function* () {
     yield* Effect.log("Running canisters:install task")
-    const crystalConfig = yield* getCrystalConfig()
-    const taskTree = Object.fromEntries(
-      Object.entries(crystalConfig).filter(([key]) => key !== "default"),
-    ) as TaskTree
+    const { taskTree } = yield* CrystalConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
       (node) =>
@@ -889,10 +891,7 @@ export const canistersStatusTask = () =>
 
 export const listTasksTask = () =>
   Effect.gen(function* () {
-    const crystalConfig = yield* getCrystalConfig()
-    const taskTree = Object.fromEntries(
-      Object.entries(crystalConfig).filter(([key]) => key !== "default"),
-    ) as TaskTree
+    const { taskTree } = yield* CrystalConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
       (node) => node._tag === "task",
@@ -912,10 +911,7 @@ export const listTasksTask = () =>
 export const listCanistersTask = () =>
   Effect.gen(function* () {
     yield* Effect.log("Running list canisters task")
-    const crystalConfig = yield* getCrystalConfig()
-    const taskTree = Object.fromEntries(
-      Object.entries(crystalConfig).filter(([key]) => key !== "default"),
-    ) as TaskTree
+    const { taskTree } = yield* CrystalConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
       (node) => node._tag === "task" && node.tags.includes(Tags.CANISTER),
@@ -935,24 +931,6 @@ export const listCanistersTask = () =>
   })
 
 export { runCli } from "./cli/index.js"
-
-// TODO: types
-export const getCrystalConfig = (configPath = "crystal.config.ts") =>
-  Effect.gen(function* () {
-    const path = yield* Path.Path
-    const fs = yield* FileSystem.FileSystem
-    const appDirectory = yield* fs.realPath(process.cwd())
-    return yield* Effect.tryPromise({
-      try: () =>
-        import(
-          path.resolve(appDirectory, configPath)
-        ) as Promise<CrystalConfigFile>,
-      catch: (error) =>
-        new ConfigError({
-          message: `Failed to get Crystal config: ${error instanceof Error ? error.message : String(error)}`,
-        }),
-    })
-  })
 
 export const createActor = <T>({
   canisterId,

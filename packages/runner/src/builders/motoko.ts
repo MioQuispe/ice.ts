@@ -59,8 +59,8 @@ type MotokoCanisterConfig = {
   canisterId?: string
 }
 
-const plugins = <T extends TaskTreeNode>(taskTree: T) =>
-  deployTaskPlugin(taskTree)
+// const plugins = <T extends TaskTreeNode>(taskTree: T) =>
+//   deployTaskPlugin(taskTree)
 
 const makeMotokoBuildTask = (
   canisterConfigOrFn:

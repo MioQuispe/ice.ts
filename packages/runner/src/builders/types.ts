@@ -1,22 +1,53 @@
 import type { Task } from "../types/types.js"
 import type { TaskCtxShape } from "../index.js"
-import type { Effect } from "effect"
+// import type { Effect } from "effect"
+import { Effect, Option } from "effect"
+import { customCanister } from "./custom.js"
+
+export type CompareTaskReturnValues<T extends Task> =
+  T extends { effect: Effect.Effect<infer S, any, any> }
+    ? S
+    : never
 
 type DependenciesOf<T> = T extends { dependencies: infer D } ? D : never
 type ProvideOf<T> = T extends { provide: infer P } ? P : never
+
+type DependencyReturnValues<T> =
+  DependenciesOf<T> extends Record<string, Task>
+    ? {
+        [K in keyof DependenciesOf<T>]: CompareTaskReturnValues<
+          DependenciesOf<T>[K]
+        >
+      }
+    : never
+
+type ProvideReturnValues<T> =
+  ProvideOf<T> extends Record<string, Task>
+    ? { [K in keyof ProvideOf<T>]: CompareTaskReturnValues<ProvideOf<T>[K]> }
+    : never
+
+// // Compare return value of task
 export type DepBuilder<T> =
-  DependenciesOf<T> extends ProvideOf<T>
-    ? ProvideOf<T> extends DependenciesOf<T>
+  DependencyReturnValues<T> extends ProvideReturnValues<T>
+    ? ProvideReturnValues<T> extends DependencyReturnValues<T>
       ? T
       : never
     : never
+
+// export type DepBuilder<T> =
+//   DependenciesOf<T> extends ProvideOf<T>
+//     ? ProvideOf<T> extends DependenciesOf<T>
+//       ? T
+//       : never
+//     : never
+
 export type UniformScopeCheck<S extends CanisterScope> = S extends {
   children: infer C
 }
   ? C extends { [K in keyof C]: DepBuilder<C[K]> }
     ? S
-    : DependencyMismatchError
-  : DependencyMismatchError
+    : DependencyMismatchError<S>
+  : DependencyMismatchError<S>
 
 type MergeTaskDeps<T extends Task, ND extends Record<string, Task>> = {
   [K in keyof T]: K extends "dependencies" ? T[K] & ND : T[K]
@@ -68,24 +99,23 @@ export type ExtractTaskEffectSuccess<T extends Record<string, Task>> = {
   [K in keyof T]: Effect.Effect.Success<T[K]["effect"]>
 }
 
-
 /**
  * @doc
  * [ERROR] Missing required dependencies:
  * Please call .setDependencies() with all required keys before finalizing the builder.
  */
-export type DependencyMismatchError = {
+export type DependencyMismatchError<S extends CanisterScope> = {
   // This property key is your custom error message.
   "[CRYSTAL-ERROR: Dependency mismatch. Please provide all required dependencies.]": true
 }
 
 // Compute a boolean flag from our check.
 export type IsValid<S extends CanisterScope> =
-  UniformScopeCheck<S> extends DependencyMismatchError ? false : true
+  UniformScopeCheck<S> extends DependencyMismatchError<S> ? false : true
 
 export type CanisterScope = {
   _tag: "scope"
-  tags: Array<string>
+  tags: Array<string | symbol>
   description: string
   // only limited to tasks
   children: Record<string, Task>
@@ -131,6 +161,7 @@ export interface CanisterBuilder<
       | ((ctx: TaskCtxShape) => Config)
       | ((ctx: TaskCtxShape) => Promise<Config>),
   ) => CanisterBuilder<I, S, D, P, Config>
+  // TODO: allow passing in a CanisterScope and extract from it
   deps: <ND extends Record<string, Task>>(
     deps: ND,
   ) => CanisterBuilder<I, MergeScopeDependencies<S, ND>, ND, P, Config>
@@ -151,7 +182,7 @@ export interface CanisterBuilder<
   done(
     this: IsValid<S> extends true
       ? CanisterBuilder<I, S, D, P, Config>
-      : DependencyMismatchError,
+      : DependencyMismatchError<S>,
   ): UniformScopeCheck<S>
 
   // TODO:
@@ -173,3 +204,151 @@ export const Tags = {
   // TODO: hmm do we need this?
   SCRIPT: "$$crystal/script",
 }
+
+const testTask = {
+  _tag: "task",
+  id: Symbol("test"),
+  dependencies: {},
+  provide: {},
+  effect: Effect.gen(function* () {
+    return { testTask: "test" }
+  }),
+  description: "",
+  tags: [],
+  computeCacheKey: Option.none(),
+} satisfies Task
+
+const testTask2 = {
+  _tag: "task",
+  id: Symbol("test"),
+  dependencies: {},
+  provide: {},
+  effect: Effect.gen(function* () {
+    return { testTask2: "test" }
+  }),
+  description: "",
+  tags: [],
+  computeCacheKey: Option.none(),
+} satisfies Task
+
+const providedTask = {
+  _tag: "task",
+  id: Symbol("test"),
+  effect: Effect.gen(function* () {}),
+  description: "",
+  tags: [],
+  computeCacheKey: Option.none(),
+  dependencies: {
+    test: testTask,
+  },
+  provide: {
+    test: testTask,
+  },
+} satisfies Task
+
+const unProvidedTask = {
+  _tag: "task",
+  id: Symbol("test"),
+  effect: Effect.gen(function* () {}),
+  description: "",
+  tags: [],
+  computeCacheKey: Option.none(),
+  dependencies: {
+    test: testTask,
+    test2: testTask,
+  },
+  provide: {
+    test: testTask,
+    // TODO: does not raise a warning?
+    // test2: testTask2,
+    // test2: testTask,
+    // test3: testTask,
+  },
+} satisfies Task
+
+const unProvidedTask2 = {
+  _tag: "task",
+  id: Symbol("test"),
+  effect: Effect.gen(function* () {}),
+  description: "",
+  tags: [],
+  computeCacheKey: Option.none(),
+  dependencies: {
+    test: testTask,
+    // test2: testTask,
+  },
+  provide: {
+    // test: testTask,
+    // TODO: does not raise a warning?
+    // test2: testTask2,
+    // test2: testTask,
+    // test3: testTask,
+  },
+} satisfies Task
+
+const testScope = {
+  _tag: "scope",
+  tags: [Tags.CANISTER],
+  description: "",
+  children: {
+    providedTask,
+    unProvidedTask,
+  },
+} satisfies CanisterScope
+
+const testScope2 = {
+  _tag: "scope",
+  tags: [Tags.CANISTER],
+  description: "",
+  children: {
+    unProvidedTask2,
+  },
+} satisfies CanisterScope
+
+const providedTestScope = {
+  _tag: "scope",
+  tags: [Tags.CANISTER],
+  description: "",
+  children: {
+    providedTask,
+  },
+} satisfies CanisterScope
+
+// Type checks
+// const pt = providedTask satisfies DepBuilder<typeof providedTask>
+// const upt = unProvidedTask satisfies DepBuilder<typeof unProvidedTask>
+// const uts = testScope satisfies UniformScopeCheck<typeof testScope>
+// const pts = providedTestScope satisfies UniformScopeCheck<
+//   typeof providedTestScope
+// >
+// const uts2 = testScope2 satisfies UniformScopeCheck<typeof testScope2>
+
+// const test = customCanister(async () => ({
+//   wasm: "",
+//   candid: "",
+// }))
+
+// // // test._scope.children.install.computeCacheKey = (task) => {
+// // //   return task.id.toString()
+// // // }
+
+// const t = test
+//   .deps({ asd: testTask })
+//   .provide({
+//     // asd: testTask
+//     // TODO: extras also cause errors? should it be allowed?
+//     asd: testTask2,
+//   })
+//   // ._scope.children
+//   .install(async ({ ctx, mode }) => {
+//     // TODO: allow chaining builders with crystal.customCanister()
+//     // to pass in context?
+//     // ctx.users.default
+//     // TODO: type the actors
+//     ctx.dependencies.asd.testTask
+//   })
+//   .done()
+
+// t.children.install.effect
+
+// const debugType = {} as CompareTaskReturnValues<typeof t.children.install>

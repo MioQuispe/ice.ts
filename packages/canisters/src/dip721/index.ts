@@ -46,7 +46,7 @@ const canisterName = "dip721"
 export const DIP721 = (
   initArgsOrFn: DIP721InitArgs | ((ctx: TaskCtxShape) => DIP721InitArgs),
 ) => {
-  return customCanister<InitArgs, _SERVICE>((ctx) => {
+  return customCanister<[Opt<InitArgs>], _SERVICE>((ctx) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
     return {
@@ -60,12 +60,13 @@ export const DIP721 = (
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
     // TODO: proper types
-    return {
-        custodians: Opt(initArgs.custodians?.map((p) => Principal.fromText(p))),
+    return [Opt({
+        // custodians: Opt(initArgs.custodians?.map((p) => Principal.fromText(p))),
+        custodians: Opt(),
         logo: Opt(initArgs.logo),
         name: Opt(initArgs.name),
         symbol: Opt(initArgs.symbol),
-      }
+      })]
     // satisfies InitArgs
   })
 }

@@ -8,18 +8,24 @@ import {
   canistersInstallTask,
   canistersStatusTask,
   DefaultsLayer,
-  getCrystalConfig,
   listCanistersTask,
   listTasksTask,
   runTaskByPath,
   runtime,
 } from "../index.js"
-import type { CrystalConfigFile } from "../types/types.js"
+import type { CrystalConfig, TaskTree } from "../types/types.js"
 import { uiTask } from "./ui/index.js"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
+import { CrystalConfigService } from "../services/crystalConfig.js"
 
 // TODO: populate subcommands with tasks from crystalConfig
-const makeCliApp = (crystalConfig: CrystalConfigFile) => {
+const makeCliApp = ({
+  config,
+  taskTree,
+}: {
+  config: CrystalConfig
+  taskTree: TaskTree
+}) => {
   // TODO: we need to construct this dynamically if we want space delimited task paths
   // Basic run command for executing tasks
   const taskPath = Args.text({ name: "taskPath" }).pipe(
@@ -74,7 +80,7 @@ const makeCliApp = (crystalConfig: CrystalConfigFile) => {
     //   yield* Console.log("Coming soon...")
     //   // TODO: open the UI
     // }),
-    uiTask(crystalConfig),
+    uiTask({ config, taskTree }),
   ).pipe(Command.withDescription("Open the Crystal UI"))
 
   const crystalCommand = Command.make("crystal", {}).pipe(
@@ -105,8 +111,8 @@ const makeCliApp = (crystalConfig: CrystalConfigFile) => {
 export const runCli = async () => {
   runtime.runPromise(
     Effect.gen(function* () {
-      const crystalConfig = yield* getCrystalConfig()
-      const cli = makeCliApp(crystalConfig)
+      const { config, taskTree } = yield* CrystalConfigService
+      const cli = makeCliApp({ config, taskTree })
       return cli(process.argv).pipe(
         // @ts-ignore
         Effect.provide(DefaultsLayer),

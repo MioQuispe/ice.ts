@@ -163,6 +163,8 @@ const effect = capRouter.done().children.install.effect
 CapRouter.provides = {} as Effect.Effect.Success<typeof effect>
 // export type CapRouterBuilder = ReturnType<typeof customCanister<[], CAP_ROUTER_SERVICE>>
 CapRouter.shape = capRouter.done().children.install
+CapRouter.failShape = capRouter.done().children.build
+CapRouter.copyShape = capRouter.done().children.install
 
 // CapRouter.id = CapRouterIds
 

@@ -44,8 +44,8 @@ import type {
 import { Tags } from "./types.js"
 // TODO: later
 // candidUITaskPlugin()
-const plugins = <T extends TaskTreeNode>(taskTree: T) =>
-  deployTaskPlugin(taskTree)
+// const plugins = <T extends TaskTreeNode>(taskTree: T) =>
+//   deployTaskPlugin(taskTree)
 
 type CustomCanisterConfig = {
   wasm: string

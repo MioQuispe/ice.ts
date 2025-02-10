@@ -86,6 +86,8 @@ export const DIP20 = (
       Principal.from(capRouterId),
     ]
   })
+  // tests:
+  // .provide({ capRouter: CapRouter.failShape }).done().children.install.dependencies.capRouter.effect
   return result
 }
 

@@ -35,6 +35,7 @@ import type {
   Task as TaskType,
   TaskTree,
   TaskTreeNode,
+  CrystalConfig,
 } from "../../types/types.js"
 import { filterTasks, runTaskByPath, TUILayer } from "../../index.js"
 import { TaskList, Task } from "ink-task-list"
@@ -268,7 +269,13 @@ const Logs = () => {
   )
 }
 
-const CliApp = ({ crystalConfig }: { crystalConfig: CrystalConfigFile }) => {
+const CliApp = ({
+  config,
+  taskTree,
+}: {
+  config: CrystalConfig
+  taskTree: TaskTree
+}) => {
   const focusManager = useFocusManager()
   const [editingField, setEditingField] = useState<string>()
   const { exit } = useApp()
@@ -299,7 +306,7 @@ const CliApp = ({ crystalConfig }: { crystalConfig: CrystalConfigFile }) => {
         <Box width="50%">
           <TaskTreeList
             key={"tasks"}
-            taskTree={crystalConfig}
+            taskTree={taskTree}
             title="Available tasks"
           />
         </Box>
@@ -316,16 +323,22 @@ const CliApp = ({ crystalConfig }: { crystalConfig: CrystalConfigFile }) => {
 }
 
 // export const uiTask = () => {
-export const uiTask = (crystalConfig: CrystalConfigFile) =>
+export const uiTask = ({
+  config,
+  taskTree,
+}: {
+  config: CrystalConfig
+  taskTree: TaskTree
+}) =>
   Effect.gen(function* () {
     //   yield* Console.log("Coming soon...")
     // TODO: react-ink
     //   render(<App />)
     const allTasks = yield* filterTasks(
-      crystalConfig,
+      taskTree,
       (task) => task._tag === "task",
     )
-    render(<CliApp crystalConfig={crystalConfig} />)
+    render(<CliApp config={config} taskTree={taskTree} />)
     //   void render(
     //     React.createElement(Text, {}, "Hello world")
     //   )
