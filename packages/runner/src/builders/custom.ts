@@ -394,6 +394,20 @@ const makeCustomCanisterBuilder = <
       //     return [key, dep]
       //   }),
       // ) satisfies Record<string, Task> as MergeScopeDependencies<S, typeof deps>
+      const finalDeps = Object.fromEntries(
+        Object.entries(dependencies).map(([key, dep]) => {
+          // if (dep._tag === "builder") {
+          //   return dep._scope.children.deploy
+          // }
+          // if (dep._tag === "scope" && dep.children.deploy) {
+          //   return [key, dep.children.deploy]
+          // }
+          if ("provides" in dep) {
+            return [key, dep.provides]
+          }
+          return [key, dep satisfies Task]
+        }),
+      ) satisfies Record<string, Task>
 
       const updatedScope = {
         ...scope,
@@ -401,7 +415,7 @@ const makeCustomCanisterBuilder = <
           ...scope.children,
           install: {
             ...scope.children.install,
-            dependencies,
+            dependencies: finalDeps,
           },
         },
       } satisfies CanisterScope as MergeScopeDependencies<
@@ -423,22 +437,22 @@ const makeCustomCanisterBuilder = <
       // TODO: do we transform here?
       // TODO: do we type check here?
       
-      // const finalDeps = Object.fromEntries(
-      //   Object.entries(providedDeps).map(([key, dep]) => {
-      //     if (dep._tag === "builder") {
-      //       return dep._scope.children.deploy
-      //     }
-      //     if (dep._tag === "scope" && dep.children.deploy) {
-      //       return [key, dep.children.deploy]
-      //     }
-      //     if (dep._tag === "canister-constructor") {
-      //       return [key, dep.shape]
-      //     }
-      //     return [key, dep satisfies Task]
-      //   }),
-      // ) satisfies Record<string, Task>
+      const finalDeps = Object.fromEntries(
+        Object.entries(providedDeps).map(([key, dep]) => {
+          // if (dep._tag === "builder") {
+          //   return dep._scope.children.deploy
+          // }
+          // if (dep._tag === "scope" && dep.children.deploy) {
+          //   return [key, dep.children.deploy]
+          // }
+          if ("provides" in dep) {
+            return [key, dep.provides]
+          }
+          return [key, dep satisfies Task]
+        }),
+      ) satisfies Record<string, Task>
       // TODO: transform providedDeps to a record of tasks
-      const finalDeps = providedDeps
+      // const finalDeps = providedDeps
 
       // TODO: do we need to pass in to create as well?
       const updatedScope = {

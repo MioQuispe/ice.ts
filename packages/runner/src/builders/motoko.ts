@@ -167,20 +167,20 @@ export const makeMotokoBuilder = <
 
     deps: (dependencies) => {
       // TODO: check that its a canister builder
-      // const dependencies = Object.fromEntries(
-      //   Object.entries(deps).map(([key, dep]) => {
-      //     // if (dep._tag === "builder") {
-      //     //   return dep._scope.children.deploy
-      //     // }
-      //     // if (dep._tag === "scope") {
-      //     //   return [key, dep.children.deploy]
-      //     // }
-      //     if (dep._tag === "task") {
-      //       return [key, dep]
-      //     }
-      //     return [key, dep]
-      //   }),
-      // ) satisfies Record<string, Task> as MergeScopeDependencies<S, typeof deps>
+      const finalDeps = Object.fromEntries(
+        Object.entries(dependencies).map(([key, dep]) => {
+          // if (dep._tag === "builder") {
+          //   return dep._scope.children.deploy
+          // }
+          // if (dep._tag === "scope" && dep.children.deploy) {
+          //   return [key, dep.children.deploy]
+          // }
+          if ("provides" in dep) {
+            return [key, dep.provides]
+          }
+          return [key, dep satisfies Task]
+        }),
+      ) satisfies Record<string, Task>
 
       const updatedScope = {
         ...scope,
@@ -188,7 +188,7 @@ export const makeMotokoBuilder = <
           ...scope.children,
           install: {
             ...scope.children.install,
-            dependencies,
+            dependencies: finalDeps,
           },
         },
       } satisfies CanisterScope as MergeScopeDependencies<
@@ -209,18 +209,20 @@ export const makeMotokoBuilder = <
     provide: (providedDeps) => {
       // TODO: do we transform here?
       // TODO: do we type check here?
-      // const finalDeps = Object.fromEntries(
-      //   Object.entries(providedDeps).map(([key, dep]) => {
-      //     // if (dep._tag === "builder") {
-      //     //   return dep._scope.children.deploy
-      //     // }
-      //     // if (dep._tag === "scope" && dep.children.deploy) {
-      //     //   return [key, dep.children.deploy]
-      //     // }
-      //     return [key, dep as Task]
-      //   }),
-      // ) satisfies Record<string, Task>
-      // const finalDeps = providedDeps
+      const finalDeps = Object.fromEntries(
+        Object.entries(providedDeps).map(([key, dep]) => {
+          // if (dep._tag === "builder") {
+          //   return dep._scope.children.deploy
+          // }
+          // if (dep._tag === "scope" && dep.children.deploy) {
+          //   return [key, dep.children.deploy]
+          // }
+          if ("provides" in dep) {
+            return [key, dep.provides]
+          }
+          return [key, dep satisfies Task]
+        }),
+      ) satisfies Record<string, Task>
 
       // TODO: do we need to pass in to create as well?
       const updatedScope = {
@@ -229,10 +231,13 @@ export const makeMotokoBuilder = <
           ...scope.children,
           install: {
             ...scope.children.install,
-            provide: providedDeps,
+            provide: finalDeps,
           },
         },
-      } satisfies CanisterScope as MergeScopeProvide<S, ExtractProvidedDeps<typeof providedDeps>>
+      } satisfies CanisterScope as MergeScopeProvide<
+        S,
+        ExtractProvidedDeps<typeof providedDeps>
+      >
 
       return makeMotokoBuilder<
         I,
