@@ -1,5 +1,6 @@
-import { TaskCtxShape } from "src/index.js"
 import type { Task } from "../types/types.js"
+import type { TaskCtxShape } from "../index.js"
+import type { Effect } from "effect"
 
 type DependenciesOf<T> = T extends { dependencies: infer D } ? D : never
 type ProvideOf<T> = T extends { provide: infer P } ? P : never
@@ -18,12 +19,12 @@ export type UniformScopeCheck<S extends CanisterScope> = S extends {
   : DependencyMismatchError
 
 type MergeTaskDeps<T extends Task, ND extends Record<string, Task>> = {
-  [K in keyof T]: K extends "dependencies" ? T[K] & ND : T[K];
-};
+  [K in keyof T]: K extends "dependencies" ? T[K] & ND : T[K]
+}
 
 type MergeTaskProvide<T extends Task, NP extends Record<string, Task>> = {
-  [K in keyof T]: K extends "provide" ? T[K] & NP : T[K];
-};
+  [K in keyof T]: K extends "provide" ? T[K] & NP : T[K]
+}
 
 /**
  * Update every task in the children record by merging in ND.
@@ -59,6 +60,16 @@ export type MergeScopeProvide<
 }
 
 /**
+ * Extracts the success type of the Effect from each Task in a Record<string, Task>.
+ *
+ * @template T - A record of tasks.
+ */
+export type ExtractTaskEffectSuccess<T extends Record<string, Task>> = {
+  [K in keyof T]: Effect.Effect.Success<T[K]["effect"]>
+}
+
+
+/**
  * @doc
  * [ERROR] Missing required dependencies:
  * Please call .setDependencies() with all required keys before finalizing the builder.
@@ -80,15 +91,12 @@ export type CanisterScope = {
   children: Record<string, Task>
 }
 
-
-
-
 export interface CanisterBuilder<
   I,
   S extends CanisterScope,
   D extends Record<string, Task>,
   P extends Record<string, Task>,
-  Config
+  Config,
 > {
   create: (
     canisterConfigOrFn:
@@ -96,12 +104,27 @@ export interface CanisterBuilder<
       | ((ctx: TaskCtxShape) => Config)
       | ((ctx: TaskCtxShape) => Promise<Config>),
   ) => CanisterBuilder<I, S, D, P, Config>
-  install: (
-    installArgsOrFn:
-      | ((args: { ctx: TaskCtxShape; mode: string }) => Promise<I>)
-      | ((args: { ctx: TaskCtxShape; mode: string }) => I)
-      | I,
-  ) => CanisterBuilder<I, S, D, P, Config>
+  // install: (
+  //   installArgsOrFn:
+  //     | ((args: { ctx: TaskCtxShape<P>; mode: string }) => Promise<I>)
+  //     | ((args: { ctx: TaskCtxShape<P>; mode: string }) => I)
+  //     // | I,
+  // ) => CanisterBuilder<I, S, D, P, Config>
+
+  // TODO: due to TS limitations we cannot overload the install method with an object signature
+  // the type inference will fail and the type becomes any
+  // Overload signatures for install:
+
+  // install(installArgsOrFn: I): CanisterBuilder<I, S, D, P, Config>
+
+  // only allow functions for now
+  install(
+    installArgsFn: (args: {
+      ctx: TaskCtxShape<ExtractTaskEffectSuccess<P>>
+      mode: string
+    }) => I | Promise<I>,
+  ): CanisterBuilder<I, S, D, P, Config>
+
   build: (
     canisterConfigOrFn:
       | Config
@@ -110,10 +133,10 @@ export interface CanisterBuilder<
   ) => CanisterBuilder<I, S, D, P, Config>
   deps: <ND extends Record<string, Task>>(
     deps: ND,
-  ) => CanisterBuilder<I, MergeScopeDependencies<S, ND>, D & ND, P, Config>
+  ) => CanisterBuilder<I, MergeScopeDependencies<S, ND>, ND, P, Config>
   provide: <NP extends Record<string, Task>>(
     providedDeps: NP,
-  ) => CanisterBuilder<I, MergeScopeProvide<S, NP>, D, P & NP, Config>
+  ) => CanisterBuilder<I, MergeScopeProvide<S, NP>, D, NP, Config>
   // done: () => UniformScopeCheck<S extends CanisterScope ? S : never>
   // done: () => S
   /**
@@ -136,4 +159,17 @@ export interface CanisterBuilder<
   // Internal property to store the current scope
   _scope: S
   _tag: "builder"
+}
+
+export const Tags = {
+  CANISTER: "$$crystal/canister",
+  CREATE: "$$crystal/create",
+  BUILD: "$$crystal/build",
+  INSTALL: "$$crystal/install",
+  BINDINGS: "$$crystal/bindings",
+  DEPLOY: "$$crystal/deploy",
+  DELETE: "$$crystal/delete",
+  UI: "$$crystal/ui",
+  // TODO: hmm do we need this?
+  SCRIPT: "$$crystal/script",
 }

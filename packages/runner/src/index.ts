@@ -102,9 +102,8 @@ type ManagementActor = import("@dfinity/agent").ActorSubclass<
   import("./canisters/management_new/management.types.js")._SERVICE
 >
 
-export class TaskCtx extends Context.Tag("TaskCtx")<
-  TaskCtx,
-  {
+// export type TaskCtxShape = Context.Tag.Service<typeof TaskCtx>
+export type TaskCtxShape<D extends Record<string, unknown> = Record<string, unknown>> = {
     readonly network: string
     networks?: {
       [k: string]: ConfigNetwork
@@ -122,8 +121,11 @@ export class TaskCtx extends Context.Tag("TaskCtx")<
       }
     }
     readonly runTask: typeof runTask
-    readonly dependencies: Record<string, unknown>
-  }
+    readonly dependencies: D
+}
+export class TaskCtx extends Context.Tag("TaskCtx")<
+  TaskCtx,
+  TaskCtxShape
 >() {
   static Live = Layer.effect(
     TaskCtx,
@@ -162,7 +164,6 @@ export class TaskCtx extends Context.Tag("TaskCtx")<
     }),
   )
 }
-export type TaskCtxShape = Context.Tag.Service<typeof TaskCtx>
 
 // TODO: just one place to define this
 export type Opt<T> = [T] | []
@@ -1003,16 +1004,22 @@ export const createActor = <T>({
         yield* commandExecutor.start(command)
       })
 
-    return {
-      actor: Actor.createActor(canisterDID.idlFactory, {
-        agent,
-        canisterId,
-      }),
+    return Actor.createActor(canisterDID.idlFactory, {
+      agent,
       canisterId,
-      getControllers,
-      addControllers,
-      setControllers,
-    }
+    })
+
+    // TODO: ...?
+    // return {
+    //   actor: Actor.createActor(canisterDID.idlFactory, {
+    //     agent,
+    //     canisterId,
+    //   }),
+    //   canisterId,
+    //   getControllers,
+    //   addControllers,
+    //   setControllers,
+    // }
   })
 
 const CanisterIdsSchema = Schema.Record({

@@ -44,7 +44,7 @@ import {
   resolveConfig,
 } from "./custom.js"
 import type { CanisterBuilder, CanisterScope, UniformScopeCheck, DependencyMismatchError, IsValid, MergeScopeDependencies, MergeScopeProvide } from "./types.js"
-import { Tags } from "./custom.js"
+import { Tags } from "./types.js"
 
 type MotokoCanisterConfig = {
   src: string

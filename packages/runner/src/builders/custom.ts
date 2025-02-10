@@ -31,20 +31,17 @@ import { Principal } from "@dfinity/principal"
 // import mo from "motoko"
 import { Path, FileSystem, Command, CommandExecutor } from "@effect/platform"
 import { DfxService } from "../services/dfx.js"
-import type { CanisterBuilder, CanisterScope, UniformScopeCheck, DependencyMismatchError, IsValid, MergeScopeDependencies, MergeScopeProvide } from "./types.js"
-export const Tags = {
-  CANISTER: "$$crystal/canister",
-  CREATE: "$$crystal/create",
-  BUILD: "$$crystal/build",
-  INSTALL: "$$crystal/install",
-  BINDINGS: "$$crystal/bindings",
-  DEPLOY: "$$crystal/deploy",
-  DELETE: "$$crystal/delete",
-  UI: "$$crystal/ui",
-  // TODO: hmm do we need this?
-  SCRIPT: "$$crystal/script",
-}
-
+import type {
+  CanisterBuilder,
+  CanisterScope,
+  UniformScopeCheck,
+  DependencyMismatchError,
+  IsValid,
+  MergeScopeDependencies,
+  MergeScopeProvide,
+  ExtractTaskEffectSuccess,
+} from "./types.js"
+import { Tags } from "./types.js"
 // TODO: later
 // candidUITaskPlugin()
 const plugins = <T extends TaskTreeNode>(taskTree: T) =>
@@ -95,11 +92,11 @@ export const makeBindingsTask = () => {
   } satisfies Task
 }
 
-export const makeInstallTask = <I>(
-  installArgsOrFn?:
-    | ((args: { ctx: TaskCtxShape; mode: string }) => Promise<I>)
-    | ((args: { ctx: TaskCtxShape; mode: string }) => I)
-    | I,
+export const makeInstallTask = <I, P extends Record<string, unknown>>(
+  installArgsFn?: (args: {
+    ctx: TaskCtxShape<P>
+    mode: string
+  }) => Promise<I> | I,
 ) => {
   return {
     _tag: "task",
@@ -130,6 +127,7 @@ export const makeInstallTask = <I>(
         canisterName,
         `${canisterName}.did.js`,
       )
+      // TODO: can we type it somehow?
       const canisterDID = yield* Effect.tryPromise({
         try: () => import(didJSPath),
         catch: Effect.fail,
@@ -140,31 +138,27 @@ export const makeInstallTask = <I>(
       const finalCtx = {
         ...taskCtx,
         dependencies,
-      }
-      if (installArgsOrFn) {
+      } as TaskCtxShape<P>
+      if (installArgsFn) {
         yield* Effect.logInfo("Executing install args function")
 
-        if (typeof installArgsOrFn === "function") {
-          const installFn = installArgsOrFn as (args: {
-            ctx: TaskCtxShape
-            mode: string
-          }) => Promise<I> | I
-          // TODO: handle different modes
-          const installResult = installFn({
-            mode: "install",
-            ctx: finalCtx,
+        const installFn = installArgsFn as (args: {
+          ctx: TaskCtxShape<P>
+          mode: string
+        }) => Promise<I> | I
+        // TODO: handle different modes
+        const installResult = installFn({
+          mode: "install",
+          ctx: finalCtx,
+        })
+        if (installResult instanceof Promise) {
+          installArgs = yield* Effect.tryPromise({
+            try: () => installResult,
+            catch: (error) => {
+              console.error("Error resolving config function:", error)
+              return error instanceof Error ? error : new Error(String(error))
+            },
           })
-          if (installResult instanceof Promise) {
-            installArgs = yield* Effect.tryPromise({
-              try: () => installResult,
-              catch: (error) => {
-                console.error("Error resolving config function:", error)
-                return error instanceof Error ? error : new Error(String(error))
-              },
-            })
-          } else {
-            installArgs = installResult
-          }
         }
         // installArgs = yield* Effect.tryPromise({
         //   // TODO: pass everything
@@ -193,14 +187,21 @@ export const makeInstallTask = <I>(
         canisterName,
         `${canisterName}.wasm`,
       )
-      yield* Effect.tap(
-        installCanister({
-          encodedArgs,
-          canisterId,
-          wasmPath,
-        }),
-        () => Effect.logInfo("Canister installed successfully"),
-      )
+      yield* installCanister({
+        encodedArgs,
+        canisterId,
+        wasmPath,
+      })
+      yield* Effect.logInfo("Canister installed successfully")
+      const actor = yield* createActor({
+        canisterId,
+        canisterDID,
+      })
+      return {
+        canisterId,
+        canisterName,
+        actor,
+      }
     }),
     description: "Install canister code",
     tags: [Tags.CANISTER, Tags.INSTALL],
@@ -343,7 +344,7 @@ const makeCustomCanisterBuilder = <
         updatedScope,
       )
     },
-    install: (installArgsOrFn) => {
+    install: (installArgsFn) => {
       // TODO: is this a flag, arg, or what?
       const mode = "install"
       // TODO: passing in I makes the return type: any
@@ -351,10 +352,9 @@ const makeCustomCanisterBuilder = <
         ...scope,
         children: {
           ...scope.children,
-          install: makeInstallTask(installArgsOrFn),
+          install: makeInstallTask<I, ExtractTaskEffectSuccess<P>>(installArgsFn),
         },
       } satisfies CanisterScope
-      // TODO: updatedScope is not typed correctly
       return makeCustomCanisterBuilder<I, typeof updatedScope, D, P, Config>(
         updatedScope,
       )
@@ -488,7 +488,7 @@ export const customCanister = <I = unknown>(
       // },
       build: makeBuildTask(canisterConfigOrFn),
       // install: makeInstallTask<I>(),
-      install: makeInstallTask<I>(),
+      install: makeInstallTask<I, Record<string, unknown>>(),
     },
   } satisfies CanisterScope
 
@@ -569,8 +569,6 @@ export const Crystal = (config?: CrystalConfig) => {
     }
   )
 }
-
-
 
 const testTask = {
   _tag: "task",
@@ -686,19 +684,31 @@ const providedTestScope = {
 // >
 // const uts2 = testScope2 satisfies UniformScopeCheck<typeof testScope2>
 
-// const test = customCanister(async () => ({
-//   wasm: "",
-//   candid: "",
-// }))
+const test = customCanister(async () => ({
+  wasm: "",
+  candid: "",
+}))
 
 // // // test._scope.children.install.computeCacheKey = (task) => {
 // // //   return task.id.toString()
 // // // }
 
-// const t = test.deps({ asd: test._scope.children.create }).provide({
-//   asd: test._scope.children.create,
-//   // TODO: extras also cause errors? should it be allowed?
-//   // asd2: test._scope.children.create,
-// }).done()
+const t = test
+  .deps({ asd: test._scope.children.install })
+  .provide({
+    asd: test._scope.children.install,
+    // TODO: extras also cause errors? should it be allowed?
+    // asd2: test._scope.children.create,
+  })
+  // ._scope.children
+  .install(async ({ ctx, mode }) => {
+    // TODO: allow chaining builders with crystal.customCanister() 
+    // to pass in context?
+    // ctx.users.default
+    // TODO: type the actors
+    ctx.dependencies.asd.actor
+  })
 // t.children.install.computeCacheKey
 // // t.children.install.dependencies
+
+// type A = Effect.Effect.Success<typeof test._scope.children.install.effect>
