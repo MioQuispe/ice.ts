@@ -6,7 +6,8 @@ import type {
   TaskTree,
   TaskTreeNode,
 } from "../types/types.js"
-import { TaskCtx, getCanisterInfo, Tags, TaskInfo } from "../index.js"
+import { TaskCtx, getCanisterInfo, TaskInfo } from "../index.js"
+import { Tags } from "../builders/types.js"
 import { loadCanisterId } from "../builders/custom.js"
 import {
   Box,

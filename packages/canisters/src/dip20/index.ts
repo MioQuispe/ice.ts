@@ -3,12 +3,12 @@ import path from "node:path"
 import { Principal } from "@dfinity/principal"
 import { customCanister, type TaskCtxShape } from "@crystal/runner"
 import { CapRouter } from "../cap"
-// import type { InitArgs } from "./dip20.did"
+import type { _SERVICE } from "./dip20.did"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 
 // TODO: bigint?
-type DIP20InitArgs = [
+type CanisterInitArgs = [
   logo: string, // logo: String
   name: string, // name: String
   symbol: string, // symbol: String
@@ -36,13 +36,15 @@ type InitArgs = {
 }
 
 const canisterName = "dip20"
+
+// type DIP20Builder = ReturnType<typeof customCanister<CanisterInitArgs, _SERVICE>>
 export const DIP20 = (
   initArgsOrFn:
     | InitArgs
     | ((ctx: TaskCtxShape) => InitArgs)
     | ((ctx: TaskCtxShape) => Promise<InitArgs>),
 ) => {
-  const result = customCanister<DIP20InitArgs>(async (ctx) => {
+  const result = customCanister<CanisterInitArgs, _SERVICE>(async (ctx) => {
     let initArgs: InitArgs
     const initResult =
       typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
@@ -57,9 +59,10 @@ export const DIP20 = (
       candid: path.resolve(__dirname, `./${canisterName}/${canisterName}.did`),
     }
   })
-  // TODO: how do we extract the Shape? do we need effect services / layers?
-  .deps({ capRouter: CapRouter.shape.children.install })
-  // .provide({ capRouter: CapRouter.shape.children.build })
+  // TODO: support passing in CanisterScopes
+  // TODO: Do we just check the return type of the task?
+  .deps({ capRouter: CapRouter.shape })
+  // .provide({ capRouter: CapRouter.shape })
   // TODO: install ctx should receive the dependencies in its type
   .install(async ({ ctx, mode }) => {
     let initArgs: InitArgs
@@ -70,8 +73,7 @@ export const DIP20 = (
     } else {
       initArgs = initResult
     }
-    // TODO: fix
-    const { capRouter: capRouterId } = ctx.dependencies
+    const { capRouter: { canisterId: capRouterId, actor } } = ctx.dependencies
     return [
       initArgs.logo,
       initArgs.name,
@@ -81,8 +83,7 @@ export const DIP20 = (
       Principal.from(initArgs.owner),
       BigInt(initArgs.fee),
       Principal.from(initArgs.feeTo),
-      // TODO: extract from dependencies
-      Principal.from(initArgs.capRouterId ?? CapRouter.id.ic),
+      Principal.from(capRouterId),
     ]
   })
   return result

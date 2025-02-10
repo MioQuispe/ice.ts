@@ -70,12 +70,13 @@ import type {
 import { Moc } from "./services/moc.js"
 import { runCli } from "./cli/index.js"
 import { TaskRegistry } from "./services/taskRegistry.js"
+import type * as ActorTypes from "./types/actor.js"
 
 export * from "./builders/index.js"
 // export * from "./plugins/withContext.js"
 
 import * as didc from "didc_js"
-import { Tags } from "./builders/custom.js"
+import { Tags } from "./builders/types.js"
 export const configMap = new Map([
   ["APP_DIR", fs.realpathSync(process.cwd())],
   ["DFX_CONFIG_FILENAME", "crystal.config.ts"],
@@ -1004,10 +1005,10 @@ export const createActor = <T>({
         yield* commandExecutor.start(command)
       })
 
-    return Actor.createActor(canisterDID.idlFactory, {
+    return Actor.createActor<T>(canisterDID.idlFactory, {
       agent,
       canisterId,
-    })
+    }) as ActorTypes.ActorSubclass<T>
 
     // TODO: ...?
     // return {

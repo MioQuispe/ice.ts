@@ -120,7 +120,7 @@ export interface CanisterBuilder<
   // only allow functions for now
   install(
     installArgsFn: (args: {
-      ctx: TaskCtxShape<ExtractTaskEffectSuccess<P>>
+      ctx: TaskCtxShape<ExtractTaskEffectSuccess<D>>
       mode: string
     }) => I | Promise<I>,
   ): CanisterBuilder<I, S, D, P, Config>

@@ -7,6 +7,7 @@ import type {
   Account,
   MetadataValue,
   FeatureFlags,
+  _SERVICE,
 } from "./icrc1_ledger.types"
 import { customCanister, type TaskCtxShape } from "@crystal/runner"
 import { Principal } from "@dfinity/principal"
@@ -54,17 +55,14 @@ export const ICRC1Ledger = (
     | ICRC1LedgerInitArgs
     | ((ctx: TaskCtxShape) => ICRC1LedgerInitArgs),
 ) => {
-  return customCanister<LedgerArg>((ctx) => {
+  return customCanister<LedgerArg, _SERVICE>((ctx) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
     return {
       canisterId: initArgs.canisterId,
       wasm: path.resolve(__dirname, `./${canisterName}/${canisterName}.wasm`),
-      // TODO: fix
       candid: path.resolve(__dirname, `./${canisterName}/${canisterName}.did`),
-      // dependencies: [...providers],
     }
-    // @ts-ignore
   }).install(async ({ ctx, mode }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
@@ -74,7 +72,7 @@ export const ICRC1Ledger = (
     }
     const controllerId = Principal.from(initArgs.controller_id)
     // TODO: proper types
-    return [{
+    return {
       Init: {
         // Opt({
         // custodians: Opt(custodians),
@@ -82,7 +80,7 @@ export const ICRC1Ledger = (
         // name: Opt(name),
         // symbol: Opt(symbol),
         // }),
-        decimals: Opt<bigint>(BigInt(8)),
+        decimals: Opt<number>(8),
         token_symbol: "TOKEN",
         transfer_fee: BigInt(0),
         // metadata : Array<[string, MetadataValue]>,
@@ -103,11 +101,11 @@ export const ICRC1Ledger = (
           node_max_memory_size_bytes: Opt<bigint>(BigInt(0)),
           controller_id: controllerId,
         },
-        max_memo_length: Opt<bigint>(BigInt(32)),
+        max_memo_length: Opt<number>(32),
         token_name: "Token",
         feature_flags: Opt<FeatureFlags>({ icrc2: true }),
       },
-    }]
+    }
     // satisfies InitArgs
   })
 }

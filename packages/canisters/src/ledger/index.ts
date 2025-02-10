@@ -2,7 +2,7 @@ import path from "node:path"
 import { Opt } from "../types"
 import { idlFactory } from "./ledger.private.did.js"
 // import { idlFactory as ledgerPublicIdlFactory } from "./ledger.public.did.js"
-import type { ICPTs, LedgerCanisterInitPayload } from "./ledger.private.types"
+import type { ICPTs, LedgerCanisterInitPayload, _SERVICE } from "./ledger.private.types"
 import * as url from "node:url"
 import { customCanister, type TaskCtxShape } from "@crystal/runner"
 
@@ -35,7 +35,7 @@ export const Ledger = (
 
   // TODO: return config
   // - get paths
-  return customCanister<[LedgerCanisterInitPayload]>({
+  return customCanister<[LedgerCanisterInitPayload], _SERVICE>({
     canisterId: LedgerIds.local,
     // TODO: change from private => public
     candid: path.resolve(__dirname, `${canisterName}/${canisterName}.private.did`),

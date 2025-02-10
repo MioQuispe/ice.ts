@@ -3,7 +3,7 @@ import { Opt } from "../types"
 import * as url from "node:url"
 import type { ActorSubclass } from "@dfinity/agent"
 import { idlFactory } from "./internet_identity.did"
-import type { InternetIdentityInit } from "./internet_identity.types"
+import type { InternetIdentityInit, _SERVICE } from "./internet_identity.types"
 import { Crystal, customCanister, type TaskCtxShape } from "@crystal/runner"
 
 const crystal = Crystal()
@@ -29,7 +29,7 @@ type InitArgs = {
 export const InternetIdentity = (
   initArgsOrFn: InitArgs | ((ctx: TaskCtxShape) => InitArgs),
 ) => {
-  return customCanister<CanisterInitArgs>({
+  return customCanister<CanisterInitArgs, _SERVICE>({
       canisterId: InternetIdentityIds.local,
       candid: path.resolve(
         __dirname,

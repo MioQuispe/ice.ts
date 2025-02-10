@@ -43,7 +43,15 @@ import {
   loadCanisterId,
   resolveConfig,
 } from "./custom.js"
-import type { CanisterBuilder, CanisterScope, UniformScopeCheck, DependencyMismatchError, IsValid, MergeScopeDependencies, MergeScopeProvide } from "./types.js"
+import type {
+  CanisterBuilder,
+  CanisterScope,
+  UniformScopeCheck,
+  DependencyMismatchError,
+  IsValid,
+  MergeScopeDependencies,
+  MergeScopeProvide,
+} from "./types.js"
 import { Tags } from "./types.js"
 
 type MotokoCanisterConfig = {
@@ -112,6 +120,7 @@ export const makeMotokoBuilder = <
   D extends Record<string, Task>,
   P extends Record<string, Task>,
   Config extends MotokoCanisterConfig,
+  _SERVICE = unknown,
 >(
   scope: S,
 ): CanisterBuilder<I, S, D, P, Config> => {
@@ -124,7 +133,9 @@ export const makeMotokoBuilder = <
           install: makeInstallTask(installArgsOrFn),
         },
       } satisfies CanisterScope
-      return makeMotokoBuilder<I, typeof updatedScope, D, P, Config>(updatedScope)
+      return makeMotokoBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(
+        updatedScope,
+      )
     },
 
     create: (canisterConfigOrFn) => {
@@ -135,7 +146,9 @@ export const makeMotokoBuilder = <
           create: makeCreateTask(canisterConfigOrFn),
         },
       }
-      return makeMotokoBuilder<I, typeof updatedScope, D, P, Config>(updatedScope)
+      return makeMotokoBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(
+        updatedScope,
+      )
     },
 
     build: (canisterConfigOrFn) => {
@@ -146,7 +159,9 @@ export const makeMotokoBuilder = <
           build: makeMotokoBuildTask(canisterConfigOrFn),
         },
       } satisfies CanisterScope
-      return makeMotokoBuilder<I, typeof updatedScope, D, P, Config>(updatedScope)
+      return makeMotokoBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(
+        updatedScope,
+      )
     },
 
     deps: (dependencies) => {
@@ -248,7 +263,7 @@ export const makeMotokoBuilder = <
   }
 }
 
-export const motokoCanister = <I = unknown>(
+export const motokoCanister = <I = unknown, _SERVICE = unknown>(
   canisterConfigOrFn:
     | MotokoCanisterConfig
     | ((ctx: TaskCtxShape) => MotokoCanisterConfig)
@@ -270,11 +285,18 @@ export const motokoCanister = <I = unknown>(
       build: makeMotokoBuildTask(canisterConfigOrFn),
       bindings: makeBindingsTask(),
       // delete: createDeleteTask(),
-      install: makeInstallTask<I>(),
+      install: makeInstallTask<I, Record<string, unknown>, _SERVICE>(),
     },
   } satisfies CanisterScope
 
-  return makeMotokoBuilder<I, typeof initialScope, Record<string, Task>, Record<string, Task>, MotokoCanisterConfig>(initialScope)
+  return makeMotokoBuilder<
+    I,
+    typeof initialScope,
+    Record<string, Task>,
+    Record<string, Task>,
+    MotokoCanisterConfig,
+    _SERVICE
+  >(initialScope)
 }
 
 const testTask = {
@@ -407,7 +429,6 @@ const providedTestScope = {
 // }).done()
 // t.children.install.computeCacheKey
 // // t.children.install.dependencies
-
 
 // const testMotokoCanister = motokoCanister(async () => ({ src: "src/motoko/canister.mo" }))
 // .deps({

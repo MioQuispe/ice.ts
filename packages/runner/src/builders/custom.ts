@@ -92,7 +92,7 @@ export const makeBindingsTask = () => {
   } satisfies Task
 }
 
-export const makeInstallTask = <I, P extends Record<string, unknown>>(
+export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
   installArgsFn?: (args: {
     ctx: TaskCtxShape<P>
     mode: string
@@ -193,7 +193,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>>(
         wasmPath,
       })
       yield* Effect.logInfo("Canister installed successfully")
-      const actor = yield* createActor({
+      const actor = yield* createActor<_SERVICE>({
         canisterId,
         canisterDID,
       })
@@ -328,8 +328,10 @@ const makeCustomCanisterBuilder = <
   D extends Record<string, Task>,
   P extends Record<string, Task>,
   Config extends CustomCanisterConfig,
+  _SERVICE = unknown,
 >(
   scope: S,
+  // TODO: maybe we need to pass in the service type as well?
 ): CanisterBuilder<I, S, D, P, Config> => {
   return {
     create: (canisterConfigOrFn) => {
@@ -340,7 +342,7 @@ const makeCustomCanisterBuilder = <
           create: makeCreateTask(canisterConfigOrFn),
         },
       } satisfies CanisterScope
-      return makeCustomCanisterBuilder<I, typeof updatedScope, D, P, Config>(
+      return makeCustomCanisterBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(
         updatedScope,
       )
     },
@@ -352,10 +354,12 @@ const makeCustomCanisterBuilder = <
         ...scope,
         children: {
           ...scope.children,
-          install: makeInstallTask<I, ExtractTaskEffectSuccess<P>>(installArgsFn),
+          install: makeInstallTask<I, ExtractTaskEffectSuccess<D>, _SERVICE>(
+            installArgsFn,
+          ),
         },
       } satisfies CanisterScope
-      return makeCustomCanisterBuilder<I, typeof updatedScope, D, P, Config>(
+      return makeCustomCanisterBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(
         updatedScope,
       )
     },
@@ -367,7 +371,7 @@ const makeCustomCanisterBuilder = <
           build: makeBuildTask(canisterConfigOrFn),
         },
       } satisfies CanisterScope
-      return makeCustomCanisterBuilder<I, typeof updatedScope, D, P, Config>(
+      return makeCustomCanisterBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(
         updatedScope,
       )
     },
@@ -464,7 +468,7 @@ const makeCustomCanisterBuilder = <
 
 // TODO: some kind of metadata?
 // TODO: warn about context if not provided
-export const customCanister = <I = unknown>(
+export const customCanister = <I = unknown, _SERVICE = unknown>(
   canisterConfigOrFn:
     | ((ctx: TaskCtxShape) => Promise<CustomCanisterConfig>)
     | ((ctx: TaskCtxShape) => CustomCanisterConfig)
@@ -488,7 +492,7 @@ export const customCanister = <I = unknown>(
       // },
       build: makeBuildTask(canisterConfigOrFn),
       // install: makeInstallTask<I>(),
-      install: makeInstallTask<I, Record<string, unknown>>(),
+      install: makeInstallTask<I, Record<string, unknown>, _SERVICE>(),
     },
   } satisfies CanisterScope
 
@@ -497,7 +501,8 @@ export const customCanister = <I = unknown>(
     typeof initialScope,
     Record<string, Task>,
     Record<string, Task>,
-    CustomCanisterConfig
+    CustomCanisterConfig,
+    _SERVICE
   >(initialScope)
 }
 

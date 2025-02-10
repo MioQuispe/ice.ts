@@ -6,17 +6,9 @@ import type {
   TaskTree,
   TaskTreeNode,
 } from "../types/types.js"
-import { TaskCtx, getCanisterInfo, Tags, TaskInfo } from "../index.js"
+import { TaskCtx, getCanisterInfo, TaskInfo } from "../index.js"
 import { loadCanisterId } from "../builders/custom.js"
-
-type CanisterScope = Scope & {
-  children: {
-    create: Task
-    bindings: Task
-    build: Task
-    install: Task
-  }
-}
+import { Tags, type CanisterScope } from "../builders/types.js"
 
 const makeDeployTask = (scope: CanisterScope): Task => {
   return {

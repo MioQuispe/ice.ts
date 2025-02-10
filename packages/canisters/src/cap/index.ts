@@ -4,6 +4,10 @@ import { idlFactory as capRootIdlFactory } from "./cap-root/cap-root.did.js"
 import { idlFactory as capRouterIdlFactory } from "./cap-router/cap-router.did.js"
 import { idlFactory as capRouterTestIdlFactory } from "./cap-router-test/cap-router-test.did.js"
 import { customCanister, type TaskCtxShape, scope } from "@crystal/runner"
+import type { _SERVICE as CAP_ROUTER_SERVICE } from "./cap-router/types.js"
+import type { _SERVICE as CAP_ROOT_SERVICE } from "./cap-root/types.js"
+import type { _SERVICE as CAP_BUCKET_SERVICE } from "./cap-bucket/types.js"
+import type { Effect } from "effect"
 
 import { Principal } from "@dfinity/principal"
 import * as url from "node:url"
@@ -26,7 +30,6 @@ type CapBucketInitArgs = {
   canisterId?: string
 }
 
-// TODO: how do we get the effect or shape of this task without initializing?
 export const CapBucket = (
   initArgsOrFn: CapBucketInitArgs | ((ctx: TaskCtxShape) => CapBucketInitArgs),
 ) => {
@@ -35,7 +38,7 @@ export const CapBucket = (
   //   offset = 0, // u64,
   //   next_canisters = [0], // Vec<BucketId>,
   // } = args
-  return customCanister<[]>((ctx) => {
+  return customCanister<[], CAP_BUCKET_SERVICE>((ctx) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
     return {
@@ -86,7 +89,7 @@ export const CapRoot = (
   //   contract,
   //   writers,
   // } = args
-  return customCanister<[]>((ctx) => {
+  return customCanister<[], CAP_ROOT_SERVICE>((ctx) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
     return {
@@ -94,16 +97,17 @@ export const CapRoot = (
       wasm: path.resolve(__dirname, "./cap/cap-root/cap-root.wasm"),
       canisterId: initArgs.canisterId ?? CapRootIds.local,
     }
-  }).install(async ({ ctx, mode }) => {
-    const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
-    return [
-      // args: [
-      //   contract, // Principal,
-      //   writers, // BTreeSet<Principal>
-      // ],
-    ]
   })
+  // .install(async ({ ctx, mode }) => {
+  //   const initArgs =
+  //     typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+  //   return [
+  //     // args: [
+  //     //   contract, // Principal,
+  //     //   writers, // BTreeSet<Principal>
+  //     // ],
+  //   ]
+  // })
 }
 
 CapRoot.id = CapRootIds
@@ -127,13 +131,12 @@ type CapRouterInitArgs = {
 }
 
 // Here we create the shape
-const capRouter = customCanister<[]>({
+const capRouter = customCanister<[], CAP_ROUTER_SERVICE>({
   candid: path.resolve(__dirname, "./cap/cap-router/cap-router.did"),
   wasm: path.resolve(__dirname, "./cap/cap-router/cap-router.wasm"),
   canisterId: CapRouterIds.local,
-}).install(async () => [])
+})
 
-// TODO: how do we extract the shape of this task without initializing?
 export const CapRouter = (
   initArgsOrFn: CapRouterInitArgs | ((ctx: TaskCtxShape) => CapRouterInitArgs),
 ) => {
@@ -147,21 +150,25 @@ export const CapRouter = (
         canisterId: initArgs.canisterId ?? CapRouterIds.local,
       }
     })
-    .install(async ({ ctx, mode }) => {
-      const initArgs =
-        typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
-      return []
-    })
+    // .install(async ({ ctx, mode }) => {
+    //   const initArgs =
+    //     typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+    //   return []
+    // })
 }
 
-// TODO: how should this look?
-CapRouter.shape = capRouter.done()
+// capRouter._scope.children.install
 
-CapRouter.id = CapRouterIds
+const effect = capRouter.done().children.install.effect
+CapRouter.provides = {} as Effect.Effect.Success<typeof effect>
+// export type CapRouterBuilder = ReturnType<typeof customCanister<[], CAP_ROUTER_SERVICE>>
+CapRouter.shape = capRouter.done().children.install
 
-CapRouter.idlFactory = capRouterIdlFactory
+// CapRouter.id = CapRouterIds
 
-CapRouter.scripts = {}
+// CapRouter.idlFactory = capRouterIdlFactory
+
+// CapRouter.scripts = {}
 
 //////////////////////////
 
