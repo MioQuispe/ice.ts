@@ -38,8 +38,7 @@ import type {
   CrystalConfig,
 } from "../../types/types.js"
 import { filterTasks, runTaskByPath, TUILayer } from "../../index.js"
-import { TaskList, Task } from "ink-task-list"
-import spinners from "cli-spinners"
+import { TaskList, Task, type StateOthers } from "./components/Task.js"
 
 export function useSynchronizedState<T>(defaultState: T) {
   const [subscriptionRef] = useState(() =>
@@ -58,8 +57,6 @@ export function useSynchronizedState<T>(defaultState: T) {
 
   return [value, subscriptionRef] as const
 }
-
-type StateOthers = "pending" | "success" | "warning" | "error" | "loading"
 
 const TaskTreeListItem = <A, E, R, I>({
   label,
@@ -100,8 +97,7 @@ const TaskTreeListItem = <A, E, R, I>({
   return (
     <>
       <Task
-        state={isFocused ? "warning" : state}
-        spinner={spinners.dots}
+        state={isFocused ? "selected" : state}
         label={label}
         {...props}
       />

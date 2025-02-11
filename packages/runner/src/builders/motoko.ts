@@ -52,6 +52,7 @@ import type {
   MergeScopeDependencies,
   MergeScopeProvide,
   ExtractProvidedDeps,
+  ExtractTaskEffectSuccess,
 } from "./types.js"
 import { Tags } from "./types.js"
 
@@ -68,7 +69,7 @@ const makeMotokoBuildTask = (
     | ((ctx: TaskCtxShape) => Promise<MotokoCanisterConfig>)
     | ((ctx: TaskCtxShape) => MotokoCanisterConfig)
     | MotokoCanisterConfig,
-): Task => {
+) => {
   return {
     _tag: "task",
     id: Symbol("motokoCanister/build"),
@@ -97,7 +98,7 @@ const makeMotokoBuildTask = (
     }),
     description: "some description",
     tags: [Tags.CANISTER, Tags.BUILD],
-  }
+  } satisfies Task
 }
 
 const makeMotokoDeleteTask = (): Task => {
@@ -131,7 +132,9 @@ export const makeMotokoBuilder = <
         ...scope,
         children: {
           ...scope.children,
-          install: makeInstallTask(installArgsOrFn),
+          install: makeInstallTask<I, ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>, _SERVICE>(
+            installArgsOrFn,
+          ),
         },
       } satisfies CanisterScope
       return makeMotokoBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(
@@ -146,7 +149,7 @@ export const makeMotokoBuilder = <
           ...scope.children,
           create: makeCreateTask(canisterConfigOrFn),
         },
-      }
+      } satisfies CanisterScope
       return makeMotokoBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(
         updatedScope,
       )

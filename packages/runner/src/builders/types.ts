@@ -42,12 +42,21 @@ type ProvideReturnValues<T> =
     : never
 
 // // Compare return value of task
+// export type DepBuilder<T> =
+//   DependencyReturnValues<T> extends ProvideReturnValues<T>
+//     ? ProvideReturnValues<T> extends DependencyReturnValues<T>
+//       ? T
+//       : never
+//     : never
+
+// Compare return value of task
 export type DepBuilder<T> =
-  DependencyReturnValues<T> extends ProvideReturnValues<T>
-    ? ProvideReturnValues<T> extends DependencyReturnValues<T>
-      ? T
-      : never
-    : never
+  DependencyReturnValues<T> extends Pick<
+    ProvideReturnValues<T>,
+    Extract<keyof DependencyReturnValues<T>, keyof ProvideReturnValues<T>>
+  >
+    ? T
+    : never;
 
 // export type DepBuilder<T> =
 //   DependenciesOf<T> extends ProvideOf<T>
@@ -165,7 +174,7 @@ export interface CanisterBuilder<
   // only allow functions for now
   install(
     installArgsFn: (args: {
-      ctx: TaskCtxShape<ExtractTaskEffectSuccess<D>>
+      ctx: TaskCtxShape<ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>>
       mode: string
     }) => I | Promise<I>,
   ): CanisterBuilder<I, S, D, P, Config>

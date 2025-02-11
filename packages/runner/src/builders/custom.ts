@@ -355,7 +355,7 @@ const makeCustomCanisterBuilder = <
         ...scope,
         children: {
           ...scope.children,
-          install: makeInstallTask<I, ExtractTaskEffectSuccess<D>, _SERVICE>(
+          install: makeInstallTask<I, ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>, _SERVICE>(
             installArgsFn,
           ),
         },
