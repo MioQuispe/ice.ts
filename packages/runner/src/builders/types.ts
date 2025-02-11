@@ -41,14 +41,14 @@ type ProvideReturnValues<T> =
     ? { [K in keyof ProvideOf<T>]: CompareTaskReturnValues<ProvideOf<T>[K]> }
     : never
 
-// Compare return value of task effect
-// Doesnt allow for providing tasks without declaring them in dependencies
-export type DepBuilder<T> =
-  DependencyReturnValues<T> extends ProvideReturnValues<T>
-    ? ProvideReturnValues<T> extends DependencyReturnValues<T>
-      ? T
-      : never
-    : never
+// // Compare return value of task effect
+// // Doesnt allow for providing tasks without declaring them in dependencies
+// export type DepBuilder<T> =
+//   DependencyReturnValues<T> extends ProvideReturnValues<T>
+//     ? ProvideReturnValues<T> extends DependencyReturnValues<T>
+//       ? T
+//       : never
+//     : never
 
 // Compare return value of task effect
 // export type DepBuilder<T> =
@@ -58,6 +58,20 @@ export type DepBuilder<T> =
 //   >
 //     ? T
 //     : never;
+type StringKey<T> = Extract<keyof T, string>;
+
+/**
+ * Checks that all in S are included in T.
+ */
+type MissingKeys<S, T> = Exclude<S, T>;
+
+export type DepBuilder<T> = 
+  MissingKeys<StringKey<DependencyReturnValues<T>>, keyof ProvideReturnValues<T>> extends never 
+    ? DependencyReturnValues<T> extends Pick<ProvideReturnValues<T>, StringKey<DependencyReturnValues<T>>>
+      ? T
+      : never
+    : never;
+
 
 // Compare plain dependencies and provide tasks
 // export type DepBuilder<T> =
@@ -375,26 +389,26 @@ const providedTestScope = {
 // debugType.Canister
 // debugType.testTask2
 
-// const test = customCanister(async () => ({
-//   wasm: "",
-//   candid: "",
-// }))
 
 // // // // test._scope.children.install.computeCacheKey = (task) => {
 // // // //   return task.id.toString()
 // // // // }
 
+// const test = customCanister(async () => ({
+//   wasm: "",
+//   candid: "",
+// }))
 // const t = test
-//   .deps({
-//     Canister: Canister.provides,
-//     testTask: testTask,
-//   })
+//   // .deps({
+//   //   Canister,
+//   //   // testTask: testTask,
+//   // })
 //   .provide({
 //     // asd: testTask
 //     // TODO: extras also cause errors? should it be allowed?
 //     // asd: testTask2,
-//     Canister: Canister.provides,
-//     testTask: testTask,
+//     Canister,
+//     testTask: testTask2,
 //   })
 //   // ._scope.children
 //   .install(async ({ ctx, mode }) => {
