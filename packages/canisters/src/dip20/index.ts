@@ -87,7 +87,8 @@ export const DIP20 = (
     ]
   })
   // // tests:
-  // .provide({ CapRouter }).done()
+  // .provide({ CapRouter: CapRouter })
+  // .done()
   return result
 }
 

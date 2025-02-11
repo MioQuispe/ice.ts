@@ -137,14 +137,6 @@ export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {
       // const crystalConfig = yield* getCrystalConfig()
       // TODO: get layers or runtime? we need access to the tasks dependencies here
 
-      // const runTask = <A = any, E = any, R = any>(
-      //   task: Task,
-      // ): Effect.Effect<A, E, R> => {
-      //   return Effect.gen(function* () {
-      //     // 1. Execute Dependencies
-      //   })
-      // }
-
       return {
         // TODO: get from config?
         network: "local",
@@ -465,9 +457,7 @@ export const getTaskByPath = (taskPathString: TaskFullName) =>
   Effect.gen(function* () {
     const taskPath: string[] = taskPathString.split(":")
     const { taskTree, config } = yield* CrystalConfigService
-    yield* Effect.log("finding task by path", { taskPath })
     const task = yield* findTaskInTaskTree(taskTree, taskPath)
-    yield* Effect.log("found task", { task })
     return { task, config }
   })
 
@@ -568,15 +558,6 @@ export const getTaskPathById = (id: Symbol) =>
       taskTree,
       (node) => node._tag === "task" && node.id === id,
     )
-    yield* Effect.log("getTaskPathById", {
-      result,
-      id,
-      taskTree,
-      //@ts-ignore
-      dip20Task: taskTree.dip20.children.deploy,
-      //@ts-ignore
-      doesMatchId: taskTree.dip20.children.deploy.id === id,
-    })
     // TODO: use effect Option?
     if (result?.[0]) {
       return result[0].path.join(":")
@@ -656,8 +637,8 @@ export const runTask = <A, E, R, I>(
 ): Effect.Effect<A, unknown, unknown> => {
   return Effect.gen(function* () {
     const cache = yield* TaskRegistry
-    yield* Effect.log("runTask", { task, options })
     const taskPath = yield* getTaskPathById(task.id)
+    yield* Effect.log("Running task: ", { taskPath, task, options })
 
     // // const cacheKey = task.id
     // // 1. If there is already a cached result, return it immediately.
@@ -774,7 +755,6 @@ export const canistersDeployTask = () =>
 
 export const canistersCreateTask = () =>
   Effect.gen(function* () {
-    yield* Effect.log("Running canisters:create task")
     const { taskTree } = yield* CrystalConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,

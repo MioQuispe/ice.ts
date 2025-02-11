@@ -127,14 +127,12 @@ export const makeMotokoBuilder = <
   scope: S,
 ): CanisterBuilder<I, S, D, P, Config> => {
   return {
-    install: (installArgsOrFn) => {
+    create: (canisterConfigOrFn) => {
       const updatedScope = {
         ...scope,
         children: {
           ...scope.children,
-          install: makeInstallTask<I, ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>, _SERVICE>(
-            installArgsOrFn,
-          ),
+          create: makeCreateTask(canisterConfigOrFn),
         },
       } satisfies CanisterScope
       return makeMotokoBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(
@@ -142,12 +140,26 @@ export const makeMotokoBuilder = <
       )
     },
 
-    create: (canisterConfigOrFn) => {
+    install: (installArgsFn) => {
+      // TODO: is this a flag, arg, or what?
+      const mode = "install"
+      // we need to inject dependencies again! or they can be overwritten
+      const dependencies = scope.children.install.dependencies
+      const provide = scope.children.install.provide
+      const installTask = makeInstallTask<
+        I,
+        ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>,
+        _SERVICE
+      >(installArgsFn)
       const updatedScope = {
         ...scope,
         children: {
           ...scope.children,
-          create: makeCreateTask(canisterConfigOrFn),
+          install: {
+            ...installTask,
+            dependencies,
+            provide,
+          },
         },
       } satisfies CanisterScope
       return makeMotokoBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(

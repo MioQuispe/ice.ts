@@ -41,23 +41,25 @@ type ProvideReturnValues<T> =
     ? { [K in keyof ProvideOf<T>]: CompareTaskReturnValues<ProvideOf<T>[K]> }
     : never
 
-// // Compare return value of task
-// export type DepBuilder<T> =
-//   DependencyReturnValues<T> extends ProvideReturnValues<T>
-//     ? ProvideReturnValues<T> extends DependencyReturnValues<T>
-//       ? T
-//       : never
-//     : never
-
-// Compare return value of task
+// Compare return value of task effect
+// Doesnt allow for providing tasks without declaring them in dependencies
 export type DepBuilder<T> =
-  DependencyReturnValues<T> extends Pick<
-    ProvideReturnValues<T>,
-    Extract<keyof DependencyReturnValues<T>, keyof ProvideReturnValues<T>>
-  >
-    ? T
-    : never;
+  DependencyReturnValues<T> extends ProvideReturnValues<T>
+    ? ProvideReturnValues<T> extends DependencyReturnValues<T>
+      ? T
+      : never
+    : never
 
+// Compare return value of task effect
+// export type DepBuilder<T> =
+//   DependencyReturnValues<T> extends Pick<
+//     ProvideReturnValues<T>,
+//     Extract<keyof DependencyReturnValues<T>, keyof ProvideReturnValues<T>>
+//   >
+//     ? T
+//     : never;
+
+// Compare plain dependencies and provide tasks
 // export type DepBuilder<T> =
 //   DependenciesOf<T> extends ProvideOf<T>
 //     ? ProvideOf<T> extends DependenciesOf<T>

@@ -156,6 +156,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
           installArgs = yield* Effect.tryPromise({
             try: () => installResult,
             catch: (error) => {
+              // TODO: proper error handling
               console.error("Error resolving config function:", error)
               return error instanceof Error ? error : new Error(String(error))
             },
@@ -276,6 +277,7 @@ export const resolveConfig = <T>(
         return yield* Effect.tryPromise({
           try: () => configResult,
           catch: (error) => {
+            // TODO: proper error handling
             console.error("Error resolving config function:", error)
             return error instanceof Error ? error : new Error(String(error))
           },
@@ -351,13 +353,23 @@ const makeCustomCanisterBuilder = <
       // TODO: is this a flag, arg, or what?
       const mode = "install"
       // TODO: passing in I makes the return type: any
+      // TODO: we need to inject dependencies again! or they can be overwritten
+      const dependencies = scope.children.install.dependencies
+      const provide = scope.children.install.provide
+      const installTask = makeInstallTask<
+        I,
+        ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>,
+        _SERVICE
+      >(installArgsFn)
       const updatedScope = {
         ...scope,
         children: {
           ...scope.children,
-          install: makeInstallTask<I, ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>, _SERVICE>(
-            installArgsFn,
-          ),
+          install: {
+            ...installTask,
+            dependencies,
+            provide,
+          },
         },
       } satisfies CanisterScope
       return makeCustomCanisterBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(
@@ -451,8 +463,6 @@ const makeCustomCanisterBuilder = <
           return [key, dep satisfies Task]
         }),
       ) satisfies Record<string, Task>
-      // TODO: transform providedDeps to a record of tasks
-      // const finalDeps = providedDeps
 
       // TODO: do we need to pass in to create as well?
       const updatedScope = {
@@ -726,11 +736,13 @@ const test = customCanister(async () => ({
 // // // }
 
 const t = test
-  .deps({ asd: test._scope.children.install })
+  .deps({ 
+    asd: test._scope.children.install 
+  })
   .provide({
     asd: test._scope.children.install,
     // TODO: extras also cause errors? should it be allowed?
-    // asd2: test._scope.children.create,
+    // asd2: test._scope.children.install,
   })
   // ._scope.children
   .install(async ({ ctx, mode }) => {
@@ -740,6 +752,7 @@ const t = test
     // TODO: type the actors
     ctx.dependencies.asd.actor
   })
+  .done()
 // t.children.install.computeCacheKey
 // // t.children.install.dependencies
 

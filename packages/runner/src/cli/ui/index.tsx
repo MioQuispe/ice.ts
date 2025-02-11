@@ -32,13 +32,13 @@ import {
 import type {
   CrystalConfigFile,
   Scope,
-  Task as TaskType,
+  Task,
   TaskTree,
   TaskTreeNode,
   CrystalConfig,
 } from "../../types/types.js"
 import { filterTasks, runTaskByPath, TUILayer } from "../../index.js"
-import { TaskList, Task, type StateOthers } from "./components/Task.js"
+import { TaskList, TaskListItem, type StateOthers } from "./components/Task.js"
 
 export function useSynchronizedState<T>(defaultState: T) {
   const [subscriptionRef] = useState(() =>
@@ -65,7 +65,7 @@ const TaskTreeListItem = <A, E, R, I>({
   ...props
 }: {
   label: string
-  task: TaskType<A, E, R, I>
+  task: Task<A, E, R, I>
   path: string[]
 }) => {
   const { isFocused } = useFocus()
@@ -96,7 +96,7 @@ const TaskTreeListItem = <A, E, R, I>({
   )
   return (
     <>
-      <Task
+      <TaskListItem
         state={isFocused ? "selected" : state}
         label={label}
         {...props}
@@ -194,7 +194,7 @@ const TaskTreeList = ({
         if (node._tag === "builder") {
           return (
             <>
-              <Task
+              <TaskListItem
                 key={fullPath.join(":")}
                 isExpanded
                 label={fullPath[fullPath.length - 1]}
@@ -205,14 +205,14 @@ const TaskTreeList = ({
                   title={fullPath.join(":")}
                   path={fullPath}
                 />
-              </Task>
+              </TaskListItem>
             </>
           )
         }
         if (node._tag === "scope") {
           return (
             <>
-              <Task
+              <TaskListItem
                 key={fullPath.join(":")}
                 isExpanded
                 label={fullPath[fullPath.length - 1]}
@@ -223,7 +223,7 @@ const TaskTreeList = ({
                   title={fullPath.join(":")}
                   path={fullPath}
                 />
-              </Task>
+              </TaskListItem>
             </>
           )
         }
@@ -275,9 +275,14 @@ const CliApp = ({
   const focusManager = useFocusManager()
   const [editingField, setEditingField] = useState<string>()
   const { exit } = useApp()
+
   useEffect(() => {
     focusManager.enableFocus()
   }, [focusManager])
+
+  useEffect(() => {
+    focusManager.focusNext()
+  }, [])
 
   useInput(
     (input, key) => {

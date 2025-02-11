@@ -3,29 +3,30 @@ import type { FC, ReactElement, ReactNode } from "react"
 import isUnicodeSupported from "is-unicode-supported"
 import { Text, Box } from "ink"
 import spinners from "cli-spinners"
+import figures, { mainSymbols, fallbackSymbols, replaceSymbols } from "figures"
 
-const symbols = {
-  arrowRight: "→",
-  tick: "✔",
-  info: "ℹ",
-  warning: "⚠",
-  cross: "✖",
-  squareSmallFilled: "◼",
-  pointer: "❯",
-}
+// const symbols = {
+//   arrowRight: "→",
+//   tick: "✔",
+//   info: "ℹ",
+//   warning: "⚠",
+//   cross: "✖",
+//   squareSmallFilled: "◼",
+//   pointer: "❯",
+// }
 
-const fallbackSymbols = {
-  arrowRight: "→",
-  tick: "√",
-  info: "i",
-  warning: "‼",
-  cross: "×",
-  squareSmallFilled: "■",
-  pointer: ">",
-}
+// const fallbackSymbols = {
+//   arrowRight: "→",
+//   tick: "√",
+//   info: "i",
+//   warning: "‼",
+//   cross: "×",
+//   squareSmallFilled: "■",
+//   pointer: ">",
+// }
 
 // Fork of https://github.com/sindresorhus/figures
-const figures = isUnicodeSupported() ? symbols : fallbackSymbols
+// const figures = isUnicodeSupported() ? symbols : fallbackSymbols
 
 export type Spinner = {
   interval: number
@@ -64,7 +65,27 @@ export type StateOthers =
   | "error"
   | "selected"
 
-const getSymbol = (state: StateOthers) => {
+const Icon = ({
+  state,
+  isExpanded,
+}: {
+  state: StateOthers
+  isExpanded: boolean
+}) => {
+  if (isExpanded) {
+    return (
+      <Text color={state === "error" ? "red" : "yellow"}>
+        {figures.pointer}
+      </Text>
+    )
+  }
+  if (state === "loading") {
+    return (
+      <Text color="yellow">
+        <RenderSpinner spinner={spinners.dots} />
+      </Text>
+    )
+  }
   if (state === "warning") {
     return <Text color="yellow">{figures.warning}</Text>
   }
@@ -78,19 +99,15 @@ const getSymbol = (state: StateOthers) => {
   }
 
   if (state === "pending") {
-    return <Text color="gray">{figures.squareSmallFilled}</Text>
+    return <Text color="gray">{figures.circle}</Text>
   }
 
   if (state === "selected") {
-    return <Text color="blue">{figures.pointer}</Text>
+    return <Text color="blue">{figures.circleFilled}</Text>
   }
 
   return " "
 }
-
-const getPointer = (state: StateOthers) => (
-  <Text color={state === "error" ? "red" : "yellow"}>{figures.pointer}</Text>
-)
 
 type BaseProps = {
   label: string
@@ -100,31 +117,21 @@ type BaseProps = {
   children?: ReactElement | ReactElement[]
 }
 
-export const Task: FC<
+export const TaskListItem: FC<
   BaseProps & {
     state?: StateOthers
   }
-> = ({ label, state = "pending", status, output, isExpanded, children }) => {
+> = ({ label, state = "pending", status, output, isExpanded = false, children }) => {
   const childrenArray = Children.toArray(children)
   const listChildren = childrenArray.filter((node) => isValidElement(node))
-  let icon =
-    state === "loading" ? (
-      <Text color="yellow">
-        <RenderSpinner spinner={spinners.dots} />
-      </Text>
-    ) : (
-      getSymbol(state)
-    )
-
-  if (isExpanded) {
-    icon = getPointer(state)
-  }
 
   return (
     <Box flexDirection="column">
       <Box>
         <Box marginRight={1}>
-          <Text>{icon}</Text>
+          <Text>
+            <Icon state={state} isExpanded={isExpanded} />
+          </Text>
         </Box>
         <Text>{label}</Text>
         {status ? (
