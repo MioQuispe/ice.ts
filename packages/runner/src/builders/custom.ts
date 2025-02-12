@@ -112,6 +112,12 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 
       const { taskPath } = yield* TaskInfo
       const canisterName = taskPath.split(":").slice(0, -1).join(":")
+      // TODO: this is a hack, we should have a better way to handle this
+      const onlyCanisterName = canisterName.split(":").slice(-1)[0]
+      const noEncodeArgs = onlyCanisterName === "NNSGenesisToken"
+      yield* Effect.logInfo("No encode args", { noEncodeArgs, canisterName })
+      //////////////////////////////////////////////////////////
+
       const canisterId = yield* loadCanisterId(taskPath)
       yield* Effect.logInfo("Loaded canister ID", { canisterId })
 
@@ -171,11 +177,13 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
       }
 
       yield* Effect.logInfo("Encoding args", { installArgs, canisterDID })
-      const encodedArgs = yield* Effect.try({
-        // TODO: do we accept simple objects as well?
-        // @ts-ignore
-        try: () => encodeArgs(installArgs, canisterDID),
-        catch: (error) => {
+      const encodedArgs = noEncodeArgs
+        ? (installArgs as unknown as Uint8Array)
+        : yield* Effect.try({
+            // TODO: do we accept simple objects as well?
+            // @ts-ignore
+            try: () => encodeArgs(installArgs, canisterDID),
+            catch: (error) => {
           throw new Error(
             `Failed to encode args: ${error instanceof Error ? error.message : String(error)}`,
           )

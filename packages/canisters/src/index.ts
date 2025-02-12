@@ -4,7 +4,7 @@ export * from "./icrc1_ledger"
 export * from "./dip721"
 export * from "./dip20"
 export * from "./cap"
-// export * from "./nns"
+export * from "./nns"
 
 // export * from "./wicp"
 // TODO:

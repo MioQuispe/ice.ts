@@ -20,7 +20,7 @@ import {
   type Identity,
   type SignIdentity,
 } from "@dfinity/agent"
-import { idlFactory } from "./canisters/management_new/management.did.js"
+import { idlFactory } from "./canisters/management_latest/management.did.js"
 import { Ed25519KeyIdentity } from "@dfinity/identity"
 import * as os from "node:os"
 import find from "find-process"
@@ -79,6 +79,8 @@ import * as didc from "didc_js"
 import { Tags } from "./builders/types.js"
 import { deployTaskPlugin } from "./plugins/deploy.js"
 import { candidUITaskPlugin } from "./plugins/candid_ui.js"
+import { sha256 } from "js-sha256"
+import { log_visibility } from "./canisters/management_latest/management.types.js"
 export const configMap = new Map([
   ["APP_DIR", fs.realpathSync(process.cwd())],
   ["DFX_CONFIG_FILENAME", "crystal.config.ts"],
@@ -208,6 +210,9 @@ export const createCanister = (canisterId?: string) =>
               memory_allocation: Opt<bigint>(),
               freezing_threshold: Opt<bigint>(),
               controllers: Opt<Principal[]>([identity.getPrincipal()]),
+              reserved_cycles_limit: Opt<bigint>(),
+              log_visibility: Opt<log_visibility>(),
+              wasm_memory_limit: Opt<bigint>(),
             },
           ],
           amount: Opt<bigint>(1_000_000_000_000_000_000n),
@@ -281,28 +286,119 @@ export const installCanister = ({
 
     // Prepare WASM module
     const wasmContent = yield* fs.readFile(wasmPath)
-    const wasm = Array.from(new Uint8Array(wasmContent))
-
+    const wasm = new Uint8Array(wasmContent)
+    // TODO: check if chunking is needed
+    // max size is 2MiB ? or is it
+    //   Server returned an error:
+    // Code: 413 (Payload Too Large)
+    // Body: Request 0x11deb01f116d5065f83b7e6b0a4fc988440e08d73abaecba636b84e895feaac0 is too large. Message byte size 4709615 is larger than the max allowed 3670016.
+    // Retrying request.
+    const maxSize = 3670016
+    const isOverSize = wasm.length > maxSize
+    const wasmModuleHash = Array.from(sha256.array(wasm))
     // Install code
     yield* Effect.logInfo("Installing code", {
       canisterId,
       wasmPath,
     })
-    yield* Effect.tryPromise({
-      try: () =>
-        mgmt.install_code({
-          // arg: encodedArgs,
-          arg: Array.from(encodedArgs),
-          canister_id: Principal.fromText(canisterId),
-          sender_canister_version: Opt<bigint>(),
-          wasm_module: wasm,
-          mode: { reinstall: null },
-        }),
-      catch: (error) =>
-        new DeploymentError({
-          message: `Failed to install code: ${error instanceof Error ? error.message : String(error)}`,
-        }),
-    })
+    if (isOverSize) {
+      // TODO: proper error handling if fails?
+      const chunkSize = 1048576
+      // Maximum size: 1048576
+      // export interface chunk_hash { 'hash' : Array<number> }
+      const chunkHashes: Array<{ hash: Array<number> }> = []
+      for (let i = 0; i < wasm.length; i += chunkSize) {
+        const chunk = wasm.slice(i, i + chunkSize)
+        const chunkHash = Array.from(sha256.array(chunk))
+        chunkHashes.push({ hash: chunkHash })
+        yield* Effect.logInfo("Uploading chunk", {
+          canisterId,
+          chunkSize: chunk.length,
+          offset: i,
+        })
+        yield* Effect.tryPromise({
+          try: () =>
+            mgmt.upload_chunk({
+              chunk: Array.from(chunk),
+              canister_id: Principal.fromText(canisterId),
+            }),
+          catch: (error) =>
+            new DeploymentError({
+              message: `Failed to upload chunk: ${error instanceof Error ? error.message : String(error)}`,
+            }),
+        })
+      }
+      // TODO: perform chunked install
+      // mgmt.install_code({
+      //   // arg: encodedArgs,
+      //   arg: Array.from(encodedArgs),
+      //   canister_id: Principal.fromText(canisterId),
+      //   sender_canister_version: Opt<bigint>(),
+      //   wasm_module: wasm,
+      //   mode: { reinstall: null },
+      // }),
+
+      // export interface install_chunked_code_args {
+      //   'arg' : Array<number>,
+      //   'wasm_module_hash' : Array<number>,
+      //   'mode' : canister_install_mode,
+      //   'chunk_hashes_list' : Array<chunk_hash>,
+      //   'target_canister' : canister_id,
+      //   'store_canister' : [] | [canister_id],
+      //   'sender_canister_version' : [] | [bigint],
+      // }
+      // mgmt.upload_chunk({
+      //   // 'chunk' : Array<number>,
+      //   // 'canister_id' : Principal,
+      //   // The size of each chunk must be at most 1MiB.
+      //   chunk: wasm,
+      //   canister_id: Principal.fromText(canisterId),
+      // })
+
+      Effect.tryPromise({
+        try: () =>
+          mgmt.install_chunked_code({
+            // arg: encodedArgs,
+            //   mode: {
+            //     install: null
+            // },
+            // target_canister: canisterId,
+            // store_canister: None,
+            // chunk_hashes_list: [{ hash: wasmModuleHash }],
+            // wasm_module_hash: wasmModuleHash,
+            // arg: Uint8Array.from([]),
+            // sender_canister_version: None
+            arg: Array.from(encodedArgs),
+            target_canister: Principal.fromText(canisterId),
+            sender_canister_version: Opt<bigint>(),
+            // wasm_module: wasm,
+            mode: { reinstall: null },
+            chunk_hashes_list: chunkHashes,
+            store_canister: [],
+            wasm_module_hash: wasmModuleHash,
+          }),
+        catch: (error) =>
+          new DeploymentError({
+            message: `Failed to install code: ${error instanceof Error ? error.message : String(error)}`,
+          }),
+      })
+    } else {
+      yield* Effect.tryPromise({
+        try: () =>
+          mgmt.install_code({
+            // arg: encodedArgs,
+            arg: Array.from(encodedArgs),
+            canister_id: Principal.fromText(canisterId),
+            sender_canister_version: Opt<bigint>(),
+            wasm_module: Array.from(wasm),
+            mode: { reinstall: null },
+          }),
+        catch: (error) =>
+          new DeploymentError({
+            message: `Failed to install code: ${error instanceof Error ? error.message : String(error)}`,
+          }),
+      })
+    }
     yield* Effect.logInfo("Code installed", { canisterId })
 
     Effect.log(`Success with wasm bytes length: ${wasm.length}`)

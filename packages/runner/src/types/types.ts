@@ -11,7 +11,7 @@ export type CanisterActor = {
 }
 
 export type ManagementActor = import("@dfinity/agent").ActorSubclass<
-  import("../canisters/management_new/management.types.js")._SERVICE
+  import("../canisters/management_latest/management.types.js")._SERVICE
 >
 
 // TODO: create service? dependencies?
