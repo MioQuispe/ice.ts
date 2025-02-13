@@ -12,7 +12,8 @@ dist-ssr
 **/package-lock.json
 **/yarn.lock
 **/target/**
-
-.vscode
+cursor/**
+.vscode/**
+**/.vscode
 
 dfx_wasms/**
