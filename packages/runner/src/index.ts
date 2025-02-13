@@ -80,7 +80,10 @@ import { Tags } from "./builders/types.js"
 import { deployTaskPlugin } from "./plugins/deploy.js"
 import { candidUITaskPlugin } from "./plugins/candid_ui.js"
 import { sha256 } from "js-sha256"
-import { log_visibility } from "./canisters/management_latest/management.types.js"
+import {
+  canister_status_result,
+  log_visibility,
+} from "./canisters/management_latest/management.types.js"
 export const configMap = new Map([
   ["APP_DIR", fs.realpathSync(process.cwd())],
   ["DFX_CONFIG_FILENAME", "crystal.config.ts"],
@@ -471,15 +474,15 @@ export class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
   reason: string
 }> {}
 
+// TODO: support defaultTask for scope
 export const findTaskInTaskTree = (
   obj: TaskTree,
   keys: Array<string>,
 ): Effect.Effect<Task, TaskNotFoundError> => {
-  const firstKey = keys[0]
-  const rest = keys.slice(1)
-  let currentNode = obj[firstKey]
   return Effect.gen(function* () {
-    for (const key of rest) {
+    for (const key of keys) {
+      let currentNode = obj[key]
+      const isLastKey = keys.indexOf(key) === keys.length - 1
       // TODO: this becomes undefined
       const node = Match.value(currentNode).pipe(
         Match.tag("task", (task): Task => task),
@@ -487,53 +490,60 @@ export const findTaskInTaskTree = (
         Match.tag("builder", (result): Scope => result._scope),
         Match.option,
       )
-
-      if (Option.isNone(node)) {
-        return yield* Effect.fail(
-          new TaskNotFoundError({
-            path: keys,
-            reason: `Invalid node type encountered at key "${key}"`,
-          }),
-        )
+      if (isLastKey) {
+        // TODO: clean up
+        if (Option.isSome(node)) {
+          return node.value
+        }
+        if (Option.isNone(node)) {
+          return yield* Effect.fail(
+            new TaskNotFoundError({
+              path: keys,
+              reason: `Invalid node type encountered at key "${key}"`,
+            }),
+          )
+        }
       }
 
-      const isLastKey = keys.indexOf(key) === keys.length - 1
-
-      if (node.value._tag === "scope") {
-        const nextNode = node.value.children[key]
-        if (!nextNode) {
-          yield* Effect.logError("No child found for key", {
-            key,
-            node: node.value,
-          })
+      if (Option.isSome(node)) {
+        if (node.value._tag === "scope") {
+          const nextKey = keys[keys.indexOf(key) + 1]
+          const nextNode = node.value.children[nextKey]
+          if (!nextNode) {
+            yield* Effect.logError("No child found for key", {
+              key,
+              node: node.value,
+            })
+            return yield* Effect.fail(
+              new TaskNotFoundError({
+                path: keys,
+                reason: `No child found for key "${key}" in scope`,
+              }),
+            )
+          }
+          const isLastKey = keys.indexOf(nextKey) === keys.length - 1
+          if (isLastKey && nextNode._tag === "task") {
+            return nextNode
+          }
+          currentNode = nextNode
+        } else if (node.value._tag === "task") {
+          if (!isLastKey) {
+            return yield* Effect.fail(
+              new TaskNotFoundError({
+                path: keys,
+                reason: `Found task before end of path at key "${key}"`,
+              }),
+            )
+          }
+          return node.value
+        } else {
           return yield* Effect.fail(
             new TaskNotFoundError({
               path: keys,
-              reason: `No child found for key "${key}" in scope`,
+              reason: `Unexpected node type "${node.value}" at key "${key}"`,
             }),
           )
         }
-        if (isLastKey && nextNode._tag === "task") {
-          return nextNode
-        }
-        currentNode = nextNode
-      } else if (node.value._tag === "task") {
-        if (!isLastKey) {
-          return yield* Effect.fail(
-            new TaskNotFoundError({
-              path: keys,
-              reason: `Found task before end of path at key "${key}"`,
-            }),
-          )
-        }
-        return node.value
-      } else {
-        return yield* Effect.fail(
-          new TaskNotFoundError({
-            path: keys,
-            reason: `Unexpected node type "${node.value}" at key "${key}"`,
-          }),
-        )
       }
     }
 
@@ -925,40 +935,62 @@ export const canistersStatusTask = () =>
     const canisterIdsMap = yield* getCanisterIds
     const dfx = yield* DfxService
     // TODO: in parallel? are these tasks?
+    // Create an effect for each canister that is wrapped with Effect.either
     const canisterStatusesEffects = Object.keys(canisterIdsMap).map(
       (canisterName) =>
-        Effect.gen(function* () {
-          const network = "local"
-          const canisterId = canisterIdsMap[canisterName]
-          const status = yield* Effect.tryPromise({
-            try: () =>
-              dfx.mgmt.canister_status({
-                canister_id: Principal.from(canisterId[network]),
-              }),
-            catch: (error) =>
-              new Error(
-                `Failed to get canister status for ${canisterName}: ${error}`,
-              ),
-          })
-          return { canisterName, canisterId: canisterId[network], status }
-        }),
+        Effect.either(
+          Effect.gen(function* () {
+            const network = "local"
+            const canisterInfo = canisterIdsMap[canisterName]
+            const canisterId = canisterInfo[network]
+            if (!canisterId) {
+              throw new DeploymentError({
+                message: `No canister ID found for ${canisterName} on network ${network}`,
+              })
+            }
+            const status = yield* Effect.tryPromise({
+              try: () =>
+                dfx.mgmt.canister_status({
+                  canister_id: Principal.fromText(canisterId),
+                }),
+              catch: (err) =>
+                new DeploymentError({
+                  message: `Failed to get status for ${canisterName}: ${
+                    err instanceof Error ? err.message : String(err)
+                  }`,
+                }),
+            })
+            return { canisterName, canisterId, status }
+          }),
+        ),
     )
 
     const canisterStatuses = yield* Effect.all(canisterStatusesEffects, {
       concurrency: "unbounded",
     })
-
+    // as Option.Option<
+    //   Array<{
+    //     canisterName: string
+    //     canisterId: string
+    //     status: canister_status_result
+    //   }>
+    // >
     // TODO: print module hash
+    // For every result, inspect whether it was a success or a failure and prepare a log message accordingly
     const statusLog = canisterStatuses
-      .map(
-        ({ canisterName, canisterId, status }) => `
-  ${canisterName} status:
-      ID: ${canisterId}
-      Status: ${Object.keys(status.status)[0]}
-      Memory Size: ${status.memory_size}
-      Cycles: ${status.cycles}
-      Idle Cycles Burned Per Day: ${status.idle_cycles_burned_per_day}
-      Module Hash: ${status.module_hash.length > 0 ? "Present" : "Not Present"}`,
+      .map((result) =>
+        result._tag === "Right"
+          ? `
+${result.right.canisterName} status:
+    ID: ${result.right.canisterId}
+    Status: ${Object.keys(result.right.status.status)[0]}
+    Memory Size: ${result.right.status.memory_size}
+    Cycles: ${result.right.status.cycles}
+    Idle Cycles Burned Per Day: ${result.right.status.idle_cycles_burned_per_day}
+    Module Hash: ${
+      result.right.status.module_hash.length > 0 ? "Present" : "Not Present"
+    }`
+          : `Error for canister: ${result.left.message}`,
       )
       .join("\n")
 

@@ -36,7 +36,8 @@ const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 // amount=1_000_000
 // },)'
 
-// TODO: ...?
+
+
 const canisterName = "icrc1_ledger"
 
 // TODO: make nicer?

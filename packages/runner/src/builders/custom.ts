@@ -153,6 +153,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
           ctx: TaskCtxShape<P>
           mode: string
         }) => Promise<I> | I
+        // TODO: should it catch errors?
         // TODO: handle different modes
         const installResult = installFn({
           mode: "install",
@@ -599,13 +600,14 @@ type CrystalConfig = CrystalContext & {
   setup?: () => Promise<CrystalContext>
 }
 
-export const scope = (description: string, children: TaskTree) => {
+// TODO: Do more here?
+export const scope = <T extends TaskTree>(description: string, children: T) => {
   return {
     _tag: "scope",
     tags: [],
     description,
     children,
-  }
+  } satisfies Scope
 }
 
 // is this where we construct the runtime / default environment?
