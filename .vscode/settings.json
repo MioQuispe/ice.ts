@@ -1,4 +1,0 @@
-{
-    "typescript.tsserver.pluginPaths": ["./packages/typescript-plugin-effect"],
-    "typescript.tsdk": "node_modules/typescript/lib"
-}
