@@ -7,6 +7,25 @@ import type { TaskCtxShape } from "../index.js"
 // import type { Effect } from "effect"
 import { Effect, Option } from "effect"
 import { customCanister } from "./custom.js"
+export type { TaskCtxShape }
+
+/**
+ * @doc
+ * [ERROR] Missing required dependencies:
+ * Please call .setDependencies() with all required keys before finalizing the builder.
+ */
+export type TaskDependencyMismatchError<T extends Task> = {
+  // This property key is your custom error message.
+  "[CRYSTAL-ERROR: Dependency mismatch. Please provide all required dependencies.]": true
+}
+
+/**
+ * @doc
+ * [ERROR] Missing required dependencies:
+ * Please call .setDependencies() with all required keys before finalizing the builder.
+ */
+export type UniformTaskCheck<T extends Task> =
+  T extends DepBuilder<T> ? T : TaskDependencyMismatchError<T>
 
 export type ExtractProvidedDeps<
   NP extends Record<string, Task | CanisterConstructor>,
@@ -58,20 +77,25 @@ type ProvideReturnValues<T> =
 //   >
 //     ? T
 //     : never;
-type StringKey<T> = Extract<keyof T, string>;
+type StringKey<T> = Extract<keyof T, string>
 
 /**
  * Checks that all in S are included in T.
  */
-type MissingKeys<S, T> = Exclude<S, T>;
+type MissingKeys<S, T> = Exclude<S, T>
 
-export type DepBuilder<T> = 
-  MissingKeys<StringKey<DependencyReturnValues<T>>, keyof ProvideReturnValues<T>> extends never 
-    ? DependencyReturnValues<T> extends Pick<ProvideReturnValues<T>, StringKey<DependencyReturnValues<T>>>
+export type DepBuilder<T> =
+  MissingKeys<
+    StringKey<DependencyReturnValues<T>>,
+    keyof ProvideReturnValues<T>
+  > extends never
+    ? DependencyReturnValues<T> extends Pick<
+        ProvideReturnValues<T>,
+        StringKey<DependencyReturnValues<T>>
+      >
       ? T
       : never
-    : never;
-
+    : never
 
 // Compare plain dependencies and provide tasks
 // export type DepBuilder<T> =
@@ -89,11 +113,14 @@ export type UniformScopeCheck<S extends CanisterScope> = S extends {
     : DependencyMismatchError<S>
   : DependencyMismatchError<S>
 
-type MergeTaskDeps<T extends Task, ND extends Record<string, Task>> = {
+export type MergeTaskDeps<T extends Task, ND extends Record<string, Task>> = {
   [K in keyof T]: K extends "dependencies" ? T[K] & ND : T[K]
 }
 
-type MergeTaskProvide<T extends Task, NP extends Record<string, Task>> = {
+export type MergeTaskProvide<
+  T extends Task,
+  NP extends Record<string, Task | CanisterConstructor>,
+> = {
   [K in keyof T]: K extends "provide" ? T[K] & NP : T[K]
 }
 
@@ -190,7 +217,9 @@ export interface CanisterBuilder<
   // only allow functions for now
   install(
     installArgsFn: (args: {
-      ctx: TaskCtxShape<ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>>
+      ctx: TaskCtxShape<
+        ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>
+      >
       mode: string
     }) => I | Promise<I>,
   ): CanisterBuilder<I, S, D, P, Config>
@@ -205,11 +234,11 @@ export interface CanisterBuilder<
   deps: <ND extends Record<string, Task | CanisterConstructor>>(
     deps: ND,
   ) => CanisterBuilder<
-  I, 
-  MergeScopeDependencies<S, ExtractProvidedDeps<ND>>, 
-  ExtractProvidedDeps<ND>, 
-  P, 
-  Config
+    I,
+    MergeScopeDependencies<S, ExtractProvidedDeps<ND>>,
+    ExtractProvidedDeps<ND>,
+    P,
+    Config
   >
   provide: <NP extends Record<string, Task | CanisterConstructor>>(
     providedDeps: NP,
@@ -388,7 +417,6 @@ const providedTestScope = {
 
 // debugType.Canister
 // debugType.testTask2
-
 
 // // // // test._scope.children.install.computeCacheKey = (task) => {
 // // // //   return task.id.toString()

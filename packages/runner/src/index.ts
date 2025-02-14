@@ -133,6 +133,7 @@ export type TaskCtxShape<
   readonly runTask: typeof runTask
   readonly dependencies: D
 }
+
 export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {
   static Live = Layer.effect(
     TaskCtx,
@@ -493,7 +494,16 @@ export const findTaskInTaskTree = (
       if (isLastKey) {
         // TODO: clean up
         if (Option.isSome(node)) {
-          return node.value
+          if (node.value._tag === "task") { 
+            return node.value
+          } else {
+            return yield* Effect.fail(
+              new TaskNotFoundError({
+                path: keys,
+                reason: `Invalid node type encountered at key "${key}"`,
+              }),
+            )
+          }
         }
         if (Option.isNone(node)) {
           return yield* Effect.fail(
