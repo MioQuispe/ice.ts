@@ -2,7 +2,6 @@ import type { CanisterConstructor, Task } from "../types/types.js"
 import { Effect, Option } from "effect"
 import type {
   ExtractTaskEffectSuccess,
-  //   ExtractProvidedDeps,
   MergeTaskDeps,
   MergeTaskProvide,
   CanisterScope,
@@ -10,14 +9,26 @@ import type {
 import { TaskCtx, TaskInfo, DependencyResults } from "../index.js"
 import { Tags, type TaskCtxShape } from "./types.js"
 
+function normalizeDep(
+  dep: Task | CanisterScope | CanisterConstructor,
+): Task {
+  if ("_tag" in dep && dep._tag === "task") return dep
+  if ("provides" in dep) return dep.provides as Task
+  if ("_tag" in dep && dep._tag === "scope" && dep.children?.install)
+    return dep.children.install as Task
+  throw new Error("Invalid dependency type provided to normalizeDep")
+}
+//
+// Existing types
+//
+
 type AllowedDep = Task | CanisterScope | CanisterConstructor
 
-/**,
-  CanisterScope
+/**
  * If T is already a Task, it stays the same.
  * If T is a CanisterScope, returns its provided Task (assumed to be under the "provides" property).
  */
-export type NormalizeDep<T> = T extends Task
+type NormalizeDep<T> = T extends Task
   ? T
   : T extends CanisterConstructor
     ? T["provides"] extends Task
@@ -29,31 +40,14 @@ export type NormalizeDep<T> = T extends Task
         : never
       : never
 
-export function normalizeDep(
-  dep: Task | CanisterScope | CanisterConstructor,
-): Task {
-  if ("_tag" in dep && dep._tag === "task") return dep
-  if ("provides" in dep) return dep.provides as Task
-  if ("_tag" in dep && dep._tag === "scope" && dep.children?.install)
-    return dep.children.install as Task
-  throw new Error("Invalid dependency type provided to normalizeDep")
-}
-
 /**
  * Normalizes a record of dependencies.
  */
-export type NormalizeDeps<Deps extends Record<string, AllowedDep>> = {
-  [K in keyof Deps]: NormalizeDep<Deps[K]> extends Task
-    ? NormalizeDep<Deps[K]>
-    : never
+type NormalizeDeps<Deps extends Record<string, AllowedDep>> = {
+  [K in keyof Deps]: NormalizeDep<Deps[K]> extends Task ? NormalizeDep<Deps[K]> : never
 }
 
-// export type ValidProvidedDeps<
-//   D extends Record<string, Task>,
-//   NP extends Record<string, Task>,
-// > = CompareTaskEffects<D, NP> extends never ? never : NP
-
-export type ValidProvidedDeps<
+type ValidProvidedDeps<
   D extends Record<string, AllowedDep>,
   NP extends Record<string, AllowedDep>,
 > =
@@ -61,14 +55,12 @@ export type ValidProvidedDeps<
     ? never
     : NP
 
-export type CompareTaskEffects<
+type CompareTaskEffects<
   D extends Record<string, Task>,
   P extends Record<string, Task>,
 > = (keyof D extends keyof P ? true : false) extends true
   ? {
-      [K in keyof D & keyof P]: TaskReturnValue<D[K]> extends TaskReturnValue<
-        P[K]
-      >
+      [K in keyof D & keyof P]: TaskReturnValue<D[K]> extends TaskReturnValue<P[K]>
         ? never
         : K
     }[keyof D & keyof P] extends never
@@ -76,153 +68,274 @@ export type CompareTaskEffects<
     : never
   : never
 
-export type TaskReturnValue<T extends Task> = T extends {
+type TaskReturnValue<T extends Task> = T extends {
   effect: Effect.Effect<infer S, any, any>
 }
   ? S
   : never
 
-export interface TaskBuilder<
+//
+// Builder Phase Interfaces
+//
+
+/**
+ * The builder returned from `task()` which allows:
+ * - Adding dependencies (.deps())
+ * - Providing dependencies (.provide())
+ * - Finalizing the task with an effect (.run())
+ */
+interface TaskBuilderInitial<
   I,
   T extends Task,
-  D extends Record<string, Task>,
-  P extends Record<string, Task>,
+  D extends Record<string, Task> = {},
+  P extends Record<string, Task> = {}
 > {
-  deps: <ND extends Record<string, AllowedDep>>(
+  deps<ND extends Record<string, AllowedDep>>(
     deps: ND,
-  ) => TaskBuilder<I, MergeTaskDeps<T, NormalizeDeps<ND>>, NormalizeDeps<ND>, P>
-
-  provide: <NP extends Record<string, AllowedDep>>(
+  ): TaskBuilderDeps<I, MergeTaskDeps<T, NormalizeDeps<ND>>, NormalizeDeps<ND>, P>
+  provide<NP extends Record<string, AllowedDep>>(
     providedDeps: ValidProvidedDeps<D, NP>,
-  ) => TaskBuilder<
+  ): TaskBuilderProvide<
     I,
     MergeTaskProvide<T, NormalizeDeps<ValidProvidedDeps<D, NP>>>,
     D,
     NormalizeDeps<ValidProvidedDeps<D, NP>>
   >
-
   run<Output>(
     fn: (
-      ctx: TaskCtxShape<
-        ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>
-      >,
+      ctx: TaskCtxShape<ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>>,
     ) => Promise<Output>,
-  ): TaskBuilder<
+  ): TaskBuilderRun<
     I,
     Omit<T, "effect"> & {
-      effect: Effect.Effect<
-        Output,
-        Error,
-        TaskCtx | TaskInfo | DependencyResults
-      >
+      effect: Effect.Effect<Output, Error, TaskCtx | TaskInfo | DependencyResults>
     },
     D,
     P
   >
-  done: () => T
 }
 
-/* ------------------------------------------------------------------
-   3) Phase Implementation (merged)
------------------------------------------------------------------- */
+/**
+ * Builder phase after calling .deps(). Only .provide() is allowed next.
+ */
+interface TaskBuilderDeps<
+  I,
+  T extends Task,
+  D extends Record<string, Task>,
+  P extends Record<string, Task>
+> {
+  provide<NP extends Record<string, AllowedDep>>(
+    providedDeps: ValidProvidedDeps<D, NP>,
+  ): TaskBuilderProvide<
+    I,
+    MergeTaskProvide<T, NormalizeDeps<ValidProvidedDeps<D, NP>>>,
+    D,
+    NormalizeDeps<ValidProvidedDeps<D, NP>>
+  >
+}
 
-function makeTaskBuilder<
+/**
+ * Builder phase after calling .provide(). Only .run() is allowed next.
+ */
+interface TaskBuilderProvide<
+  I,
+  T extends Task,
+  D extends Record<string, Task>,
+  P extends Record<string, Task>
+> {
+  run
+  <Output>(
+    fn: (
+      ctx: TaskCtxShape<ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>>,
+    ) => Promise<Output>,
+  ): TaskBuilderRun<
+    I,
+    Omit<T, "effect"> & {
+      effect: Effect.Effect<Output, Error, TaskCtx | TaskInfo | DependencyResults>
+    },
+    D,
+    P
+  >
+}
+
+/**
+ * Builder phase after calling .run(), which is final.
+ */
+interface TaskBuilderRun<
+  I,
+  T extends Task,
+  D extends Record<string, Task>,
+  P extends Record<string, Task>
+> {
+  done(): T
+}
+
+//
+// Helper Functions
+//
+
+/**
+ * Normalizes a record of dependencies.
+ */
+function normalizeDepsMap(
+  dependencies: Record<string, AllowedDep>,
+): Record<string, Task> {
+  return Object.fromEntries(
+    Object.entries(dependencies).map(([key, dep]) => [key, normalizeDep(dep)]),
+  )
+}
+
+/**
+ * Helper for executing the run logic without duplicating code.
+ */
+function runTask<I, T extends Task, D extends Record<string, Task>, P extends Record<string, Task>, Output>(
+  task: T,
+  fn: (
+    ctx: TaskCtxShape<ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>>,
+  ) => Promise<Output>,
+): TaskBuilderRun<
+  I,
+  Omit<T, "effect"> & {
+    effect: Effect.Effect<Output, Error, TaskCtx | TaskInfo | DependencyResults>
+  },
+  D,
+  P
+> {
+  const newTask = {
+    ...task,
+    effect: Effect.gen(function* () {
+      const taskCtx = yield* TaskCtx
+      const taskInfo = yield* TaskInfo
+      const { dependencies } = yield* DependencyResults
+      const ctx = {
+        ...taskCtx,
+        dependencies,
+      } as TaskCtxShape<ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>>
+      const result = yield* Effect.tryPromise({
+        try: () => fn(ctx),
+        catch: (error) => {
+          console.error("Error executing task:", error)
+          return error instanceof Error ? error : new Error(String(error))
+        },
+      })
+      return result
+    }),
+  } satisfies Task
+
+  return makeTaskBuilderRun<I, typeof newTask, D, P>(newTask)
+}
+
+/**
+ * Shared handler for the `.deps()` transition.
+ */
+function handleDeps<
   I,
   T extends Task,
   D extends Record<string, Task>,
   P extends Record<string, Task>,
->(task: T): TaskBuilder<I, T, D, P> {
+  ND extends Record<string, AllowedDep>
+>(
+  task: T,
+  dependencies: ND,
+): TaskBuilderDeps<I, MergeTaskDeps<T, NormalizeDeps<ND>>, NormalizeDeps<ND>, P> {
+  const finalDeps = normalizeDepsMap(dependencies) as NormalizeDeps<typeof dependencies>
+  const updatedTask = {
+    ...task,
+    dependencies: finalDeps,
+  } satisfies Task as MergeTaskDeps<T, NormalizeDeps<typeof dependencies>>
+  return makeTaskBuilderDeps<I, typeof updatedTask, NormalizeDeps<typeof dependencies>, P>(updatedTask)
+}
+
+/**
+ * Shared handler for the `.provide()` transition.
+ */
+function handleProvide<
+  I,
+  T extends Task,
+  D extends Record<string, Task>,
+  NP extends Record<string, AllowedDep>
+>(
+  task: T,
+  providedDeps: NP,
+): TaskBuilderProvide<
+  I,
+  MergeTaskProvide<T, NormalizeDeps<ValidProvidedDeps<D, NP>>>,
+  D,
+  NormalizeDeps<ValidProvidedDeps<D, NP>>
+> {
+  const finalDeps = normalizeDepsMap(providedDeps) as NormalizeDeps<typeof providedDeps>
+  const updatedTask = {
+    ...task,
+    provide: finalDeps,
+  } satisfies Task as MergeTaskProvide<T, NormalizeDeps<ValidProvidedDeps<D, typeof providedDeps>>>
+  return makeTaskBuilderProvide<I, typeof updatedTask, D, NormalizeDeps<ValidProvidedDeps<D, typeof providedDeps>>>(updatedTask)
+}
+
+//
+// Builder Phase Implementations
+//
+
+/**
+ * Initial phase: returned by task(). Allows .deps(), .provide(), and .run().
+ */
+function makeTaskBuilderInitial<
+  I,
+  T extends Task,
+  D extends Record<string, Task>,
+  P extends Record<string, Task>
+>(task: T): TaskBuilderInitial<I, T, D, P> {
   return {
-    deps: (dependencies) => {
-      const finalDeps = Object.fromEntries(
-        Object.entries(dependencies).map(([key, dep]) => {
-          const normalizedDep = normalizeDep(dep)
-          return [key, normalizedDep]
-        }),
-      ) as Record<string, Task>
-
-      const updatedTask = {
-        ...task,
-        dependencies: finalDeps,
-      } satisfies Task as MergeTaskDeps<T, NormalizeDeps<typeof dependencies>>
-
-      return makeTaskBuilder<
-        I,
-        typeof updatedTask,
-        NormalizeDeps<typeof dependencies>,
-        P
-      >(updatedTask)
-    },
-
-    provide: (providedDeps) => {
-      const finalDeps = Object.fromEntries(
-        Object.entries(providedDeps).map(([key, dep]) => {
-          const normalizedDep = normalizeDep(dep)
-          return [key, normalizedDep]
-        }),
-      ) as Record<string, Task>
-
-      const updatedTask = {
-        ...task,
-        provide: finalDeps,
-      } satisfies Task as MergeTaskProvide<
-        T,
-        NormalizeDeps<ValidProvidedDeps<D, typeof providedDeps>>
-      >
-
-      return makeTaskBuilder<
-        I,
-        typeof updatedTask,
-        D,
-        NormalizeDeps<ValidProvidedDeps<D, typeof providedDeps>>
-      >(updatedTask)
-    },
-
-    run<Output>(
-      fn: (
-        ctx: TaskCtxShape<
-          ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>
-        >,
-      ) => Promise<Output>,
-    ) {
-      const newTask = {
-        ...task,
-        effect: Effect.gen(function* () {
-          const taskCtx = yield* TaskCtx
-          const taskInfo = yield* TaskInfo
-          const { dependencies } = yield* DependencyResults
-          const ctx = {
-            ...taskCtx,
-            dependencies,
-          } as TaskCtxShape<
-            ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>
-          >
-          const result = yield* Effect.tryPromise({
-            //   try: () => fn(ctx),
-            try: () => fn(ctx),
-            catch: (error) => {
-              console.error("Error executing task:", error)
-              return error instanceof Error ? error : new Error(String(error))
-            },
-          })
-          return result // or return the desired type (here U)
-        }),
-      } as Omit<T, "effect"> & {
-        effect: Effect.Effect<
-          Output,
-          Error,
-          TaskCtx | TaskInfo | DependencyResults
-        >
-      } satisfies Task
-
-      return makeTaskBuilder<I, typeof newTask, D, P>(newTask)
-    },
-
-    done() {
-      return task
-    },
+    deps: (dependencies) => handleDeps<I, T, D, P, typeof dependencies>(task, dependencies),
+    provide: (providedDeps) => handleProvide<I, T, D, typeof providedDeps>(task, providedDeps),
+    run: (fn) => runTask<I, T, D, P, any>(task, fn),
   }
 }
+
+/**
+ * Deps phase: only .provide() is allowed.
+ */
+function makeTaskBuilderDeps<
+  I,
+  T extends Task,
+  D extends Record<string, Task>,
+  P extends Record<string, Task>
+>(task: T): TaskBuilderDeps<I, T, D, P> {
+  return {
+    provide: (providedDeps) => handleProvide<I, T, D, typeof providedDeps>(task, providedDeps),
+  }
+}
+
+/**
+ * Provide phase: only .run() is allowed.
+ */
+function makeTaskBuilderProvide<
+  I,
+  T extends Task,
+  D extends Record<string, Task>,
+  P extends Record<string, Task>
+>(task: T): TaskBuilderProvide<I, T, D, P> {
+  return {
+    run: (fn) => runTask<I, T, D, P, any>(task, fn),
+  }
+}
+
+/**
+ * Run phase: only .done() is allowed.
+ */
+function makeTaskBuilderRun<
+  I,
+  T extends Task,
+  D extends Record<string, Task>,
+  P extends Record<string, Task>
+>(task: T): TaskBuilderRun<I, T, D, P> {
+  return {
+    done: () => task,
+  }
+}
+
+//
+// Entry Point
+//
 
 export function task<I = unknown>(description = "description") {
   const baseTask: Task = {
@@ -235,17 +348,17 @@ export function task<I = unknown>(description = "description") {
     tags: [],
     effect: Effect.gen(function* () {}),
   }
-  return makeTaskBuilder<I, typeof baseTask, {}, {}>(baseTask)
+  return makeTaskBuilderInitial<I, typeof baseTask, {}, {}>(baseTask)
 }
 
-/* ------------------------------------------------------------------
-   5) Test Cases
------------------------------------------------------------------- */
+//
+// Test Cases
+//
 
-// /** Example A: task -> deps -> provide -> run -> done */
+/** Example A: task -> deps -> provide -> run -> done */
 const numberTask = task()
   .run(async () => {
-    // returns a string
+    // returns a number
     return 12
   })
   .done()
@@ -259,14 +372,9 @@ const stringTask = task()
 
 const objTask = task()
   .run(async () => {
-    // returns a string
-    return {
-      a: 1,
-      b: 2,
-    }
+    return { a: 1, b: 2 }
   })
   .done()
-
 
 const canScope = {
   _tag: "scope",
@@ -277,22 +385,19 @@ const canScope = {
   },
 } satisfies CanisterScope
 
-/** Example B: task -> run -> done */
+/** Example B: task -> deps -> provide -> run -> done */
 const task2 = task("description of task2")
   .deps({
-    // depA: numberTask,
     depB: numberTask,
     depC: canScope,
   })
-  // TODO: should error???
   .provide({
     depA: stringTask,
-    // depB: finalTask,
-    // TODO: should error???
     depC: canScope,
     depB: numberTask,
   })
   .run(async (ctx) => {
+    // use provided dependencies from ctx
     ctx.dependencies.depC
     return "hello"
   })

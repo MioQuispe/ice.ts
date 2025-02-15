@@ -601,13 +601,25 @@ type CrystalConfig = CrystalContext & {
 }
 
 // TODO: Do more here?
-const scope = <T extends TaskTree>(description: string, children: T) => {
+export const scope = <T extends TaskTree>(description: string, children: T) => {
   return {
     _tag: "scope",
     tags: [],
     description,
     children,
   } satisfies Scope
+}
+
+// is this where we construct the runtime / default environment?
+// TODO: can we make this async as well?
+export const Crystal = (config?: CrystalConfig) => {
+  // TODO: rename ctx to runtime or config or something??
+  return (
+    config ??
+    {
+      // TODO: dfx defaults etc.
+    }
+  )
 }
 
 const testTask = {

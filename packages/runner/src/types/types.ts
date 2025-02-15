@@ -109,3 +109,11 @@ export type CanisterConstructor = {
   // _tag: "canister-constructor"
   provides: Task
 }
+
+export type CanisterScope = {
+  _tag: "scope"
+  tags: Array<string | symbol>
+  description: string
+  // only limited to tasks
+  children: Record<string, Task>
+}

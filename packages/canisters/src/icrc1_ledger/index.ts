@@ -64,7 +64,7 @@ export const ICRC1Ledger = (
       wasm: path.resolve(__dirname, `./${canisterName}/${canisterName}.wasm`),
       candid: path.resolve(__dirname, `./${canisterName}/${canisterName}.did`),
     }
-  }).install(async ({ ctx, mode }) => {
+  }).install(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
     const mintingAccount: Account = {
