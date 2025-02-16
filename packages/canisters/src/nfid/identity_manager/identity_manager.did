@@ -1,0 +1,269 @@
+type AccessPointRemoveRequest = record { pub_key : text };
+type AccessPointRequest = record {
+  icon : text;
+  device_type : DeviceType;
+  device : text;
+  pub_key : text;
+  browser : text;
+  credential_id : opt text;
+};
+type AccessPointResponse = record {
+  icon : text;
+  device_type : DeviceType;
+  device : text;
+  browser : text;
+  last_used : nat64;
+  principal_id : text;
+  credential_id : opt text;
+};
+type Account = record {
+  name : opt text;
+  anchor : nat64;
+  access_points : vec AccessPointRequest;
+  email : opt text;
+  basic_entity : BasicEntity;
+  personas : vec PersonaResponse;
+  wallet : WalletVariant;
+  principal_id : text;
+  phone_number : opt text;
+};
+type AccountResponse = record {
+  name : opt text;
+  anchor : nat64;
+  access_points : vec AccessPointResponse;
+  email : opt text;
+  personas : vec PersonaResponse;
+  is2fa_enabled : bool;
+  wallet : WalletVariant;
+  principal_id : text;
+  phone_number : opt text;
+};
+type Application = record {
+  img : opt text;
+  alias : opt vec text;
+  user_limit : nat16;
+  domain : text;
+  name : text;
+  is_nft_storage : opt bool;
+  is_trusted : opt bool;
+  is_iframe_allowed : opt bool;
+};
+type BasicEntity = record { modified_date : nat64; created_date : nat64 };
+type BoolHttpResponse = record {
+  data : opt bool;
+  error : opt Error;
+  status_code : nat16;
+};
+type CanisterCyclesAggregatedData = vec nat64;
+type CanisterHeapMemoryAggregatedData = vec nat64;
+type CanisterLogFeature = variant {
+  filterMessageByContains;
+  filterMessageByRegex;
+};
+type CanisterLogMessages = record {
+  data : vec LogMessagesData;
+  lastAnalyzedMessageTimeNanos : opt Nanos;
+};
+type CanisterLogMessagesInfo = record {
+  features : vec opt CanisterLogFeature;
+  lastTimeNanos : opt Nanos;
+  count : nat32;
+  firstTimeNanos : opt Nanos;
+};
+type CanisterLogRequest = variant {
+  getMessagesInfo;
+  getMessages : GetLogMessagesParameters;
+  getLatestMessages : GetLatestLogMessagesParameters;
+};
+type CanisterLogResponse = variant {
+  messagesInfo : CanisterLogMessagesInfo;
+  messages : CanisterLogMessages;
+};
+type CanisterMemoryAggregatedData = vec nat64;
+type CanisterMetrics = record { data : CanisterMetricsData };
+type CanisterMetricsData = variant {
+  hourly : vec HourlyMetricsData;
+  daily : vec DailyMetricsData;
+};
+type CertifiedResponse = record {
+  certificate : blob;
+  witness : blob;
+  response : text;
+};
+type ConfigurationRequest = record {
+  env : opt text;
+  whitelisted_phone_numbers : opt vec text;
+  backup_canister_id : opt text;
+  ii_canister_id : opt principal;
+  whitelisted_canisters : opt vec principal;
+  operator : opt principal;
+  git_branch : opt text;
+  lambda : opt principal;
+  lambda_url : opt text;
+  token_refresh_ttl : opt nat64;
+  account_creation_paused : opt bool;
+  heartbeat : opt nat32;
+  token_ttl : opt nat64;
+  commit_hash : opt text;
+};
+type ConfigurationResponse = record {
+  env : opt text;
+  whitelisted_phone_numbers : opt vec text;
+  backup_canister_id : opt text;
+  ii_canister_id : opt principal;
+  whitelisted_canisters : opt vec principal;
+  operator : opt principal;
+  git_branch : opt text;
+  lambda : opt principal;
+  lambda_url : opt text;
+  token_refresh_ttl : opt nat64;
+  account_creation_paused : opt bool;
+  heartbeat : opt nat32;
+  token_ttl : opt nat64;
+  commit_hash : opt text;
+};
+type DailyMetricsData = record {
+  updateCalls : nat64;
+  canisterHeapMemorySize : NumericEntity;
+  canisterCycles : NumericEntity;
+  canisterMemorySize : NumericEntity;
+  timeMillis : int;
+};
+type DeviceType = variant { Email; Password; Passkey; Recovery; Unknown };
+type Error = text;
+type GetLatestLogMessagesParameters = record {
+  upToTimeNanos : opt Nanos;
+  count : nat32;
+  filter : opt GetLogMessagesFilter;
+};
+type GetLogMessagesFilter = record {
+  analyzeCount : nat32;
+  messageRegex : opt text;
+  messageContains : opt text;
+};
+type GetLogMessagesParameters = record {
+  count : nat32;
+  filter : opt GetLogMessagesFilter;
+  fromTimeNanos : opt Nanos;
+};
+type GetMetricsParameters = record {
+  dateToMillis : nat;
+  granularity : MetricsGranularity;
+  dateFromMillis : nat;
+};
+type HTTPAccessPointResponse = record {
+  data : opt vec AccessPointResponse;
+  error : opt Error;
+  status_code : nat16;
+};
+type HTTPAccountRequest = record {
+  anchor : nat64;
+  email : opt text;
+  access_point : opt AccessPointRequest;
+  wallet : opt WalletVariant;
+};
+type HTTPAccountResponse = record {
+  data : opt AccountResponse;
+  error : opt Error;
+  status_code : nat16;
+};
+type HTTPAccountUpdateRequest = record { name : opt text; email : opt text };
+type HTTPAnchorsResponse = record {
+  data : opt vec nat64;
+  error : opt Error;
+  status_code : nat16;
+};
+type HTTPAppResponse = record {
+  data : opt Application;
+  error : opt Error;
+  status_code : nat16;
+};
+type HTTPApplicationResponse = record {
+  data : opt vec Application;
+  error : opt Error;
+  status_code : nat16;
+};
+type HTTPOneAccessPointResponse = record {
+  data : opt AccessPointResponse;
+  error : opt Error;
+  status_code : nat16;
+};
+type HTTPPersonasResponse = record {
+  data : opt vec PersonaResponse;
+  error : opt Error;
+  status_code : nat16;
+};
+type HourlyMetricsData = record {
+  updateCalls : UpdateCallsAggregatedData;
+  canisterHeapMemorySize : CanisterHeapMemoryAggregatedData;
+  canisterCycles : CanisterCyclesAggregatedData;
+  canisterMemorySize : CanisterMemoryAggregatedData;
+  timeMillis : int;
+};
+type LogMessagesData = record { timeNanos : Nanos; message : text };
+type MetricsGranularity = variant { hourly; daily };
+type Nanos = nat64;
+type NumericEntity = record {
+  avg : nat64;
+  max : nat64;
+  min : nat64;
+  first : nat64;
+  last : nat64;
+};
+type PersonaRequest = record {
+  domain : text;
+  persona_name : text;
+  persona_id : text;
+};
+type PersonaResponse = record {
+  domain : text;
+  persona_name : text;
+  persona_id : text;
+};
+type PrincipalEmailRequest = record { email : text; principal_id : text };
+type Response = record { error : opt Error; status_code : nat16 };
+type StringHttpResponse = record {
+  data : opt text;
+  error : opt Error;
+  status_code : nat16;
+};
+type UpdateCallsAggregatedData = vec nat64;
+type WalletVariant = variant { II; NFID };
+service : () -> {
+  add_email_and_principal_for_create_account_validation : (
+      text,
+      text,
+      nat64,
+    ) -> (BoolHttpResponse);
+  configure : (ConfigurationRequest) -> ();
+  count_anchors : () -> (nat64) query;
+  create_access_point : (AccessPointRequest) -> (HTTPAccessPointResponse);
+  create_account : (HTTPAccountRequest) -> (HTTPAccountResponse);
+  get_account : () -> (HTTPAccountResponse) query;
+  get_account_by_anchor : (nat64) -> (HTTPAccountResponse) query;
+  get_account_by_principal : (text) -> (HTTPAccountResponse) query;
+  get_all_accounts_json : (nat32, nat32) -> (text) query;
+  get_config : () -> (ConfigurationResponse) query;
+  get_remaining_size_after_rebuild_device_index_slice_from_temp_stack : (
+      opt nat64,
+    ) -> (nat64);
+  get_root_certified : () -> (CertifiedResponse) query;
+  pause_account_creation : (bool) -> ();
+  read_access_points : () -> (HTTPAccessPointResponse) query;
+  read_applications : () -> (HTTPApplicationResponse) query;
+  read_personas : () -> (HTTPPersonasResponse) query;
+  remove_access_point : (AccessPointRemoveRequest) -> (HTTPAccessPointResponse);
+  remove_account : () -> (BoolHttpResponse);
+  remove_account_by_principal : (text) -> (BoolHttpResponse);
+  restore_accounts : (text) -> (BoolHttpResponse);
+  save_temp_stack_to_rebuild_device_index : () -> (text);
+  store_accounts : (vec Account) -> (BoolHttpResponse);
+  sync_controllers : () -> (vec text);
+  sync_recovery_phrase_from_internet_identity : (nat64) -> (
+      HTTPAccountResponse,
+    );
+  update_2fa : (bool) -> (AccountResponse);
+  update_access_point : (AccessPointRequest) -> (HTTPAccessPointResponse);
+  update_account : (HTTPAccountUpdateRequest) -> (HTTPAccountResponse);
+  use_access_point : (opt text) -> (HTTPOneAccessPointResponse);
+}

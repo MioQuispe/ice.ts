@@ -168,6 +168,7 @@ interface TaskBuilderRun<
   P extends Record<string, Task>
 > {
   done(): T
+  _tag: "builder"
 }
 
 //
@@ -330,6 +331,7 @@ function makeTaskBuilderRun<
 >(task: T): TaskBuilderRun<I, T, D, P> {
   return {
     done: () => task,
+    _tag: "builder",
   }
 }
 
@@ -343,6 +345,7 @@ export function task<I = unknown>(description = "description") {
     id: Symbol("task"),
     description,
     computeCacheKey: Option.none(),
+    input: Option.none(),
     dependencies: {},
     provide: {},
     tags: [],
@@ -380,6 +383,7 @@ const canScope = {
   _tag: "scope",
   tags: [],
   description: "canScope",
+  defaultTask: Option.none(),
   children: {
     install: objTask,
   },

@@ -9,6 +9,7 @@ export * from "./candid_ui"
 export * from "./icrc7_nft"
 export * from "./cycles_wallet"
 export * from "./cycles_ledger"
+export * from "./nfid"
 // export * from "./wicp"
 
 // TODO:

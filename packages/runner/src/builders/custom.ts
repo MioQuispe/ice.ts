@@ -90,6 +90,7 @@ export const makeBindingsTask = () => {
     description: "some description",
     tags: [Tags.CANISTER, Tags.BINDINGS],
     computeCacheKey: Option.none(),
+    input: Option.none(),
   } satisfies Task
 }
 
@@ -105,6 +106,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
     dependencies: {},
     provide: {},
     computeCacheKey: Option.none(),
+    input: Option.none(),
     effect: Effect.gen(function* () {
       yield* Effect.logInfo("Starting custom canister installation")
       const taskCtx = yield* TaskCtx
@@ -268,6 +270,7 @@ const makeBuildTask = (
     description: "some description",
     tags: [Tags.CANISTER, Tags.BUILD],
     computeCacheKey: Option.none(),
+    input: Option.none(),
   } satisfies Task
 }
 
@@ -331,6 +334,7 @@ export const makeCreateTask = (
     description: "some description",
     tags: [Tags.CANISTER, Tags.CREATE],
     computeCacheKey: Option.none(),
+    input: Option.none(),
   } satisfies Task
 }
 
@@ -506,8 +510,6 @@ const makeCustomCanisterBuilder = <
       return scope as unknown as UniformScopeCheck<S>
     },
 
-    // Add scope property to the initial builder
-    _scope: scope,
     _tag: "builder",
   }
 }
@@ -524,6 +526,7 @@ export const customCanister = <I = unknown, _SERVICE = unknown>(
     _tag: "scope",
     tags: [Tags.CANISTER],
     description: "some description",
+    defaultTask: Option.some("deploy"),
     // TODO: default implementations
     children: {
       create: makeCreateTask(canisterConfigOrFn),
@@ -606,6 +609,7 @@ const scope = <T extends TaskTree>(description: string, children: T) => {
     _tag: "scope",
     tags: [],
     description,
+    defaultTask: Option.none(),
     children,
   } satisfies Scope
 }
@@ -619,6 +623,7 @@ const testTask = {
   description: "",
   tags: [],
   computeCacheKey: Option.none(),
+  input: Option.none(),
 } satisfies Task
 
 const testTask2 = {
@@ -630,6 +635,7 @@ const testTask2 = {
   description: "",
   tags: [],
   computeCacheKey: Option.none(),
+  input: Option.none(),
 } satisfies Task
 
 const providedTask = {
@@ -639,6 +645,7 @@ const providedTask = {
   description: "",
   tags: [],
   computeCacheKey: Option.none(),
+  input: Option.none(),
   dependencies: {
     test: testTask,
   },
@@ -654,6 +661,7 @@ const unProvidedTask = {
   description: "",
   tags: [],
   computeCacheKey: Option.none(),
+  input: Option.none(),
   dependencies: {
     test: testTask,
     test2: testTask,
@@ -674,6 +682,7 @@ const unProvidedTask2 = {
   description: "",
   tags: [],
   computeCacheKey: Option.none(),
+  input: Option.none(),
   dependencies: {
     test: testTask,
     // test2: testTask,
@@ -691,6 +700,7 @@ const testScope = {
   _tag: "scope",
   tags: [Tags.CANISTER],
   description: "",
+  defaultTask: Option.none(),
   children: {
     providedTask,
     unProvidedTask,
@@ -701,6 +711,7 @@ const testScope2 = {
   _tag: "scope",
   tags: [Tags.CANISTER],
   description: "",
+  defaultTask: Option.none(),
   children: {
     unProvidedTask2,
   },
@@ -710,6 +721,7 @@ const providedTestScope = {
   _tag: "scope",
   tags: [Tags.CANISTER],
   description: "",
+  defaultTask: Option.none(),
   children: {
     providedTask,
   },
@@ -735,10 +747,10 @@ const test = customCanister(async () => ({
 
 const t = test
   .deps({ 
-    asd: test._scope.children.install 
+    asd: test.done().children.install 
   })
   .provide({
-    asd: test._scope.children.install,
+    asd: test.done().children.install,
     // TODO: extras also cause errors? should it be allowed?
     // asd2: test._scope.children.install,
   })

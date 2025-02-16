@@ -1,0 +1,32 @@
+type Error = record { time : nat64; message : text };
+type InitArgs = record { im_canister : principal };
+type SwapProvider = variant { IcpSwap; Kong };
+type SwapStage = variant {
+  Withdraw;
+  Deposit;
+  Swap;
+  Completed;
+  TransferNFID;
+  TransferSwap;
+};
+type SwapTransaction = record {
+  uid : text;
+  withdraw : opt nat;
+  swap_provider : SwapProvider;
+  swap : opt nat;
+  errors : vec Error;
+  deposit : opt nat;
+  end_time : opt nat64;
+  transfer_id : opt nat64;
+  target_ledger : text;
+  stage : SwapStage;
+  start_time : nat64;
+  source_ledger : text;
+  transfer_nfid_id : opt nat64;
+  target_amount : nat;
+  source_amount : nat;
+};
+service : (opt InitArgs) -> {
+  get_transactions : (text) -> (vec SwapTransaction) query;
+  store_transaction : (SwapTransaction) -> ();
+}

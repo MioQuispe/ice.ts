@@ -1,0 +1,44 @@
+type Category = variant {
+  Sns;
+  Spam;
+  Native;
+  Known;
+  ChainFusionTestnet;
+  ChainFusion;
+  Community;
+};
+type Conf = record {
+  controllers : opt vec principal;
+  im_canister : opt principal;
+};
+type ICRC1 = record {
+  fee : nat;
+  root_canister_id : opt text;
+  decimals : nat8;
+  logo : opt text;
+  name : text;
+  date_added : nat64;
+  ledger : text;
+  category : Category;
+  index : opt text;
+  symbol : text;
+};
+type ICRC1Request = record {
+  fee : nat;
+  decimals : nat8;
+  logo : opt text;
+  name : text;
+  ledger : text;
+  index : opt text;
+  symbol : text;
+};
+service : (opt Conf) -> {
+  count_icrc1_canisters : () -> (nat64) query;
+  get_all_icrc1_canisters : () -> (vec ICRC1) query;
+  get_icrc1_paginated : (nat64, nat64) -> (vec ICRC1) query;
+  remove_icrc1_canister : (text) -> ();
+  replace_icrc1_canisters : (vec ICRC1) -> ();
+  set_operator : (principal) -> ();
+  store_icrc1_canister : (ICRC1Request) -> ();
+  store_new_icrc1_canisters : (vec ICRC1) -> ();
+}

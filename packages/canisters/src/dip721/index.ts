@@ -7,31 +7,6 @@ import { Principal } from "@dfinity/principal"
 import type { InitArgs, _SERVICE } from "./dip721.did.d"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
-// const __dirname = url.fileURLToPath(import.meta.url)
-
-// export const DIP721 = ({ custodians, logo, name, symbol }, override = { dfx_js: {} }): ExtendedCanisterConfiguration => ({
-//   type: "custom",
-//   wasm: path.resolve(__dirname, `./${canisterName}/${canisterName}.wasm`),
-//   build: "",
-//   // TODO: fix
-//   candid: path.resolve(__dirname, `./${canisterName}/${canisterName}.did`),
-//   // dependencies: [...providers],
-//   _metadata: {
-//     standard: "DIP721v2",
-//   },
-//   ...override,
-//   dfx_js: {
-//     ...override.dfx_js,
-//     args: [
-//       Opt({
-//         custodians: Opt(custodians),
-//         logo: Opt(logo),
-//         name: Opt(name),
-//         symbol: Opt(symbol),
-//       }),
-//     ],
-//   },
-// })
 
 type DIP721InitArgs = {
   custodians?: Array<string>
@@ -67,7 +42,6 @@ export const DIP721 = (
         name: Opt(initArgs.name),
         symbol: Opt(initArgs.symbol),
       })]
-    // satisfies InitArgs
   })
 }
 

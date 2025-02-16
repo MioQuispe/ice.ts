@@ -63,7 +63,7 @@ export interface Task<
   // TODO: not sure if we need this
   // transformArgs?: (args: string[]) => any[]
   // for caching
-  input?: I // optional input
+  input: Option.Option<I> // optional input
   // TODO: causes type issues in builders
   // computeCacheKey?: (task: Task<A, E, R, I>) => string
   computeCacheKey: Option.Option<
@@ -78,12 +78,12 @@ export type Scope = {
   description: string
   children: Record<string, TaskTreeNode>
   // TODO:
-  defaultTask?: string
+  defaultTask: Option.Option<string>
 }
 
 export type BuilderResult = {
   _tag: "builder"
-  _scope: Scope
+  done: () => Task | Scope
   [key: string]: any
 }
 
@@ -110,10 +110,12 @@ export type CanisterConstructor = {
   provides: Task
 }
 
+// TODO: fix?
 export type CanisterScope = {
   _tag: "scope"
   tags: Array<string | symbol>
   description: string
+  defaultTask: Option.Option<string>
   // only limited to tasks
   children: Record<string, Task>
 }

@@ -507,7 +507,6 @@ const makeCustomCanisterBuilder = <
     },
 
     // Add scope property to the initial builder
-    _scope: scope,
     _tag: "builder",
   }
 }
@@ -747,10 +746,10 @@ const test = customCanister(async () => ({
 
 const t = test
   .deps({ 
-    asd: test._scope.children.install 
+    asd: test.done().children.install 
   })
   .provide({
-    asd: test._scope.children.install,
+    asd: test.done().children.install,
     // TODO: extras also cause errors? should it be allowed?
     // asd2: test._scope.children.install,
   })

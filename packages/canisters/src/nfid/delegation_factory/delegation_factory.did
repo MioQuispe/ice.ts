@@ -1,0 +1,37 @@
+type Delegation = record {
+  pubkey : PublicKey;
+  targets : opt vec principal;
+  expiration : Timestamp;
+};
+type FrontendHostname = text;
+type GetDelegationResponse = variant {
+  no_such_delegation;
+  signed_delegation : SignedDelegation;
+};
+type InitArgs = record { im_canister : principal };
+type PublicKey = blob;
+type SessionKey = PublicKey;
+type SignedDelegation = record { signature : blob; delegation : Delegation };
+type Timestamp = nat64;
+type UserKey = PublicKey;
+type UserNumber = nat64;
+service : (opt InitArgs) -> {
+  clean_memory : () -> ();
+  get_delegation : (
+      UserNumber,
+      FrontendHostname,
+      SessionKey,
+      Timestamp,
+      opt vec principal,
+    ) -> (GetDelegationResponse) query;
+  get_principal : (UserNumber, FrontendHostname) -> (principal) query;
+  init_salt : () -> ();
+  prepare_delegation : (
+      UserNumber,
+      FrontendHostname,
+      SessionKey,
+      opt nat64,
+      opt vec principal,
+    ) -> (UserKey, Timestamp);
+  set_operator : (principal) -> ();
+}

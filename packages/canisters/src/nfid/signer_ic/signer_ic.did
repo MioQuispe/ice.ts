@@ -1,0 +1,25 @@
+type KeyPair = record {
+    public_key : text;
+    private_key_encrypted : text
+};
+
+type KeyPairResponse = record {
+    key_pair : opt KeyPair;
+    princ : text
+};
+
+type CertifiedKeyPairResponse = record {
+    response: KeyPairResponse;
+    certificate: vec nat8;
+    witness: vec nat8;
+}
+
+
+service : {
+    add_kp : (KeyPair) -> ();
+    get_kp : () -> (KeyPairResponse) query;
+    get_kp_certified : (text) -> (CertifiedKeyPairResponse) query;
+    get_principal : (opt text) -> (text, opt text) query;
+    get_trusted_origins : () -> (vec text);
+    get_public_key : (text) -> (opt text) query;
+}

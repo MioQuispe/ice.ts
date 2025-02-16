@@ -61,6 +61,7 @@ const makeCandidUITask = (scope: CanisterScope): Task => {
     id: Symbol("canister/candid_ui"),
     provide: {},
     dependencies: {},
+    input: Option.none(),
     computeCacheKey: Option.none(),
     // TODO: do we only want to warn at a type level?
     // TODO: type Task
@@ -95,7 +96,8 @@ const transformScopes = (
     Match.tag("builder", (builder) => {
       return {
         ...builder,
-        _scope: transformScopes(builder._scope, fn),
+        // TODO: remove _scope
+        _scope: transformScopes(builder.done(), fn),
       } as BuilderResult
     }),
     Match.tag("task", (task) => task),

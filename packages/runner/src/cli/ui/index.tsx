@@ -157,7 +157,7 @@ const TaskTreeList = ({
   title,
   path = [],
 }: {
-  taskTree: TaskTree | Scope
+  taskTree: TaskTree | Scope | Task
   title: string
   path?: string[]
 }) => {
@@ -201,7 +201,7 @@ const TaskTreeList = ({
               >
                 <TaskTreeList
                   key={fullPath.join(":")}
-                  taskTree={node._scope}
+                  taskTree={node.done()}
                   title={fullPath.join(":")}
                   path={fullPath}
                 />

@@ -41,6 +41,7 @@ const makeDeployTask = (scope: CanisterScope): Task => {
     id: Symbol("canister/deploy"),
     dependencies: {},
     computeCacheKey: Option.none(),
+    input: Option.none(),
     // TODO: we only want to warn at a type level?
     // TODO: type Task
     provide: {},
@@ -148,12 +149,6 @@ const transformScopes = <T extends TaskTreeNode | TaskTree, F extends (scope: Sc
         children: transformedChildren,
       })
     }),
-    Match.tag("builder", (builder: BuilderResult): BuilderResult => {
-      return {
-        ...builder,
-        _scope: transformScopes(builder._scope, fn),
-      }
-    }),
     Match.tag("task", (task) => task),
     // TODO: do we need to refine?
     Match.when(Match.record, (taskTree) => {
@@ -192,6 +187,8 @@ export const deployTaskPlugin = <T extends TaskTree>(taskTree: T) => {
     if (scope.tags.includes(Tags.CANISTER)) {
       const newScope = {
         ...scope,
+        // TODO: if defined it wont be overridden?
+        defaultTask: Option.some("deploy"),
         children: {
           ...scope.children,
           deploy: makeDeployTask(scope as CanisterScope),

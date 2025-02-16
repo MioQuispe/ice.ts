@@ -184,6 +184,7 @@ export type CanisterScope = {
   _tag: "scope"
   tags: Array<string | symbol>
   description: string
+  defaultTask: Option.Option<string>
   // only limited to tasks
   children: Record<string, Task>
 }
@@ -269,7 +270,6 @@ export interface CanisterBuilder<
   // TODO:
   //   bindings: (fn: (args: { ctx: TaskCtxShape }) => Promise<I>) => CanisterBuilder<I>
   // Internal property to store the current scope
-  _scope: S
   _tag: "builder"
 }
 
@@ -291,6 +291,7 @@ const testTask = {
   id: Symbol("test"),
   dependencies: {},
   provide: {},
+  input: Option.none(),
   effect: Effect.gen(function* () {
     return { testTask: "test" }
   }),
@@ -304,6 +305,7 @@ const testTask2 = {
   id: Symbol("test"),
   dependencies: {},
   provide: {},
+  input: Option.none(),
   effect: Effect.gen(function* () {
     return { testTask2: "test" }
   }),
@@ -319,6 +321,7 @@ const providedTask = {
   description: "",
   tags: [],
   computeCacheKey: Option.none(),
+  input: Option.none(),
   dependencies: {
     test: testTask,
   },
@@ -334,6 +337,7 @@ const unProvidedTask = {
   description: "",
   tags: [],
   computeCacheKey: Option.none(),
+  input: Option.none(),
   dependencies: {
     test: testTask,
     test2: testTask,
@@ -354,6 +358,7 @@ const unProvidedTask2 = {
   description: "",
   tags: [],
   computeCacheKey: Option.none(),
+  input: Option.none(),
   dependencies: {
     test: testTask,
     // test2: testTask,
@@ -371,6 +376,7 @@ const testScope = {
   _tag: "scope",
   tags: [Tags.CANISTER],
   description: "",
+  defaultTask: Option.none(),
   children: {
     providedTask,
     unProvidedTask,
@@ -381,6 +387,7 @@ const testScope2 = {
   _tag: "scope",
   tags: [Tags.CANISTER],
   description: "",
+  defaultTask: Option.none(),
   children: {
     unProvidedTask2,
   },
@@ -390,6 +397,7 @@ const providedTestScope = {
   _tag: "scope",
   tags: [Tags.CANISTER],
   description: "",
+  defaultTask: Option.none(),
   children: {
     providedTask,
   },

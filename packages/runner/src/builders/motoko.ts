@@ -75,6 +75,7 @@ const makeMotokoBuildTask = (
     id: Symbol("motokoCanister/build"),
     dependencies: {},
     provide: {},
+    input: Option.none(),
     computeCacheKey: Option.none(),
     effect: Effect.gen(function* () {
       const path = yield* Path.Path
@@ -107,6 +108,7 @@ const makeMotokoDeleteTask = (): Task => {
     id: Symbol("motokoCanister/delete"),
     dependencies: {},
     provide: {},
+    input: Option.none(),
     computeCacheKey: Option.none(),
     effect: Effect.gen(function* () {
       // yield* deleteCanister(canisterId)
@@ -279,7 +281,6 @@ export const makeMotokoBuilder = <
     },
 
     // Add scope property to the initial builder
-    _scope: scope,
     _tag: "builder",
   }
 }
@@ -301,6 +302,7 @@ export const motokoCanister = <I = unknown, _SERVICE = unknown>(
     _tag: "scope",
     tags: [Tags.CANISTER],
     description: "some description",
+    defaultTask: Option.none(),
     children: {
       create: makeCreateTask(canisterConfigOrFn),
       build: makeMotokoBuildTask(canisterConfigOrFn),
@@ -329,6 +331,7 @@ const testTask = {
   description: "",
   tags: [],
   computeCacheKey: Option.none(),
+  input: Option.none(),
 } satisfies Task
 
 const testTask2 = {
@@ -340,6 +343,7 @@ const testTask2 = {
   description: "",
   tags: [],
   computeCacheKey: Option.none(),
+  input: Option.none(),
 } satisfies Task
 
 const providedTask = {
@@ -349,6 +353,7 @@ const providedTask = {
   description: "",
   tags: [],
   computeCacheKey: Option.none(),
+  input: Option.none(),
   dependencies: {
     test: testTask,
   },
@@ -364,6 +369,7 @@ const unProvidedTask = {
   description: "",
   tags: [],
   computeCacheKey: Option.none(),
+  input: Option.none(),
   dependencies: {
     test: testTask,
     test2: testTask,
@@ -384,6 +390,7 @@ const unProvidedTask2 = {
   description: "",
   tags: [],
   computeCacheKey: Option.none(),
+  input: Option.none(),
   dependencies: {
     test: testTask,
     // test2: testTask,
@@ -401,6 +408,7 @@ const testScope = {
   _tag: "scope",
   tags: [Tags.CANISTER],
   description: "",
+  defaultTask: Option.none(),
   children: {
     providedTask,
     unProvidedTask,
@@ -411,6 +419,7 @@ const testScope2 = {
   _tag: "scope",
   tags: [Tags.CANISTER],
   description: "",
+  defaultTask: Option.none(),
   children: {
     unProvidedTask2,
   },
@@ -420,6 +429,7 @@ const providedTestScope = {
   _tag: "scope",
   tags: [Tags.CANISTER],
   description: "",
+  defaultTask: Option.none(),
   children: {
     providedTask,
   },

@@ -82,7 +82,7 @@ import { candidUITaskPlugin } from "./plugins/candid_ui.js"
 import { sha256 } from "js-sha256"
 import {
   canister_status_result,
-  log_visibility,
+  type log_visibility,
 } from "./canisters/management_latest/management.types.js"
 export const configMap = new Map([
   ["APP_DIR", fs.realpathSync(process.cwd())],
@@ -475,88 +475,107 @@ export class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
   reason: string
 }> {}
 
+export const removeBuilders = (
+  taskTree: TaskTree | TaskTreeNode,
+): TaskTree | TaskTreeNode => {
+  if ("_tag" in taskTree && taskTree._tag === "builder") {
+    return removeBuilders(taskTree.done())
+  }
+  if ("_tag" in taskTree && taskTree._tag === "scope") {
+    return {
+      ...taskTree,
+      children: Object.fromEntries(
+        Object.entries(taskTree.children).map(([key, value]) => [
+          key,
+          removeBuilders(value),
+        ]),
+      ) as Record<string, TaskTreeNode>,
+    }
+  }
+  if ("_tag" in taskTree && taskTree._tag === "task") {
+    return taskTree
+  }
+  return Object.fromEntries(
+    Object.entries(taskTree).map(([key, value]) => [key, removeBuilders(value)]),
+  ) as TaskTree
+}
+
 // TODO: support defaultTask for scope
 export const findTaskInTaskTree = (
   obj: TaskTree,
   keys: Array<string>,
 ): Effect.Effect<Task, TaskNotFoundError> => {
   return Effect.gen(function* () {
+    let node: TaskTreeNode | TaskTree = obj
     for (const key of keys) {
-      let currentNode = obj[key]
       const isLastKey = keys.indexOf(key) === keys.length - 1
-      // TODO: this becomes undefined
-      const node = Match.value(currentNode).pipe(
-        Match.tag("task", (task): Task => task),
-        Match.tag("scope", (scope): Scope => scope),
-        Match.tag("builder", (result): Scope => result._scope),
-        Match.option,
-      )
-      if (isLastKey) {
-        // TODO: clean up
-        if (Option.isSome(node)) {
-          if (node.value._tag === "task") { 
-            return node.value
-          } else {
-            return yield* Effect.fail(
-              new TaskNotFoundError({
-                path: keys,
-                reason: `Invalid node type encountered at key "${key}"`,
-              }),
-            )
+
+      if (!("_tag" in node)) {
+        if (isLastKey) {
+          // TODO: this is all then
+          const taskTree = node as TaskTree
+          node = taskTree[key]
+
+          if (node._tag === "task") {
+            return node as Task
+          } else if (node._tag === "scope") {
+            if (Option.isSome((node as Scope).defaultTask)) {
+              // TODO: fix
+              // @ts-ignore
+              const taskName = node.defaultTask.value
+              Effect.log("default task found", {
+                taskName,
+                node,
+              })
+              return node.children[taskName] as Task
+            }
           }
-        }
-        if (Option.isNone(node)) {
+
           return yield* Effect.fail(
             new TaskNotFoundError({
               path: keys,
               reason: `Invalid node type encountered at key "${key}"`,
             }),
           )
-        }
-      }
-
-      if (Option.isSome(node)) {
-        if (node.value._tag === "scope") {
-          const nextKey = keys[keys.indexOf(key) + 1]
-          const nextNode = node.value.children[nextKey]
-          if (!nextNode) {
-            yield* Effect.logError("No child found for key", {
-              key,
-              node: node.value,
-            })
-            return yield* Effect.fail(
-              new TaskNotFoundError({
-                path: keys,
-                reason: `No child found for key "${key}" in scope`,
-              }),
-            )
-          }
-          const isLastKey = keys.indexOf(nextKey) === keys.length - 1
-          if (isLastKey && nextNode._tag === "task") {
-            return nextNode
-          }
-          currentNode = nextNode
-        } else if (node.value._tag === "task") {
-          if (!isLastKey) {
-            return yield* Effect.fail(
-              new TaskNotFoundError({
-                path: keys,
-                reason: `Found task before end of path at key "${key}"`,
-              }),
-            )
-          }
-          return node.value
         } else {
+          node = node[key]
+        }
+      } else {
+        if (node._tag === "task") {
+          if (isLastKey) {
+            return node
+          }
           return yield* Effect.fail(
             new TaskNotFoundError({
               path: keys,
-              reason: `Unexpected node type "${node.value}" at key "${key}"`,
+              reason: `Invalid node type encountered at key "${key}"`,
             }),
           )
+        } else if (node._tag === "scope") {
+          if (isLastKey) {
+            node = node.children[key]
+
+            if (node._tag === "task") {
+              return node
+            }
+            // yield* Effect.log("Option.isSome", {
+            //   node,
+            if (Option.isSome(node.defaultTask)) {
+              const taskName = node.defaultTask.value
+              // @ts-ignore
+              return node.children[taskName] as Task
+            } 
+            return yield* Effect.fail(
+              new TaskNotFoundError({
+                path: keys,
+                reason: "No default task found for scope",
+              }),
+            )
+          }
         }
+        node = node.children[key] as TaskTreeNode
       }
     }
-
     return yield* Effect.fail(
       new TaskNotFoundError({
         path: keys,
@@ -619,10 +638,11 @@ export const DefaultsLayer = Layer.mergeAll(
   configLayer,
   // Logger.replace(Logger.defaultLogger, Logger.zip(Logger.pretty)),
   Logger.pretty,
+  // Logger.replace(Logger.defaultLogger, Logger.jsonLogger), // Use jsonLogger
   CrystalConfigService.Live.pipe(Layer.provide(NodeContext.layer)),
 
   // TODO: set with flag?
-  // Logger.minimumLogLevel(LogLevel.Debug),
+  Logger.minimumLogLevel(LogLevel.Debug),
 
   // Logger.add(customLogger),
   // Layer.effect(fileLogger),
@@ -823,8 +843,6 @@ export const filterTasks = (
       const node = Match.value(currentNode).pipe(
         Match.tag("task", (task): Task => task),
         Match.tag("scope", (scope): Scope => scope),
-        // TODO: should we transform the whole tree once, and remove builders?
-        Match.tag("builder", (result): Scope => result._scope),
         Match.option,
       )
       if (Option.isSome(node)) {
@@ -834,7 +852,6 @@ export const filterTasks = (
         }
         if (node.value._tag === "scope") {
           const children = Object.keys(node.value.children)
-          // TODO: call itself recursively
           const filteredChildren = yield* filterTasks(
             node.value.children,
             predicate,
@@ -1009,12 +1026,12 @@ ${result.right.canisterName} status:
 
 export const listTasksTask = () =>
   Effect.gen(function* () {
+    // TODO: remove builders
     const { taskTree } = yield* CrystalConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
       (node) => node._tag === "task",
     )
-
     // TODO: format nicely
     const taskList = tasksWithPath.map(({ task, path }) => {
       const taskPath = path.join(":") // Use colon to represent hierarchy

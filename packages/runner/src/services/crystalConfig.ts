@@ -6,12 +6,15 @@ import type {
 } from "../types/types.js"
 import { Path, FileSystem } from "@effect/platform"
 import { deployTaskPlugin } from "../plugins/deploy.js"
+import { removeBuilders } from "../index.js"
+// import { removeBuilders } from "../plugins/remove_builders.js"
 // import { candidUITaskPlugin } from "../plugins/candid-ui.js"
 
 const applyPlugins = (taskTree: TaskTree) =>
   Effect.gen(function* () {
-    yield* Effect.log("Applying deploy plugin")
-    const transformedTaskTree = deployTaskPlugin(taskTree)
+    yield* Effect.log("Applying plugins...")
+    const noBuildersTree = removeBuilders(taskTree) as TaskTree
+    const transformedTaskTree = deployTaskPlugin(noBuildersTree)
     // yield* Effect.log("Applied deploy plugin", {
     //   transformedConfig,
     // })
@@ -38,6 +41,10 @@ export class CrystalConfigService extends Context.Tag("CrystalConfigService")<
       const appDirectory = yield* fs.realPath(process.cwd())
       // TODO: make this configurable
       const configPath = "crystal.config.ts"
+      yield* Effect.log("Loading config...", {
+        configPath,
+        appDirectory,
+      })
       // TODO: apply plugins
       const config = yield* Effect.tryPromise({
         try: () =>
