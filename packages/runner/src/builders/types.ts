@@ -275,6 +275,12 @@ export interface CanisterBuilder<
 
 export const Tags = {
   CANISTER: "$$crystal/canister",
+  CUSTOM: "$$crystal/canister/custom",
+  MOTOKO: "$$crystal/canister/motoko",
+  RUST: "$$crystal/canister/rust",
+  AZLE: "$$crystal/canister/azle",
+  KYBRA: "$$crystal/canister/kybra",
+
   CREATE: "$$crystal/create",
   BUILD: "$$crystal/build",
   INSTALL: "$$crystal/install",

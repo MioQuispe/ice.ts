@@ -98,7 +98,7 @@ const makeMotokoBuildTask = (
       )
     }),
     description: "some description",
-    tags: [Tags.CANISTER, Tags.BUILD],
+    tags: [Tags.CANISTER, Tags.MOTOKO, Tags.BUILD],
   } satisfies Task
 }
 
@@ -114,7 +114,7 @@ const makeMotokoDeleteTask = (): Task => {
       // yield* deleteCanister(canisterId)
     }),
     description: "some description",
-    tags: [Tags.CANISTER, Tags.DELETE],
+    tags: [Tags.CANISTER, Tags.MOTOKO, Tags.DELETE],
   }
 }
 
@@ -300,7 +300,7 @@ export const motokoCanister = <I = unknown, _SERVICE = unknown>(
   // },
   const initialScope = {
     _tag: "scope",
-    tags: [Tags.CANISTER],
+    tags: [Tags.CANISTER, Tags.MOTOKO],
     description: "some description",
     defaultTask: Option.none(),
     children: {

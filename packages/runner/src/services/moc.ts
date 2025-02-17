@@ -37,6 +37,25 @@ export class Moc extends Context.Tag("Moc")<
 
       return Moc.of({
         version,
+        // // TODO: investigate if these can run in parallel
+        // generateCandid: (src, output) =>
+        //   Effect.gen(function* () {
+        //     const command = Command.make(
+        //       resolvedPath,
+        //       "--idl",
+        //       src,
+        //       "-o",
+        //       output,
+        //     )
+        //     yield* commandExecutor.string(command).pipe(
+        //       Effect.mapError(
+        //         (err) =>
+        //           new MocError({
+        //             message: `Failed to generate IDL: ${err.message}`,
+        //           }),
+        //       ),
+        //     )
+        //   }),
         compile: (src, output) =>
           Effect.gen(function* () {
             const command = Command.make(

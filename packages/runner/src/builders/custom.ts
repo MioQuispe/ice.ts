@@ -2,6 +2,7 @@ import { Effect, Context, Data, Config, Match, Option } from "effect"
 import {
   createCanister,
   installCanister,
+  stopCanister,
   compileMotokoCanister,
   writeCanisterIds,
   encodeArgs,
@@ -54,6 +55,30 @@ type CustomCanisterConfig = {
   canisterId?: string
 }
 
+export const makeStopTask = () => {
+  return {
+    _tag: "task",
+    id: Symbol("customCanister/stop"),
+    dependencies: {},
+    provide: {},
+    // TODO: do we allow a fn as args here?
+    effect: Effect.gen(function* () {
+      const path = yield* Path.Path
+      const fs = yield* FileSystem.FileSystem
+      const appDir = yield* Config.string("APP_DIR")
+      const { taskPath } = yield* TaskInfo
+      const canisterName = taskPath.split(":").slice(0, -1).join(":")
+      const canisterId = yield* loadCanisterId(taskPath)
+      yield* stopCanister(canisterId)
+      yield* Effect.logInfo(`Stopped canister ${canisterName}`)
+    }),
+    description: "some description",
+    tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BINDINGS],
+    computeCacheKey: Option.none(),
+    input: Option.none(),
+  } satisfies Task
+}
+
 export const makeBindingsTask = () => {
   return {
     _tag: "task",
@@ -88,7 +113,7 @@ export const makeBindingsTask = () => {
       yield* Effect.logDebug(`Generated DID JS for ${canisterName}`)
     }),
     description: "some description",
-    tags: [Tags.CANISTER, Tags.BINDINGS],
+    tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BINDINGS],
     computeCacheKey: Option.none(),
     input: Option.none(),
   } satisfies Task
@@ -217,7 +242,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
       }
     }),
     description: "Install canister code",
-    tags: [Tags.CANISTER, Tags.INSTALL],
+    tags: [Tags.CANISTER, Tags.CUSTOM, Tags.INSTALL],
   } satisfies Task
 }
 
@@ -268,7 +293,7 @@ const makeBuildTask = (
       // }
     }),
     description: "some description",
-    tags: [Tags.CANISTER, Tags.BUILD],
+    tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BUILD],
     computeCacheKey: Option.none(),
     input: Option.none(),
   } satisfies Task
@@ -332,7 +357,7 @@ export const makeCreateTask = (
       return canisterId
     }),
     description: "some description",
-    tags: [Tags.CANISTER, Tags.CREATE],
+    tags: [Tags.CANISTER, Tags.CUSTOM, Tags.CREATE],
     computeCacheKey: Option.none(),
     input: Option.none(),
   } satisfies Task
@@ -524,7 +549,7 @@ export const customCanister = <I = unknown, _SERVICE = unknown>(
 ) => {
   const initialScope = {
     _tag: "scope",
-    tags: [Tags.CANISTER],
+    tags: [Tags.CANISTER, Tags.CUSTOM],
     description: "some description",
     defaultTask: Option.some("deploy"),
     // TODO: default implementations
@@ -542,6 +567,7 @@ export const customCanister = <I = unknown, _SERVICE = unknown>(
       build: makeBuildTask(canisterConfigOrFn),
       // install: makeInstallTask<I>(),
       install: makeInstallTask<I, Record<string, unknown>, _SERVICE>(),
+      stop: makeStopTask(),
     },
   } satisfies CanisterScope
 

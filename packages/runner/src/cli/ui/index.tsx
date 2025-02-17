@@ -59,45 +59,6 @@ export function useSynchronizedState<T>(defaultState: T) {
   return [value, subscriptionRef] as const
 }
 
-/**
- * ScrollableLogs renders an array of log messages in a scrollable view.
- * The view automatically adjusts based on the terminal height (with some margin).
- *
- * @param logs - An array of log messages (strings)
- */
-export const ScrollableLogs: React.FC<{ logs: string[] }> = () => {
-  const { stdout } = useStdout()
-  // Determine the viewport height, subtracting a few rows for headers/borders
-  const viewHeight = stdout ? Math.max(stdout.rows - 5, 5) : 10
-  const [scrollOffset, setScrollOffset] = useState(0)
-
-  useInput((_, key) => {
-    if (key.downArrow) {
-      // Only scroll down if there are more items below
-      if (scrollOffset < logs.length - viewHeight) {
-        setScrollOffset((prevOffset) => prevOffset + 1)
-      }
-    }
-    if (key.upArrow) {
-      // Scroll up if not at the top
-      if (scrollOffset > 0) {
-        setScrollOffset((prevOffset) => prevOffset - 1)
-      }
-    }
-  })
-
-  // Slice the logs using the current scroll offset and view height.
-  const visibleLogs = logs.slice(scrollOffset, scrollOffset + viewHeight)
-
-  return (
-    <Box flexDirection="column">
-      {visibleLogs.map((log, idx) => (
-        <Text key={idx}>{log}</Text>
-      ))}
-    </Box>
-  )
-}
-
 export const StaticLogs: React.FC<{ logs: string[]; maxHeight?: number }> = ({ logs, maxHeight }) => {
   const { stdout } = useStdout();
   // Use the provided maxHeight if available; if not, use stdout.rows minus a margin.

@@ -288,6 +288,15 @@ export const encodeArgs = (args: any[], canisterDID: any) => {
     : new Uint8Array()
   return encodedArgs
 }
+export const stopCanister = (canisterId: string) =>
+  Effect.gen(function* () {
+    const { mgmt } = yield* DfxService
+    yield* Effect.tryPromise(() =>
+      mgmt.stop_canister({
+        canister_id: Principal.fromText(canisterId),
+      }),
+    )
+  })
 
 export const installCanister = ({
   encodedArgs,
@@ -323,23 +332,36 @@ export const installCanister = ({
       // Maximum size: 1048576
       // export interface chunk_hash { 'hash' : Array<number> }
       const chunkHashes: Array<{ hash: Array<number> }> = []
+      const chunkUploadEffects = [];
       for (let i = 0; i < wasm.length; i += chunkSize) {
-        const chunk = wasm.slice(i, i + chunkSize)
-        const chunkHash = Array.from(sha256.array(chunk))
-        chunkHashes.push({ hash: chunkHash })
-        yield* Effect.logInfo(`Uploading chunk ${i} of ${wasm.length} for ${canisterId}`)
-        yield* Effect.tryPromise({
-          try: () =>
-            mgmt.upload_chunk({
-              chunk: Array.from(chunk),
-              canister_id: Principal.fromText(canisterId),
-            }),
-          catch: (error) =>
-            new DeploymentError({
-              message: `Failed to upload chunk: ${error instanceof Error ? error.message : String(error)}`,
-            }),
-        })
+        const chunk = wasm.slice(i, i + chunkSize);
+        const chunkHash = Array.from(sha256.array(chunk));
+        chunkHashes.push({ hash: chunkHash });
+        chunkUploadEffects.push(
+          Effect.tryPromise({
+            try: () =>
+              mgmt.upload_chunk({
+                chunk: Array.from(chunk),
+                canister_id: Principal.fromText(canisterId),
+              }),
+            catch: (error) =>
+              new DeploymentError({
+                message: `Failed to upload chunk: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              }),
+          }).pipe(
+            Effect.tap(() =>
+              Effect.logInfo(
+                `Uploading chunk ${i} of ${wasm.length} for ${canisterId}`,
+              ),
+            ),
+          ),
+        );
       }
+      yield* Effect.all(chunkUploadEffects, {
+        concurrency: "unbounded",
+      });
       // TODO: perform chunked install
       // mgmt.install_code({
       //   // arg: encodedArgs,
@@ -501,7 +523,10 @@ export const removeBuilders = (
     return taskTree
   }
   return Object.fromEntries(
-    Object.entries(taskTree).map(([key, value]) => [key, removeBuilders(value)]),
+    Object.entries(taskTree).map(([key, value]) => [
+      key,
+      removeBuilders(value),
+    ]),
   ) as TaskTree
 }
 
@@ -565,7 +590,7 @@ export const findTaskInTaskTree = (
               const taskName = node.defaultTask.value
               // @ts-ignore
               return node.children[taskName] as Task
-            } 
+            }
             return yield* Effect.fail(
               new TaskNotFoundError({
                 path: keys,
@@ -743,31 +768,6 @@ export interface RunTaskOptions {
   forceRun?: boolean
 }
 
-// // TODO: use Effect cache or kv store?
-// // TODO: use taskPath as cache key? no symbol
-// const taskMap = new Map<symbol, Task>()
-// const taskCache = Cache.make<[string, string], unknown>({
-//   capacity: 100_000,
-//   timeToLive: Duration.infinity,
-//   // lookup: (key) => Effect.succeed(taskMap.get(key))
-//   lookup: ([cacheKey, taskPath]) =>
-//     Effect.gen(function* () {
-//       const { task } = yield* getTaskByPath(taskPath)
-//       return yield* runTask(task)
-//     }),
-// })
-
-// export const runTaskCached = <A, E, R, I>(
-//   task: Task<A, E, R, I>,
-//   options: RunTaskOptions = { forceRun: false },
-// ) => {
-//   return Effect.gen(function* () {
-//     const taskPath = yield* getTaskPathById(task.id)
-//     const cacheKey = task.computeCacheKey ? task.computeCacheKey(task) : taskPath
-//     const cache = yield* taskCache
-//     return yield* cache.get([cacheKey, taskPath])
-//   })
-// }
 export const runTask = <A, E, R, I>(
   task: Task<A, E, R, I>,
   options: RunTaskOptions = { forceRun: false },
@@ -788,10 +788,19 @@ export const runTask = <A, E, R, I>(
       dependencies: task.provide,
       taskPath: taskPath,
     })
-    for (const [dependencyName, dependency] of Object.entries(task.provide)) {
-      const dependencyResult = yield* runTask(dependency)
+    const dependencyEffects = Object.entries(task.provide).map(
+      ([dependencyName, dependency]) =>
+        Effect.map(runTask(dependency), (result) => [
+          dependencyName,
+          result,
+        ]) as Effect.Effect<[string, unknown], unknown, unknown>,
+    )
+    const results = yield* Effect.all(dependencyEffects, {
+      concurrency: "unbounded",
+    })
+    results.forEach(([dependencyName, dependencyResult]) => {
       dependencyResults[dependencyName] = dependencyResult
-    }
+    })
 
     const taskLayer = Layer.mergeAll(
       // configLayer,
@@ -881,9 +890,11 @@ export const canistersDeployTask = () =>
         node.tags.includes(Tags.CANISTER) &&
         node.tags.includes(Tags.DEPLOY),
     )
-    for (const { task, path } of tasksWithPath) {
-      yield* runTaskByPath(path.join(":"))
-    }
+    yield* Effect.forEach(
+      tasksWithPath,
+      ({ path }) => runTaskByPath(path.join(":")),
+      { concurrency: "unbounded" },
+    )
   })
 
 export const canistersCreateTask = () =>
@@ -897,11 +908,11 @@ export const canistersCreateTask = () =>
         node.tags.includes(Tags.CANISTER) &&
         node.tags.includes(Tags.CREATE),
     )
-    for (const { task, path } of tasksWithPath) {
-      // TODO: parallelize? topological sort?
-      yield* Effect.log(`Running task ${path.join(":")}`)
-      yield* runTaskByPath(path.join(":"))
-    }
+    yield* Effect.forEach(
+      tasksWithPath,
+      ({ path }) => runTaskByPath(path.join(":")),
+      { concurrency: "unbounded" },
+    )
   })
 
 export const canistersBuildTask = () =>
@@ -915,10 +926,11 @@ export const canistersBuildTask = () =>
         node.tags.includes(Tags.CANISTER) &&
         node.tags.includes(Tags.BUILD),
     )
-    for (const { task, path } of tasksWithPath) {
-      // TODO: parallelize? topological sort?
-      yield* runTaskByPath(path.join(":"))
-    }
+    yield* Effect.forEach(
+      tasksWithPath,
+      ({ path }) => runTaskByPath(path.join(":")),
+      { concurrency: "unbounded" },
+    )
   })
 
 export const canistersBindingsTask = () =>
@@ -932,10 +944,11 @@ export const canistersBindingsTask = () =>
         node.tags.includes(Tags.CANISTER) &&
         node.tags.includes(Tags.BINDINGS),
     )
-    for (const { task, path } of tasksWithPath) {
-      // TODO: parallelize? topological sort?
-      yield* runTaskByPath(path.join(":"))
-    }
+    yield* Effect.forEach(
+      tasksWithPath,
+      ({ path }) => runTaskByPath(path.join(":")),
+      { concurrency: "unbounded" },
+    )
   })
 
 export const canistersInstallTask = () =>
@@ -949,9 +962,11 @@ export const canistersInstallTask = () =>
         node.tags.includes(Tags.CANISTER) &&
         node.tags.includes(Tags.INSTALL),
     )
-    for (const { task, path } of tasksWithPath) {
-      yield* runTaskByPath(path.join(":"))
-    }
+    yield* Effect.forEach(
+      tasksWithPath,
+      ({ path }) => runTaskByPath(path.join(":")),
+      { concurrency: "unbounded" },
+    )
   })
 
 export const canistersStatusTask = () =>
@@ -1001,6 +1016,8 @@ export const canistersStatusTask = () =>
     // >
     // TODO: print module hash
     // For every result, inspect whether it was a success or a failure and prepare a log message accordingly
+
+    // TODO: colorize statuses
     const statusLog = canisterStatuses
       .map((result) =>
         result._tag === "Right"

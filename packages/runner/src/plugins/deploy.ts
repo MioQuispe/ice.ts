@@ -49,31 +49,54 @@ const makeDeployTask = (scope: CanisterScope): Task => {
       const { runTask } = yield* TaskCtx
       const { taskPath } = yield* TaskInfo
       const canisterName = taskPath.split(":").slice(0, -1).join(":")
-
-      yield* Effect.logDebug(`Loading canister ID for ${canisterName}`)
-      let canisterId = yield* loadCanisterId(taskPath).pipe(
-        Effect.catchAll((e) => {
-          //   Effect.logError(e.message)
-          return Effect.succeed(undefined)
-        }),
+      const [canisterId] = yield* Effect.all(
+        [
+          Effect.gen(function* () {
+            yield* Effect.logDebug(`Loading canister ID for ${canisterName}`)
+            let canisterId = yield* loadCanisterId(taskPath).pipe(
+              Effect.catchAll((e) => {
+                //   Effect.logError(e.message)
+                return Effect.succeed(undefined)
+              }),
+            )
+            if (!canisterId) {
+              canisterId = (yield* runTask(scope.children.create)) as string
+            } else {
+              // TODO: check if canister has been created already
+              const canisterInfo = yield* getCanisterInfo(canisterId)
+              // TODO: this may get out of sync when we change the name or taskPath
+              // fix somehow
+              const canisterExists = canisterInfo.status !== "not_installed"
+              if (canisterExists) {
+                yield* Effect.logInfo("Canister already exists")
+              } else {
+                canisterId = (yield* runTask(scope.children.create)) as string
+              }
+            }
+          }),
+          Effect.gen(function* () {
+            if (scope.tags.includes(Tags.MOTOKO)) {
+              // Moc generates candid and wasm files in the same phase
+              yield* runTask(scope.children.build)
+              yield* runTask(scope.children.bindings)
+            } else {
+              yield* Effect.all(
+                [
+                  runTask(scope.children.build),
+                  runTask(scope.children.bindings),
+                ],
+                {
+                  concurrency: "unbounded",
+                },
+              )
+            }
+          }),
+        ],
+        {
+          concurrency: "unbounded",
+        },
       )
-      if (!canisterId) {
-        canisterId = (yield* runTask(scope.children.create)) as string
-      } else {
-        // TODO: check if canister has been created already
-        const canisterInfo = yield* getCanisterInfo(canisterId)
-        // TODO: this may get out of sync when we change the name or taskPath
-        // fix somehow
-        const canisterExists = canisterInfo.status !== "not_installed"
-        if (canisterExists) {
-          yield* Effect.logInfo("Canister already exists")
-        } else {
-          canisterId = (yield* runTask(scope.children.create)) as string
-        }
-      }
-      const build = yield* runTask(scope.children.build)
-      const bindings = yield* runTask(scope.children.bindings)
-      const install = yield* runTask(scope.children.install)
+      yield* runTask(scope.children.install)
       yield* Effect.logInfo("Canister deployed successfully")
       return canisterId
     }),
@@ -133,7 +156,10 @@ const makeDeployTask = (scope: CanisterScope): Task => {
 //   )(taskTreeNode) as T // Assert type T for the overall result
 // }
 
-const transformScopes = <T extends TaskTreeNode | TaskTree, F extends (scope: Scope) => Scope>(
+const transformScopes = <
+  T extends TaskTreeNode | TaskTree,
+  F extends (scope: Scope) => Scope,
+>(
   taskTree: T,
   fn: F,
 ) => {
