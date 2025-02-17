@@ -13,6 +13,34 @@ import type { PlatformError } from "@effect/platform/Error"
 import os from "node:os"
 import psList from "ps-list"
 
+/**
+ * Parses a PEM encoded ED25519 private key and returns a SignIdentity.
+ *
+ * The DER structure we receive from a DFX identity PEM file embeds both the private and public key parts.
+ * Since the upgraded @dfinity/identity now expects only a 32-byte private key, we slice the first 32 bytes.
+ *
+ * @param pem The PEM string
+ * @returns The ED25519 identity extracted from the PEM
+ */
+const parseEd25519PrivateKey = (pem: string) => {
+  const cleanedPem = pem
+    .replace("-----BEGIN PRIVATE KEY-----", "")
+    .replace("-----END PRIVATE KEY-----", "")
+    .replace(/\n/g, "")
+    .trim();
+  // Obtain the DER hex string by base64-decoding the cleaned PEM.
+  const derHex = Buffer.from(cleanedPem, "base64").toString("hex");
+  // Remove the DER header information.
+  // (This static removal works if the key structure is as expected.)
+  const rawHex = derHex
+    .replace("3053020101300506032b657004220420", "")
+    .replace("a123032100", "");
+  const keyBytes = new Uint8Array(Buffer.from(rawHex, "hex"));
+  // Ensure we only pass the 32-byte secret to the identity.
+  const secretKey = keyBytes.slice(0, 32);
+  return Ed25519KeyIdentity.fromSecretKey(secretKey.buffer);
+}
+
 
 export const getAccountId = (principal: string) =>
   // TODO: get straight from ledger canister?
@@ -63,13 +91,8 @@ export const getIdentity = (selection?: string) =>
       .replace("\n", "")
       .trim()
 
-    const raw = Buffer.from(cleanedPem, "base64")
-      .toString("hex")
-      .replace("3053020101300506032b657004220420", "")
-      .replace("a123032100", "")
-    const key = new Uint8Array(Buffer.from(raw, "hex"))
-    // TODO: this is not working
-    const identity = Ed25519KeyIdentity.fromSecretKey(key.buffer)
+    // TODO: support more key types?
+    const identity = parseEd25519PrivateKey(pem);
     const principal = identity.getPrincipal().toText()
     const accountId = yield* getAccountId(principal)
 

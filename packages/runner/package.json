@@ -17,11 +17,11 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@dfinity/agent": "^0.19.3",
-    "@dfinity/candid": "^0.19.3",
-    "@dfinity/identity": "^0.19.3",
-    "@dfinity/identity-secp256k1": "^0.19.3",
-    "@dfinity/principal": "^0.19.3",
+    "@dfinity/agent": "^2.3.0",
+    "@dfinity/candid": "^2.3.0",
+    "@dfinity/identity": "^2.3.0",
+    "@dfinity/identity-secp256k1": "^2.3.0",
+    "@dfinity/principal": "^2.3.0",
     "@effect/cli": "^0.54.1",
     "@effect/platform": "^0.75.1",
     "@effect/platform-browser": "^0.54.1",
