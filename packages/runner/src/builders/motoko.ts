@@ -223,7 +223,7 @@ export const makeMotokoBuilder = <
       >(updatedScope)
     },
 
-    provide: (providedDeps) => {
+    deps: (providedDeps) => {
       // TODO: do we transform here?
       // TODO: do we type check here?
       const finalDeps = Object.fromEntries(

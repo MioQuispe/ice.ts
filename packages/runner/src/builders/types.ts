@@ -241,7 +241,7 @@ export interface CanisterBuilder<
     P,
     Config
   >
-  provide: <NP extends Record<string, Task | CanisterConstructor>>(
+  deps: <NP extends Record<string, Task | CanisterConstructor>>(
     providedDeps: NP,
   ) => CanisterBuilder<
     I,

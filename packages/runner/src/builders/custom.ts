@@ -458,7 +458,7 @@ const makeCustomCanisterBuilder = <
       >(updatedScope)
     },
 
-    provide: (providedDeps) => {
+    deps: (providedDeps) => {
       // TODO: do we transform here?
       // TODO: do we type check here?
       
@@ -749,7 +749,7 @@ const t = test
   .dependsOn({ 
     asd: test.done().children.install 
   })
-  .provide({
+  .deps({
     asd: test.done().children.install,
     // TODO: extras also cause errors? should it be allowed?
     // asd2: test._scope.children.install,

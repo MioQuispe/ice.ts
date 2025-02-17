@@ -18,22 +18,22 @@ export { NFIDSwapTrsStorage } from "./swap_trs_storage/index.js"
 export const NFIDScope = () => {
   const identityManager = NFIDIdentityManager().done()
   // TODO: feed in IdentityManager to all others
-  const delegationFactory = NFIDDelegationFactory().provide({
+  const delegationFactory = NFIDDelegationFactory().deps({
     NFIDIdentityManager: identityManager.children.install,
   })
-  const icrc1Oracle = NFIDIcrc1Oracle().provide({
+  const icrc1Oracle = NFIDIcrc1Oracle().deps({
     NFIDIdentityManager: identityManager.children.install,
   })
-  const icrc1Registry = NFIDIcrc1Registry().provide({
+  const icrc1Registry = NFIDIcrc1Registry().deps({
     NFIDIdentityManager: identityManager.children.install,
   })
-  const storage = NFIDStorage().provide({
+  const storage = NFIDStorage().deps({
     NFIDIdentityManager: identityManager.children.install,
   })
-  const signerIc = NFIDSignerIc().provide({
+  const signerIc = NFIDSignerIc().deps({
     NFIDIdentityManager: identityManager.children.install,
   })
-  const swapTrsStorage = NFIDSwapTrsStorage().provide({
+  const swapTrsStorage = NFIDSwapTrsStorage().deps({
     NFIDIdentityManager: identityManager.children.install,
   })
 

@@ -62,7 +62,7 @@ export const DIP20 = (
   })
   // TODO: support passing in CanisterScopes
   .dependsOn({ CapRouter })
-  // .provide({ capRouter: CapRouter.shape })
+  // .deps({ capRouter: CapRouter.shape })
   // TODO: install ctx should receive the dependencies in its type
   .install(async ({ ctx, mode }) => {
     let initArgs: InitArgs
@@ -87,7 +87,7 @@ export const DIP20 = (
     ]
   })
   // // tests:
-  // .provide({ CapRouter })
+  // .deps({ CapRouter })
   // .done()
   return result
 }
