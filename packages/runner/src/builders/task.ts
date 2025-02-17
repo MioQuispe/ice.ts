@@ -90,7 +90,7 @@ interface TaskBuilderInitial<
   D extends Record<string, Task> = {},
   P extends Record<string, Task> = {}
 > {
-  deps<ND extends Record<string, AllowedDep>>(
+  dependsOn<ND extends Record<string, AllowedDep>>(
     deps: ND,
   ): TaskBuilderDeps<I, MergeTaskDeps<T, NormalizeDeps<ND>>, NormalizeDeps<ND>, P>
   provide<NP extends Record<string, AllowedDep>>(
@@ -286,7 +286,7 @@ function makeTaskBuilderInitial<
   P extends Record<string, Task>
 >(task: T): TaskBuilderInitial<I, T, D, P> {
   return {
-    deps: (dependencies) => handleDeps<I, T, D, P, typeof dependencies>(task, dependencies),
+    dependsOn: (dependencies) => handleDeps<I, T, D, P, typeof dependencies>(task, dependencies),
     provide: (providedDeps) => handleProvide<I, T, D, typeof providedDeps>(task, providedDeps),
     run: (fn) => runTask<I, T, D, P, any>(task, fn),
   }
@@ -391,7 +391,7 @@ const canScope = {
 
 /** Example B: task -> deps -> provide -> run -> done */
 const task2 = task("description of task2")
-  .deps({
+  .dependsOn({
     depB: numberTask,
     depC: canScope,
   })

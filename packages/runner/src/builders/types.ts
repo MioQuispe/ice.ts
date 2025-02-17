@@ -232,7 +232,7 @@ export interface CanisterBuilder<
       | ((ctx: TaskCtxShape) => Promise<Config>),
   ) => CanisterBuilder<I, S, D, P, Config>
   // TODO: allow passing in a CanisterScope and extract from it
-  deps: <ND extends Record<string, Task | CanisterConstructor>>(
+  dependsOn: <ND extends Record<string, Task | CanisterConstructor>>(
     deps: ND,
   ) => CanisterBuilder<
     I,

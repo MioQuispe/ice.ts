@@ -631,7 +631,7 @@ export const NNSCyclesMinting = (
     },
   )
   // TODO:
-  // .deps({
+  // .dependsOn({
   //   NNSGovernance,
   //   NNSLedger,
   // })

@@ -41,7 +41,7 @@ export const NFIDDelegationFactory = (
       ),
     }
   })
-    .deps({
+    .dependsOn({
       NFIDIdentityManager,
     })
     .install(async ({ ctx, mode }) => {

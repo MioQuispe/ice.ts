@@ -403,7 +403,7 @@ const makeCustomCanisterBuilder = <
     },
     // Here we extract the real tasks from the deps
     // is it enough to compare symbols?
-    deps: (dependencies) => {
+    dependsOn: (dependencies) => {
       // TODO: check that its a canister builder
       // const dependencies = Object.fromEntries(
       //   Object.entries(deps).map(([key, dep]) => {
@@ -746,7 +746,7 @@ const test = customCanister(async () => ({
 // // // }
 
 const t = test
-  .deps({ 
+  .dependsOn({ 
     asd: test.done().children.install 
   })
   .provide({

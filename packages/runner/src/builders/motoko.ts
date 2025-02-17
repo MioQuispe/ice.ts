@@ -182,7 +182,7 @@ export const makeMotokoBuilder = <
       )
     },
 
-    deps: (dependencies) => {
+    dependsOn: (dependencies) => {
       // TODO: check that its a canister builder
       const finalDeps = Object.fromEntries(
         Object.entries(dependencies).map(([key, dep]) => {
