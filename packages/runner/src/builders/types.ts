@@ -199,8 +199,8 @@ export interface CanisterBuilder<
   create: (
     canisterConfigOrFn:
       | Config
-      | ((ctx: TaskCtxShape) => Config)
-      | ((ctx: TaskCtxShape) => Promise<Config>),
+      | ((args: { ctx: TaskCtxShape }) => Config)
+      | ((args: { ctx: TaskCtxShape }) => Promise<Config>),
   ) => CanisterBuilder<I, S, D, P, Config>
   // install: (
   //   installArgsOrFn:
@@ -228,8 +228,8 @@ export interface CanisterBuilder<
   build: (
     canisterConfigOrFn:
       | Config
-      | ((ctx: TaskCtxShape) => Config)
-      | ((ctx: TaskCtxShape) => Promise<Config>),
+      | ((args: { ctx: TaskCtxShape }) => Config)
+      | ((args: { ctx: TaskCtxShape }) => Promise<Config>),
   ) => CanisterBuilder<I, S, D, P, Config>
   // TODO: allow passing in a CanisterScope and extract from it
   dependsOn: <ND extends Record<string, Task | CanisterConstructor>>(

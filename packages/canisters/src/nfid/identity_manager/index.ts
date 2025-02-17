@@ -23,11 +23,11 @@ type InitArgs = []
 const canisterName = "identity_manager"
 
 export const NFIDIdentityManager = (
-  initArgsOrFn?: NFIDIdentityManagerInitArgs | ((ctx: TaskCtxShape) => NFIDIdentityManagerInitArgs),
+  initArgsOrFn?: NFIDIdentityManagerInitArgs | ((args: { ctx: TaskCtxShape }) => NFIDIdentityManagerInitArgs),
 ) => {
-  return customCanister<InitArgs, _SERVICE>((ctx) => {
+  return customCanister<InitArgs, _SERVICE>(({ ctx }) => {
     const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
       canisterId: initArgs?.canisterId ?? Ids.local,
       wasm: path.resolve(__dirname, `./nfid/${canisterName}/${canisterName}.wasm`),
@@ -37,7 +37,7 @@ export const NFIDIdentityManager = (
       // TODO: optional cap canister?
       // dependencies: [...providers],
     const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     // TODO: proper types
     return []
   })

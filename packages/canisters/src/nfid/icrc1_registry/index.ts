@@ -25,11 +25,11 @@ type InitArgs = {
 export const NFIDIcrc1Registry = (
   initArgsOrFn?:
     | NFIDIcrc1RegistryInitArgs
-    | ((ctx: TaskCtxShape) => NFIDIcrc1RegistryInitArgs),
+    | ((args: { ctx: TaskCtxShape }) => NFIDIcrc1RegistryInitArgs),
 ) =>
-  customCanister<[InitArgs], _SERVICE>((ctx) => {
+  customCanister<[InitArgs], _SERVICE>(({ ctx }) => {
     const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
       canisterId: initArgs?.canisterId,
       wasm: path.resolve(
@@ -46,7 +46,7 @@ export const NFIDIcrc1Registry = (
     .install(async ({ ctx, mode }) => {
       // TODO: Add installation logic if needed.
       const initArgs =
-        typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+        typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
       return [
         {
           im_canister: Opt<string>(

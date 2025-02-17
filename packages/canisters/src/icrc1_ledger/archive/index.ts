@@ -11,11 +11,11 @@ const canisterName = "icrc1_ledger_archive"
 export const ICRC1Archive = (
   initArgsOrFn:
     | ICRC1ArchiveInitArgs
-    | ((ctx: TaskCtxShape) => ICRC1ArchiveInitArgs),
+    | ((args: { ctx: TaskCtxShape }) => ICRC1ArchiveInitArgs),
 ) => {
-  return customCanister<[ArchiveArg], _SERVICE>((ctx) => {
+  return customCanister<[ArchiveArg], _SERVICE>(({ ctx }) => {
     const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
       canisterId: initArgs.canisterId,
       wasm: path.resolve(__dirname, `./${canisterName}/${canisterName}.wasm`),

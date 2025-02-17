@@ -19,13 +19,13 @@ const canisterName = "candid_ui"
 export const CandidUI = (
   initArgsOrFn?:
     | InitArgs
-    | ((ctx: TaskCtxShape) => InitArgs)
-    | ((ctx: TaskCtxShape) => Promise<InitArgs>),
+    | ((args: { ctx: TaskCtxShape }) => InitArgs)
+    | ((args: { ctx: TaskCtxShape }) => Promise<InitArgs>),
 ) => {
-  const result = customCanister<CanisterInitArgs, _SERVICE>(async (ctx) => {
+  const result = customCanister<CanisterInitArgs, _SERVICE>(async ({ ctx }) => {
     let initArgs: InitArgs
     const initResult =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     if (initResult instanceof Promise) {
       initArgs = await initResult
     } else {
@@ -40,7 +40,7 @@ export const CandidUI = (
   .install(async ({ ctx, mode }) => {
     let initArgs: InitArgs
     const initResult =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     if (initResult instanceof Promise) {
       initArgs = await initResult
     } else {

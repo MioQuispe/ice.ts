@@ -21,7 +21,7 @@ const LedgerIds = {
 
 const canisterName = "ledger"
 export const Ledger = (
-  initArgsOrFn: InitArgs | ((ctx: TaskCtxShape) => InitArgs),
+  initArgsOrFn: InitArgs | ((args: { ctx: TaskCtxShape }) => InitArgs),
 ) => {
   // initial_values: [
   //   [
@@ -56,7 +56,7 @@ export const Ledger = (
   }).install(async ({ mode, ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
-        ? initArgsOrFn(ctx)
+        ? initArgsOrFn({ ctx })
         : initArgsOrFn
     const transformedValues = Object.keys(initArgs.initial_values).map(
       (accountId) => {

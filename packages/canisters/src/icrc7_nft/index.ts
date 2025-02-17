@@ -26,11 +26,11 @@ type WrapperInitArgs = {
 
 // TODO: implement this
 export const ICRC7NFT = (
-  initArgsOrFn: WrapperInitArgs | ((ctx: TaskCtxShape) => WrapperInitArgs),
+  initArgsOrFn: WrapperInitArgs | ((args: { ctx: TaskCtxShape }) => WrapperInitArgs),
 ) => {
-  return customCanister<[ICRC7NFTInitArgs], _SERVICE>((ctx) => {
+  return customCanister<[ICRC7NFTInitArgs], _SERVICE>(({ ctx }) => {
     const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
       canisterId: initArgs.canisterId,
       wasm: path.resolve(__dirname, `./${canisterName}/${canisterName}.wasm`),
@@ -38,7 +38,7 @@ export const ICRC7NFT = (
     }
   }).install(async ({ ctx, mode }) => {
     const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     //   return [
     //     IDL.Record({
     //       'icrc3_args' : InitArgs,

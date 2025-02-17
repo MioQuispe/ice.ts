@@ -103,7 +103,9 @@ interface TaskBuilderInitial<
   >
   run<Output>(
     fn: (
-      ctx: TaskCtxShape<ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>>,
+      args: {
+        ctx: TaskCtxShape<ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>>,
+      }
     ) => Promise<Output>,
   ): TaskBuilderRun<
     I,
@@ -146,7 +148,9 @@ interface TaskBuilderProvide<
   run
   <Output>(
     fn: (
-      ctx: TaskCtxShape<ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>>,
+      args: {
+        ctx: TaskCtxShape<ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>>,
+      }
     ) => Promise<Output>,
   ): TaskBuilderRun<
     I,
@@ -192,7 +196,9 @@ function normalizeDepsMap(
 function runTask<I, T extends Task, D extends Record<string, Task>, P extends Record<string, Task>, Output>(
   task: T,
   fn: (
-    ctx: TaskCtxShape<ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>>,
+    args: {
+      ctx: TaskCtxShape<ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>>,
+    }
   ) => Promise<Output>,
 ): TaskBuilderRun<
   I,
@@ -213,7 +219,7 @@ function runTask<I, T extends Task, D extends Record<string, Task>, P extends Re
         dependencies,
       } as TaskCtxShape<ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>>
       const result = yield* Effect.tryPromise({
-        try: () => fn(ctx),
+        try: () => fn({ ctx }),
         catch: (error) => {
           console.error("Error executing task:", error)
           return error instanceof Error ? error : new Error(String(error))
@@ -400,7 +406,7 @@ const task2 = task("description of task2")
     depC: canScope,
     depB: numberTask,
   })
-  .run(async (ctx) => {
+  .run(async ({ ctx }) => {
     // use provided dependencies from ctx
     ctx.dependencies.depC
     return "hello"

@@ -66,8 +66,8 @@ type MotokoCanisterConfig = {
 
 const makeMotokoBuildTask = (
   canisterConfigOrFn:
-    | ((ctx: TaskCtxShape) => Promise<MotokoCanisterConfig>)
-    | ((ctx: TaskCtxShape) => MotokoCanisterConfig)
+    | ((args: { ctx: TaskCtxShape }) => Promise<MotokoCanisterConfig>)
+    | ((args: { ctx: TaskCtxShape }) => MotokoCanisterConfig)
     | MotokoCanisterConfig,
 ) => {
   return {
@@ -288,8 +288,8 @@ export const makeMotokoBuilder = <
 export const motokoCanister = <I = unknown, _SERVICE = unknown>(
   canisterConfigOrFn:
     | MotokoCanisterConfig
-    | ((ctx: TaskCtxShape) => MotokoCanisterConfig)
-    | ((ctx: TaskCtxShape) => Promise<MotokoCanisterConfig>),
+    | ((args: { ctx: TaskCtxShape }) => MotokoCanisterConfig)
+    | ((args: { ctx: TaskCtxShape }) => Promise<MotokoCanisterConfig>),
 ) => {
   // TODO: maybe just the return value of install? like a cleanup
   // delete: {

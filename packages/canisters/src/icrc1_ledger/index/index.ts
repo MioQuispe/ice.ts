@@ -11,11 +11,11 @@ const canisterName = "icrc1_ledger_index"
 export const ICRC1Index = (
   initArgsOrFn:
     | ICRC1IndexInitArgs
-    | ((ctx: TaskCtxShape) => ICRC1IndexInitArgs),
+    | ((args: { ctx: TaskCtxShape }) => ICRC1IndexInitArgs),
 ) => {
-  return customCanister<[IndexArg], _SERVICE>((ctx) => {
+  return customCanister<[IndexArg], _SERVICE>(({ ctx }) => {
     const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
       canisterId: initArgs.canisterId,
       wasm: path.resolve(__dirname, `./${canisterName}/${canisterName}.wasm`),

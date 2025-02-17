@@ -31,16 +31,16 @@ type CapBucketInitArgs = {
 }
 
 export const CapBucket = (
-  initArgsOrFn: CapBucketInitArgs | ((ctx: TaskCtxShape) => CapBucketInitArgs),
+  initArgsOrFn: CapBucketInitArgs | ((args: { ctx: TaskCtxShape }) => CapBucketInitArgs),
 ) => {
   // const {
   //   contract,  // Id   // Principal probably?
   //   offset = 0, // u64,
   //   next_canisters = [0], // Vec<BucketId>,
   // } = args
-  return customCanister<[], CAP_BUCKET_SERVICE>((ctx) => {
+  return customCanister<[], CAP_BUCKET_SERVICE>(({ ctx }) => {
     const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
       candid: path.resolve(__dirname, "./cap/cap-bucket/cap-bucket.did"),
       wasm: path.resolve(__dirname, "./cap/cap-bucket/cap-bucket.wasm"),
@@ -48,7 +48,7 @@ export const CapBucket = (
     }
   }).install(async ({ ctx, mode }) => {
     const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return [
       // args: [{
       //   contract, // TokenContractId,
@@ -83,15 +83,15 @@ type CapRootInitArgs = {
 }
 
 export const CapRoot = (
-  initArgsOrFn: CapRootInitArgs | ((ctx: TaskCtxShape) => CapRootInitArgs),
+  initArgsOrFn: CapRootInitArgs | ((args: { ctx: TaskCtxShape }) => CapRootInitArgs),
 ) => {
   // const {
   //   contract,
   //   writers,
   // } = args
-  return customCanister<[], CAP_ROOT_SERVICE>((ctx) => {
+  return customCanister<[], CAP_ROOT_SERVICE>(({ ctx }) => {
     const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
       candid: path.resolve(__dirname, "./cap/cap-root/cap-root.did"),
       wasm: path.resolve(__dirname, "./cap/cap-root/cap-root.wasm"),
@@ -138,12 +138,12 @@ const capRouter = customCanister<[], CAP_ROUTER_SERVICE>({
 })
 
 export const CapRouter = (
-  initArgsOrFn: CapRouterInitArgs | ((ctx: TaskCtxShape) => CapRouterInitArgs),
+  initArgsOrFn: CapRouterInitArgs | ((args: { ctx: TaskCtxShape }) => CapRouterInitArgs),
 ) => {
   return capRouter
-    .create((ctx) => {
+    .create(({ ctx }) => {
       const initArgs =
-        typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+        typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
       return {
         candid: path.resolve(__dirname, "./cap/cap-router/cap-router.did"),
         wasm: path.resolve(__dirname, "./cap/cap-router/cap-router.wasm"),

@@ -58,13 +58,13 @@ type NNSDappInitArgs = []
 export const NNSDapp = (
   initArgsOrFn:
     | NNSDappInitArgs
-    | ((ctx: TaskCtxShape) => NNSDappInitArgs)
-    | ((ctx: TaskCtxShape) => Promise<NNSDappInitArgs>),
+    | ((args: { ctx: TaskCtxShape }) => NNSDappInitArgs)
+    | ((args: { ctx: TaskCtxShape }) => Promise<NNSDappInitArgs>),
 ) => {
-  return customCanister<[], NNSDappService>(async (ctx) => {
+  return customCanister<[], NNSDappService>(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
-        ? await initArgsOrFn(ctx)
+        ? await initArgsOrFn({ ctx })
         : initArgsOrFn
     return {
       canisterId: NNSDappIds.local,
@@ -74,7 +74,7 @@ export const NNSDapp = (
   }).install(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
-        ? await initArgsOrFn(ctx)
+        ? await initArgsOrFn({ ctx })
         : initArgsOrFn
     // Here we return an empty installation argument list.
     return []
@@ -96,14 +96,14 @@ export const NNSSNSWasm = (
   // TODO: fix
   initArgsOrFn?:
     | SnsWasmCanisterInitPayload
-    | ((ctx: TaskCtxShape) => SnsWasmCanisterInitPayload)
-    | ((ctx: TaskCtxShape) => Promise<SnsWasmCanisterInitPayload>),
+    | ((args: { ctx: TaskCtxShape }) => SnsWasmCanisterInitPayload)
+    | ((args: { ctx: TaskCtxShape }) => Promise<SnsWasmCanisterInitPayload>),
 ) => {
   return customCanister<[SnsWasmCanisterInitPayload], NNSSNSWasmService>(
-    async (ctx) => {
+    async ({ ctx }) => {
       const initArgs =
         typeof initArgsOrFn === "function"
-          ? await initArgsOrFn(ctx)
+          ? await initArgsOrFn({ ctx })
           : initArgsOrFn
       return {
         canisterId: NNSSNSWasmIds.local,
@@ -114,7 +114,7 @@ export const NNSSNSWasm = (
   ).install(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
-        ? await initArgsOrFn(ctx)
+        ? await initArgsOrFn({ ctx })
         : initArgsOrFn
 
     return [
@@ -183,13 +183,13 @@ type NNSRootInitArgs = []
 export const NNSRoot = (
   initArgsOrFn:
     | NNSRootInitArgs
-    | ((ctx: TaskCtxShape) => NNSRootInitArgs)
-    | ((ctx: TaskCtxShape) => Promise<NNSRootInitArgs>),
+    | ((args: { ctx: TaskCtxShape }) => NNSRootInitArgs)
+    | ((args: { ctx: TaskCtxShape }) => Promise<NNSRootInitArgs>),
 ) => {
-  return customCanister<[], NNSRootService>(async (ctx) => {
+  return customCanister<[], NNSRootService>(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
-        ? await initArgsOrFn(ctx)
+        ? await initArgsOrFn({ ctx })
         : initArgsOrFn
     return {
       canisterId: NNSRootIds.local,
@@ -199,7 +199,7 @@ export const NNSRoot = (
   }).install(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
-        ? await initArgsOrFn(ctx)
+        ? await initArgsOrFn({ ctx })
         : initArgsOrFn
     return []
   })
@@ -280,14 +280,14 @@ type NNSRegistryInitArgs = []
 export const NNSRegistry = (
   initArgsOrFn:
     | NNSRegistryInitArgs
-    | ((ctx: TaskCtxShape) => NNSRegistryInitArgs)
-    | ((ctx: TaskCtxShape) => Promise<NNSRegistryInitArgs>),
+    | ((args: { ctx: TaskCtxShape }) => NNSRegistryInitArgs)
+    | ((args: { ctx: TaskCtxShape }) => Promise<NNSRegistryInitArgs>),
 ) => {
   return customCanister<[RegistryCanisterInitPayload], NNSRegistryService>(
-    async (ctx) => {
+    async ({ ctx }) => {
       const initArgs =
         typeof initArgsOrFn === "function"
-          ? await initArgsOrFn(ctx)
+          ? await initArgsOrFn({ ctx })
           : initArgsOrFn
       return {
         canisterId: NNSRegistryIds.local,
@@ -298,7 +298,7 @@ export const NNSRegistry = (
   ).install(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
-        ? await initArgsOrFn(ctx)
+        ? await initArgsOrFn({ ctx })
         : initArgsOrFn
     // return undefined
     // return [`
@@ -353,14 +353,14 @@ type NNSGovernanceInitArgs = []
 export const NNSGovernance = (
   initArgsOrFn:
     | NNSGovernanceInitArgs
-    | ((ctx: TaskCtxShape) => NNSGovernanceInitArgs)
-    | ((ctx: TaskCtxShape) => Promise<NNSGovernanceInitArgs>),
+    | ((args: { ctx: TaskCtxShape }) => NNSGovernanceInitArgs)
+    | ((args: { ctx: TaskCtxShape }) => Promise<NNSGovernanceInitArgs>),
 ) => {
   return customCanister<[GovernanceInitArgs], NNSGovernanceService>(
-    async (ctx) => {
+    async ({ ctx }) => {
       const initArgs =
         typeof initArgsOrFn === "function"
-          ? await initArgsOrFn(ctx)
+          ? await initArgsOrFn({ ctx })
           : initArgsOrFn
       return {
         canisterId: NNSGovernanceIds.local,
@@ -377,7 +377,7 @@ export const NNSGovernance = (
   ).install(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
-        ? await initArgsOrFn(ctx)
+        ? await initArgsOrFn({ ctx })
         : initArgsOrFn
     // return null
     return [
@@ -514,13 +514,13 @@ const NNSLedgerIds = {
 export const NNSLedger = (
   initArgsOrFn:
     | LedgerInitArgs
-    | ((ctx: TaskCtxShape) => LedgerInitArgs)
-    | ((ctx: TaskCtxShape) => Promise<LedgerInitArgs>),
+    | ((args: { ctx: TaskCtxShape }) => LedgerInitArgs)
+    | ((args: { ctx: TaskCtxShape }) => Promise<LedgerInitArgs>),
 ) => {
-  return customCanister<[LedgerInitArgs], NNSLedgerService>(async (ctx) => {
+  return customCanister<[LedgerInitArgs], NNSLedgerService>(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
-        ? await initArgsOrFn(ctx)
+        ? await initArgsOrFn({ ctx })
         : initArgsOrFn
     return {
       canisterId: NNSLedgerIds.local,
@@ -530,7 +530,7 @@ export const NNSLedger = (
   }).install(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
-        ? await initArgsOrFn(ctx)
+        ? await initArgsOrFn({ ctx })
         : initArgsOrFn
     // TODO:
     return [initArgs]
@@ -551,13 +551,13 @@ type NNSGenesisTokenInitArgs = []
 export const NNSGenesisToken = (
   initArgsOrFn:
     | NNSGenesisTokenInitArgs
-    | ((ctx: TaskCtxShape) => NNSGenesisTokenInitArgs)
-    | ((ctx: TaskCtxShape) => Promise<NNSGenesisTokenInitArgs>),
+    | ((args: { ctx: TaskCtxShape }) => NNSGenesisTokenInitArgs)
+    | ((args: { ctx: TaskCtxShape }) => Promise<NNSGenesisTokenInitArgs>),
 ) => {
-  return customCanister<Uint8Array, NNSGenesisTokenService>(async (ctx) => {
+  return customCanister<Uint8Array, NNSGenesisTokenService>(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
-        ? await initArgsOrFn(ctx)
+        ? await initArgsOrFn({ ctx })
         : initArgsOrFn
     return {
       canisterId: NNSGenesisTokenIds.local,
@@ -574,7 +574,7 @@ export const NNSGenesisToken = (
   }).install(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
-        ? await initArgsOrFn(ctx)
+        ? await initArgsOrFn({ ctx })
         : initArgsOrFn
     // We need to serialize it to protobuf format
     const exampleGtc: Gtc = {
@@ -608,14 +608,14 @@ type NNSCyclesMintingInitArgs = []
 export const NNSCyclesMinting = (
   initArgsOrFn:
     | NNSCyclesMintingInitArgs
-    | ((ctx: TaskCtxShape) => NNSCyclesMintingInitArgs)
-    | ((ctx: TaskCtxShape) => Promise<NNSCyclesMintingInitArgs>),
+    | ((args: { ctx: TaskCtxShape }) => NNSCyclesMintingInitArgs)
+    | ((args: { ctx: TaskCtxShape }) => Promise<NNSCyclesMintingInitArgs>),
 ) => {
   return customCanister<[Opt<NNSCyclesInitArgs>], NNSCyclesMintingService>(
-    async (ctx) => {
+    async ({ ctx }) => {
       const initArgs =
         typeof initArgsOrFn === "function"
-          ? await initArgsOrFn(ctx)
+          ? await initArgsOrFn({ ctx })
           : initArgsOrFn
       return {
         canisterId: NNSCyclesMintingIds.local,
@@ -638,7 +638,7 @@ export const NNSCyclesMinting = (
   .install(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
-        ? await initArgsOrFn(ctx)
+        ? await initArgsOrFn({ ctx })
         : initArgsOrFn
     // TODO:
 //     export interface AccountIdentifier { 'bytes' : Array<number> }
@@ -694,13 +694,13 @@ type NNSLifelineInitArgs = []
 export const NNSLifeline = (
   initArgsOrFn:
     | NNSLifelineInitArgs
-    | ((ctx: TaskCtxShape) => NNSLifelineInitArgs)
-    | ((ctx: TaskCtxShape) => Promise<NNSLifelineInitArgs>),
+    | ((args: { ctx: TaskCtxShape }) => NNSLifelineInitArgs)
+    | ((args: { ctx: TaskCtxShape }) => Promise<NNSLifelineInitArgs>),
 ) => {
-  return customCanister<[], NNSLifelineService>(async (ctx) => {
+  return customCanister<[], NNSLifelineService>(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
-        ? await initArgsOrFn(ctx)
+        ? await initArgsOrFn({ ctx })
         : initArgsOrFn
     return {
       canisterId: NNSLifelineIds.local,
@@ -710,7 +710,7 @@ export const NNSLifeline = (
   }).install(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
-        ? await initArgsOrFn(ctx)
+        ? await initArgsOrFn({ ctx })
         : initArgsOrFn
     return []
   })

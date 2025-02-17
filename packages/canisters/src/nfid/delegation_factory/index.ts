@@ -23,12 +23,12 @@ const canisterName = "delegation_factory"
 export const NFIDDelegationFactory = (
   initArgsOrFn?:
     | NFIDDelegationFactoryInitArgs
-    | ((ctx: TaskCtxShape) => NFIDDelegationFactoryInitArgs),
+    | ((args: { ctx: TaskCtxShape }) => NFIDDelegationFactoryInitArgs),
 ) => {
   //   return customCanister<[Opt<InitArgs>], _SERVICE>((ctx) => {
-  return customCanister<any, _SERVICE>((ctx) => {
+  return customCanister<any, _SERVICE>(({ ctx }) => {
     const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
       canisterId: initArgs?.canisterId,
       wasm: path.resolve(
@@ -48,7 +48,7 @@ export const NFIDDelegationFactory = (
       // TODO: optional cap canister?
       // dependencies: [...providers],
       const initArgs =
-        typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+        typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
       // TODO: proper types
       return [
         // [{}]

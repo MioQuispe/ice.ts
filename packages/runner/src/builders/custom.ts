@@ -223,8 +223,8 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 
 const makeBuildTask = (
   canisterConfigOrFn:
-    | ((ctx: TaskCtxShape) => Promise<CustomCanisterConfig>)
-    | ((ctx: TaskCtxShape) => CustomCanisterConfig)
+    | ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)
+    | ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)
     | CustomCanisterConfig,
 ) => {
   return {
@@ -276,15 +276,15 @@ const makeBuildTask = (
 
 export const resolveConfig = <T>(
   configOrFn:
-    | ((ctx: TaskCtxShape) => Promise<T>)
-    | ((ctx: TaskCtxShape) => T)
+    | ((args: { ctx: TaskCtxShape }) => Promise<T>)
+    | ((args: { ctx: TaskCtxShape }) => T)
     | T,
 ) =>
   Effect.gen(function* () {
     const taskCtx = yield* TaskCtx
     if (typeof configOrFn === "function") {
-      const configFn = configOrFn as (ctx: TaskCtxShape) => Promise<T> | T
-      const configResult = configFn(taskCtx)
+      const configFn = configOrFn as (args: { ctx: TaskCtxShape }) => Promise<T> | T
+      const configResult = configFn({ ctx: taskCtx })
       if (configResult instanceof Promise) {
         return yield* Effect.tryPromise({
           try: () => configResult,
@@ -305,8 +305,8 @@ type CreateConfig = {
 }
 export const makeCreateTask = (
   canisterConfigOrFn:
-    | ((ctx: TaskCtxShape) => Promise<CreateConfig>)
-    | ((ctx: TaskCtxShape) => CreateConfig)
+    | ((args: { ctx: TaskCtxShape }) => Promise<CreateConfig>)
+    | ((args: { ctx: TaskCtxShape }) => CreateConfig)
     | CreateConfig,
 ) => {
   const id = Symbol("customCanister/create")
@@ -518,8 +518,8 @@ const makeCustomCanisterBuilder = <
 // TODO: warn about context if not provided
 export const customCanister = <I = unknown, _SERVICE = unknown>(
   canisterConfigOrFn:
-    | ((ctx: TaskCtxShape) => Promise<CustomCanisterConfig>)
-    | ((ctx: TaskCtxShape) => CustomCanisterConfig)
+    | ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)
+    | ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)
     | CustomCanisterConfig,
 ) => {
   const initialScope = {

@@ -27,7 +27,7 @@ type InitArgs = {
   assignedUserNumberRange: [bigint, bigint]
 }
 export const InternetIdentity = (
-  initArgsOrFn: InitArgs | ((ctx: TaskCtxShape) => InitArgs),
+  initArgsOrFn: InitArgs | ((args: { ctx: TaskCtxShape }) => InitArgs),
 ) => {
   return customCanister<CanisterInitArgs, _SERVICE>({
       canisterId: InternetIdentityIds.local,
@@ -43,7 +43,7 @@ export const InternetIdentity = (
     .install(async ({ mode, ctx }) => { // TODO: better signature
       const initArgs =
         typeof initArgsOrFn === "function"
-          ? initArgsOrFn(ctx)
+          ? initArgsOrFn({ ctx })
           : initArgsOrFn
       // TODO: automatic types for actor?
       // TODO: do we need to install the canister here also?

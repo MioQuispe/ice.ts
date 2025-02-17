@@ -14,11 +14,11 @@ type InitArgs = []
  * @returns A canister instance.
  */
 export const NFIDSignerIc = (
-  initArgsOrFn?: { canisterId?: string } | ((ctx: TaskCtxShape) => { canisterId?: string }),
+  initArgsOrFn?: { canisterId?: string } | ((args: { ctx: TaskCtxShape }) => { canisterId?: string }),
 ) =>
-  customCanister<InitArgs, _SERVICE>((ctx) => {
+  customCanister<InitArgs, _SERVICE>(({ ctx }) => {
     const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn;
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn;
     return {
       canisterId: initArgs?.canisterId,
       wasm: path.resolve(__dirname, `./nfid/${canisterName}/${canisterName}.wasm`),
@@ -27,6 +27,6 @@ export const NFIDSignerIc = (
   }).install(async ({ ctx, mode }) => {
     // TODO: Add installation logic if needed.
     const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return [];
   }); 

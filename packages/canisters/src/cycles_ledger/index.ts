@@ -17,12 +17,12 @@ const CyclesLedgerIds = {
 }
 
 export const CyclesLedger = (
-  initArgsOrFn: WrapperInitArgs | ((ctx: TaskCtxShape) => WrapperInitArgs),
+  initArgsOrFn: WrapperInitArgs | ((args: { ctx: TaskCtxShape }) => WrapperInitArgs),
 ) => {
   // TODO: init args
-  return customCanister<[LedgerArgs], _SERVICE>((ctx) => {
+  return customCanister<[LedgerArgs], _SERVICE>(({ ctx }) => {
     const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
       canisterId: initArgs?.canisterId ?? CyclesLedgerIds.ic,
       type: "custom",

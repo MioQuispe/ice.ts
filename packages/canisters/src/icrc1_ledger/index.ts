@@ -54,11 +54,11 @@ export type ICRC1LedgerInitArgs = {
 export const ICRC1Ledger = (
   initArgsOrFn:
     | ICRC1LedgerInitArgs
-    | ((ctx: TaskCtxShape) => ICRC1LedgerInitArgs),
+    | ((args: { ctx: TaskCtxShape }) => ICRC1LedgerInitArgs),
 ) => {
-  return customCanister<[LedgerArg], _SERVICE>((ctx) => {
+  return customCanister<[LedgerArg], _SERVICE>(({ ctx }) => {
     const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
       canisterId: initArgs.canisterId,
       wasm: path.resolve(__dirname, `./${canisterName}/${canisterName}.wasm`),
@@ -66,7 +66,7 @@ export const ICRC1Ledger = (
     }
   }).install(async ({ ctx }) => {
     const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     const mintingAccount: Account = {
       owner: Principal.from(initArgs.minting_account),
       subaccount: [],

@@ -31,11 +31,11 @@ type NFIDIcrc1OracleInitArgs = {
 export const NFIDIcrc1Oracle = (
   initArgsOrFn?:
     | NFIDIcrc1OracleInitArgs
-    | ((ctx: TaskCtxShape) => NFIDIcrc1OracleInitArgs),
+    | ((args: { ctx: TaskCtxShape }) => NFIDIcrc1OracleInitArgs),
 ) =>
-  customCanister<[Opt<InitArgs>], _SERVICE>((ctx) => {
+  customCanister<[Opt<InitArgs>], _SERVICE>(({ ctx }) => {
     const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
       canisterId: initArgs?.canisterId,
       wasm: path.resolve(__dirname, `./nfid/${canisterName}/${canisterName}.wasm`),
@@ -45,7 +45,7 @@ export const NFIDIcrc1Oracle = (
     .dependsOn({ NFIDIdentityManager })
     .install(async ({ ctx, mode }) => {
     const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
+      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
       // TODO: Add installation logic if needed.
       const imCanister = Principal.fromText(
         ctx.dependencies.NFIDIdentityManager.canisterId,
