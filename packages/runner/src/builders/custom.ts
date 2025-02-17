@@ -68,7 +68,7 @@ export const makeBindingsTask = () => {
       const { taskPath } = yield* TaskInfo
       const canisterName = taskPath.split(":").slice(0, -1).join(":")
       yield* canisterBuildGuard
-      yield* Effect.logInfo("Bindings build guard check passed")
+      yield* Effect.logDebug(`Bindings build guard check passed for ${canisterName}`)
 
       const wasmPath = path.join(
         appDir,
@@ -82,10 +82,10 @@ export const makeBindingsTask = () => {
         canisterName,
         `${canisterName}.did`,
       )
-      yield* Effect.logInfo("Artifact paths", { wasmPath, didPath })
+      yield* Effect.logDebug("Artifact paths", { wasmPath, didPath })
 
       yield* generateDIDJS(canisterName, didPath)
-      yield* Effect.logInfo("Generated DID JS")
+      yield* Effect.logDebug(`Generated DID JS for ${canisterName}`)
     }),
     description: "some description",
     tags: [Tags.CANISTER, Tags.BINDINGS],
@@ -108,7 +108,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
     computeCacheKey: Option.none(),
     input: Option.none(),
     effect: Effect.gen(function* () {
-      yield* Effect.logInfo("Starting custom canister installation")
+      yield* Effect.logDebug("Starting custom canister installation")
       const taskCtx = yield* TaskCtx
       const { dependencies } = yield* DependencyResults
 
@@ -117,18 +117,18 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
       // TODO: this is a hack, we should have a better way to handle this
       const onlyCanisterName = canisterName.split(":").slice(-1)[0]
       const noEncodeArgs = onlyCanisterName === "NNSGenesisToken"
-      yield* Effect.logInfo("No encode args", { noEncodeArgs, canisterName })
+      yield* Effect.logDebug("No encode args", { noEncodeArgs, canisterName })
       //////////////////////////////////////////////////////////
 
       const canisterId = yield* loadCanisterId(taskPath)
-      yield* Effect.logInfo("Loaded canister ID", { canisterId })
+      yield* Effect.logDebug("Loaded canister ID", { canisterId })
 
       const path = yield* Path.Path
       const fs = yield* FileSystem.FileSystem
       const appDir = yield* Config.string("APP_DIR")
 
       yield* canisterBuildGuard
-      yield* Effect.logInfo("Build guard check passed")
+      yield* Effect.logDebug("Build guard check passed")
 
       const didJSPath = path.join(
         appDir,
@@ -141,7 +141,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
         try: () => import(didJSPath),
         catch: Effect.fail,
       })
-      yield* Effect.logInfo("Loaded canisterDID", { canisterDID })
+      yield* Effect.logDebug("Loaded canisterDID", { canisterDID })
 
       let installArgs = [] as unknown as I
       const finalCtx = {
@@ -149,7 +149,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
         dependencies,
       } as TaskCtxShape<P>
       if (installArgsFn) {
-        yield* Effect.logInfo("Executing install args function")
+        yield* Effect.logDebug("Executing install args function")
 
         const installFn = installArgsFn as (args: {
           ctx: TaskCtxShape<P>
@@ -166,7 +166,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
             try: () => installResult,
             catch: (error) => {
               // TODO: proper error handling
-              console.error("Error resolving config function:", error)
+              // console.error("Error executing install args function:", error)
               return error instanceof Error ? error : new Error(String(error))
             },
           })
@@ -176,10 +176,10 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
         //   try: () => fn({ ctx: finalCtx, mode: "install" }),
         //   catch: Effect.fail, // TODO: install args fail? proper error handling
         // })
-        yield* Effect.logInfo("Install args generated", { args: installArgs })
+        yield* Effect.logDebug("Install args generated", { args: installArgs })
       }
 
-      yield* Effect.logInfo("Encoding args", { installArgs, canisterDID })
+      yield* Effect.logDebug("Encoding args", { installArgs, canisterDID })
       const encodedArgs = noEncodeArgs
         ? (installArgs as unknown as Uint8Array)
         : yield* Effect.try({
@@ -192,7 +192,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
           )
         },
       })
-      yield* Effect.logInfo("Args encoded successfully")
+      yield* Effect.logDebug("Args encoded successfully")
 
       const wasmPath = path.join(
         appDir,
@@ -205,7 +205,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
         canisterId,
         wasmPath,
       })
-      yield* Effect.logInfo("Canister installed successfully")
+      yield* Effect.logDebug(`Canister ${canisterName} installed successfully`)
       const actor = yield* createActor<_SERVICE>({
         canisterId,
         canisterDID,
@@ -362,7 +362,7 @@ const makeCustomCanisterBuilder = <
         updatedScope,
       )
     },
-    install: (installArgsFn) => {
+    installArgs: (installArgsFn) => {
       // TODO: is this a flag, arg, or what?
       const mode = "install"
       // TODO: passing in I makes the return type: any
@@ -755,7 +755,7 @@ const t = test
     // asd2: test._scope.children.install,
   })
   // ._scope.children
-  .install(async ({ ctx, mode }) => {
+  .installArgs(async ({ ctx, mode }) => {
     // TODO: allow chaining builders with crystal.customCanister() 
     // to pass in context?
     // ctx.users.default

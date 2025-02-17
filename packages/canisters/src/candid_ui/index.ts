@@ -37,7 +37,7 @@ export const CandidUI = (
       candid: path.resolve(__dirname, `./${canisterName}/${canisterName}.did`),
     }
   })
-  .install(async ({ ctx, mode }) => {
+  .installArgs(async ({ ctx, mode }) => {
     let initArgs: InitArgs
     const initResult =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn

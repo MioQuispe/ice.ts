@@ -12,6 +12,7 @@ import type { ManagementActor } from "../types/types.js"
 import type { PlatformError } from "@effect/platform/Error"
 import os from "node:os"
 import psList from "ps-list"
+import { PocketIc, PocketIcServer } from '@hadronous/pic'
 
 /**
  * Parses a PEM encoded ED25519 private key and returns a SignIdentity.
@@ -188,25 +189,10 @@ export class DfxService extends Context.Tag("DfxService")<
       const dfxPort = yield* Config.string("DFX_PORT")
       const host = yield* Config.string("DFX_HOST")
 
-      const processes = yield* Effect.tryPromise(() =>
-        psList({
-          all: true,
-        })
-      )
-      const dfxProcesses = processes.filter((process) => process.name === "dfx")
-      // yield* Effect.logInfo("dfxProcesses", { dfxProcesses })
-      if (dfxProcesses.length === 0) {
-        // yield* Effect.logInfo("DFX is not running, start DFX")
-        yield* Effect.fail(new DfxError({ message: "DFX is not running" }))
-      //   const command = Command.make(
-      //     "dfx",
-      //     "start",
-      //     "--background",
-      //     "--clean",
-      //   )
-      //   yield* commandExecutor.start(command).pipe(Effect.scoped)
-      }
+      const pic = yield* Effect.tryPromise(() => PocketIcServer.start());
+      const url = pic.getUrl();
 
+      // TODO: remove
       const getCurrentIdentity = () =>
         Effect.gen(function* () {
           const command = Command.make("dfx", "identity", "whoami")
@@ -229,10 +215,10 @@ export class DfxService extends Context.Tag("DfxService")<
         })
 
       const { identity } = yield* getIdentity()
-      const agent = yield* Effect.tryPromise(() => HttpAgent.create({
+      const agent = new HttpAgent({
         host: `${host}:${dfxPort}`,
         identity,
-      }))
+      })
       yield* Effect.tryPromise({
         try: () => agent.fetchRootKey(),
         catch: (err) =>

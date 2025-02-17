@@ -29,7 +29,7 @@ export const DIP721 = (
       wasm: path.resolve(__dirname, `./${canisterName}/${canisterName}.wasm`),
       candid: path.resolve(__dirname, `./${canisterName}/${canisterName}.did`),
     }
-  }).install(async ({ ctx, mode }) => {
+  }).installArgs(async ({ ctx, mode }) => {
       // TODO: optional cap canister?
       // dependencies: [...providers],
     const initArgs =

@@ -40,7 +40,7 @@ export const InternetIdentity = (
         "./internet-identity/internet_identity.wasm",
       ),
     })
-    .install(async ({ mode, ctx }) => { // TODO: better signature
+    .installArgs(async ({ mode, ctx }) => { // TODO: better signature
       const initArgs =
         typeof initArgsOrFn === "function"
           ? initArgsOrFn({ ctx })
@@ -76,6 +76,6 @@ export type InternetIdentityActor = ActorSubclass<
   import("./internet_identity.types")._SERVICE
 >
 
-// InternetIdentity({ owner: "123", assignedUserNumberRange: [1n, 100n] }).install(async ({ mode, ctx }) => {
+// InternetIdentity({ owner: "123", assignedUserNumberRange: [1n, 100n] }).installArgs(async ({ mode, ctx }) => {
 //   return [[{assigned_user_number_range: [1n, 100n]}]]
 // })

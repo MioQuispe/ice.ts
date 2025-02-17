@@ -71,7 +71,7 @@ export const NNSDapp = (
       wasm: path.resolve(__dirname, "./nns/nns-ui/nns.wasm"),
       candid: path.resolve(__dirname, "./nns/nns-ui/nns.did"),
     }
-  }).install(async ({ ctx }) => {
+  }).installArgs(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
         ? await initArgsOrFn({ ctx })
@@ -111,7 +111,7 @@ export const NNSSNSWasm = (
         candid: path.resolve(__dirname, "./nns/nns-sns-wasm/nns-sns-wasm.did"),
       }
     },
-  ).install(async ({ ctx }) => {
+  ).installArgs(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
         ? await initArgsOrFn({ ctx })
@@ -196,7 +196,7 @@ export const NNSRoot = (
       wasm: path.resolve(__dirname, "./nns/nns-root/nns-root.wasm"),
       candid: path.resolve(__dirname, "./nns/nns-root/nns-root.did"),
     }
-  }).install(async ({ ctx }) => {
+  }).installArgs(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
         ? await initArgsOrFn({ ctx })
@@ -295,7 +295,7 @@ export const NNSRegistry = (
         candid: path.resolve(__dirname, "./nns/nns-registry/nns-registry.did"),
       }
     },
-  ).install(async ({ ctx }) => {
+  ).installArgs(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
         ? await initArgsOrFn({ ctx })
@@ -374,7 +374,7 @@ export const NNSGovernance = (
         ),
       }
     },
-  ).install(async ({ ctx }) => {
+  ).installArgs(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
         ? await initArgsOrFn({ ctx })
@@ -527,7 +527,7 @@ export const NNSLedger = (
       wasm: path.resolve(__dirname, "./nns/nns-ledger/nns-ledger.wasm"),
       candid: path.resolve(__dirname, "./nns/nns-ledger/nns-ledger.did"),
     }
-  }).install(async ({ ctx }) => {
+  }).installArgs(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
         ? await initArgsOrFn({ ctx })
@@ -571,7 +571,7 @@ export const NNSGenesisToken = (
       ),
       noEncodeArgs: true,
     }
-  }).install(async ({ ctx }) => {
+  }).installArgs(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
         ? await initArgsOrFn({ ctx })
@@ -635,7 +635,7 @@ export const NNSCyclesMinting = (
   //   NNSGovernance,
   //   NNSLedger,
   // })
-  .install(async ({ ctx }) => {
+  .installArgs(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
         ? await initArgsOrFn({ ctx })
@@ -707,7 +707,7 @@ export const NNSLifeline = (
       wasm: path.resolve(__dirname, "./nns/nns-lifeline/nns-lifeline.wasm"),
       candid: path.resolve(__dirname, "./nns/nns-lifeline/nns-lifeline.did"),
     }
-  }).install(async ({ ctx }) => {
+  }).installArgs(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
         ? await initArgsOrFn({ ctx })

@@ -36,7 +36,7 @@ export const ICRC7NFT = (
       wasm: path.resolve(__dirname, `./${canisterName}/${canisterName}.wasm`),
       candid: path.resolve(__dirname, `./${canisterName}/${canisterName}.did`),
     }
-  }).install(async ({ ctx, mode }) => {
+  }).installArgs(async ({ ctx, mode }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     //   return [

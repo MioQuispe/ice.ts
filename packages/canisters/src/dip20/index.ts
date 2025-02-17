@@ -64,7 +64,7 @@ export const DIP20 = (
   .dependsOn({ CapRouter })
   // .deps({ capRouter: CapRouter.shape })
   // TODO: install ctx should receive the dependencies in its type
-  .install(async ({ ctx, mode }) => {
+  .installArgs(async ({ ctx, mode }) => {
     let initArgs: InitArgs
     const initResult =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn

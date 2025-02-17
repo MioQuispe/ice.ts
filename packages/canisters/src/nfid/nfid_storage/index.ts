@@ -33,7 +33,7 @@ export const NFIDStorage = (
     }
   })
     .dependsOn({ NFIDIdentityManager })
-    .install(async ({ ctx, mode }) => {
+    .installArgs(async ({ ctx, mode }) => {
       // TODO: Add installation logic if needed.
       const initArgs =
         typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn

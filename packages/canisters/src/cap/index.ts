@@ -46,7 +46,7 @@ export const CapBucket = (
       wasm: path.resolve(__dirname, "./cap/cap-bucket/cap-bucket.wasm"),
       canisterId: CapBucketIds.local,
     }
-  }).install(async ({ ctx, mode }) => {
+  }).installArgs(async ({ ctx, mode }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return [
@@ -98,7 +98,7 @@ export const CapRoot = (
       canisterId: initArgs.canisterId ?? CapRootIds.local,
     }
   })
-  // .install(async ({ ctx, mode }) => {
+  // .installArgs(async ({ ctx, mode }) => {
   //   const initArgs =
   //     typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
   //   return [
@@ -150,7 +150,7 @@ export const CapRouter = (
         canisterId: initArgs.canisterId ?? CapRouterIds.local,
       }
     })
-    // .install(async ({ ctx, mode }) => {
+    // .installArgs(async ({ ctx, mode }) => {
     //   const initArgs =
     //     typeof initArgsOrFn === "function" ? initArgsOrFn(ctx) : initArgsOrFn
     //   return []

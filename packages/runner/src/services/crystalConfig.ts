@@ -12,7 +12,7 @@ import { removeBuilders } from "../index.js"
 
 const applyPlugins = (taskTree: TaskTree) =>
   Effect.gen(function* () {
-    yield* Effect.log("Applying plugins...")
+    yield* Effect.logDebug("Applying plugins...")
     const noBuildersTree = removeBuilders(taskTree) as TaskTree
     const transformedTaskTree = deployTaskPlugin(noBuildersTree)
     // yield* Effect.log("Applied deploy plugin", {
@@ -41,7 +41,7 @@ export class CrystalConfigService extends Context.Tag("CrystalConfigService")<
       const appDirectory = yield* fs.realPath(process.cwd())
       // TODO: make this configurable
       const configPath = "crystal.config.ts"
-      yield* Effect.log("Loading config...", {
+      yield* Effect.logDebug("Loading config...", {
         configPath,
         appDirectory,
       })

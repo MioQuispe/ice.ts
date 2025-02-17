@@ -33,7 +33,7 @@ export const NFIDIdentityManager = (
       wasm: path.resolve(__dirname, `./nfid/${canisterName}/${canisterName}.wasm`),
       candid: path.resolve(__dirname, `./nfid/${canisterName}/${canisterName}.did`),
     }
-  }).install(async ({ ctx, mode }) => {
+  }).installArgs(async ({ ctx, mode }) => {
       // TODO: optional cap canister?
       // dependencies: [...providers],
     const initArgs =

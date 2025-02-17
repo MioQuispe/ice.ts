@@ -39,6 +39,7 @@ import type {
 } from "../../types/types.js"
 import { filterTasks, runTaskByPath, TUILayer } from "../../index.js"
 import { TaskList, TaskListItem, type StateOthers } from "./components/Task.js"
+import { FlatScrollableTaskTreeList, ScrollableTaskTreeList } from "./components/scrollable-task-tree-list.js"
 
 export function useSynchronizedState<T>(defaultState: T) {
   const [subscriptionRef] = useState(() =>
@@ -58,7 +59,62 @@ export function useSynchronizedState<T>(defaultState: T) {
   return [value, subscriptionRef] as const
 }
 
-const TaskTreeListItem = <A, E, R, I>({
+/**
+ * ScrollableLogs renders an array of log messages in a scrollable view.
+ * The view automatically adjusts based on the terminal height (with some margin).
+ *
+ * @param logs - An array of log messages (strings)
+ */
+export const ScrollableLogs: React.FC<{ logs: string[] }> = () => {
+  const { stdout } = useStdout()
+  // Determine the viewport height, subtracting a few rows for headers/borders
+  const viewHeight = stdout ? Math.max(stdout.rows - 5, 5) : 10
+  const [scrollOffset, setScrollOffset] = useState(0)
+
+  useInput((_, key) => {
+    if (key.downArrow) {
+      // Only scroll down if there are more items below
+      if (scrollOffset < logs.length - viewHeight) {
+        setScrollOffset((prevOffset) => prevOffset + 1)
+      }
+    }
+    if (key.upArrow) {
+      // Scroll up if not at the top
+      if (scrollOffset > 0) {
+        setScrollOffset((prevOffset) => prevOffset - 1)
+      }
+    }
+  })
+
+  // Slice the logs using the current scroll offset and view height.
+  const visibleLogs = logs.slice(scrollOffset, scrollOffset + viewHeight)
+
+  return (
+    <Box flexDirection="column">
+      {visibleLogs.map((log, idx) => (
+        <Text key={idx}>{log}</Text>
+      ))}
+    </Box>
+  )
+}
+
+export const StaticLogs: React.FC<{ logs: string[]; maxHeight?: number }> = ({ logs, maxHeight }) => {
+  const { stdout } = useStdout();
+  // Use the provided maxHeight if available; if not, use stdout.rows minus a margin.
+  const viewHeight: number = maxHeight ?? (stdout ? Math.max(stdout.rows - 5, 1) : 10);
+  // Slice to only show the last `viewHeight` lines of logs.
+  const visibleLogs: string[] = logs.slice(-viewHeight);
+
+  return (
+    <Box flexDirection="column" height={viewHeight}>
+      {visibleLogs.map((log, index) => (
+        <Text key={index}>{log}</Text>
+      ))}
+    </Box>
+  );
+};
+
+export const TaskTreeListItem = <A, E, R, I>({
   label,
   task,
   path,
@@ -110,21 +166,54 @@ const CrystalContext = createContext<{
   runTask: (path: string[]) => Promise<void>
 } | null>(null)
 
-// TODO: add generic type
+/**
+ * CrystalProvider initializes the runtime environment, including a custom logger.
+ * It also overrides console.log so that any calls to it are captured into the logs state,
+ * allowing StaticLogs to render them.
+ */
 const CrystalProvider: React.FC<{
   children: React.ReactNode
 }> = ({ children }) => {
   const [logs, setLogs] = useState<string[]>([])
+
+  // Override console.log so that log output is captured into our logs state.
+  useEffect(() => {
+    const originalConsoleLog = console.log
+
+    const formatArg = (arg: unknown): string => {
+      if (typeof arg === "bigint") {
+        return arg.toString()
+      }
+      // Try to stringify the argument, handling BigInts gracefully.
+      try {
+        return typeof arg === "string"
+          ? arg
+          : JSON.stringify(arg, (_, value) =>
+              typeof value === "bigint" ? value.toString() : value,
+            )
+      } catch (err) {
+        return String(arg)
+      }
+    }
+
+    console.log = (...args: unknown[]) => {
+      const message = args.map(formatArg).join(" ")
+      setLogs((prevLogs) => [...prevLogs, message])
+    }
+    return () => {
+      console.log = originalConsoleLog
+    }
+  }, [])
+
   const [runtime] = useState(() => {
-    // TODO: create Logger here
+    // Create a logger that additionally pushes its messages into our logs.
     const logger = Logger.make(({ logLevel, message }) => {
-      setLogs((prevLogs) => [...prevLogs, `${logLevel}: ${message}`])
+      setLogs((prevLogs) => [...prevLogs, `${message}`])
     })
     const runtime = ManagedRuntime.make(
       Layer.mergeAll(
         TUILayer,
-        //   Logger.pretty,
-        // TODO: custom logger
+        // Replace the default logger with our custom logger.
         Logger.replace(Logger.defaultLogger, logger),
       ),
     )
@@ -132,7 +221,6 @@ const CrystalProvider: React.FC<{
   })
 
   const runTask = async (path: string[]) => {
-    // TODO: what do we return from this? async await?
     // @ts-ignore
     await runtime.runPromise(runTaskByPath(path.join(":")))
   }
@@ -188,24 +276,6 @@ const TaskTreeList = ({
               {/* <Text>
                 {node.description}
             </Text> */}
-            </>
-          )
-        }
-        if (node._tag === "builder") {
-          return (
-            <>
-              <TaskListItem
-                key={fullPath.join(":")}
-                isExpanded
-                label={fullPath[fullPath.length - 1]}
-              >
-                <TaskTreeList
-                  key={fullPath.join(":")}
-                  taskTree={node.done()}
-                  title={fullPath.join(":")}
-                  path={fullPath}
-                />
-              </TaskListItem>
             </>
           )
         }
@@ -265,6 +335,30 @@ const Logs = () => {
   )
 }
 
+const UI = ({ config, taskTree }: { config: CrystalConfig; taskTree: TaskTree }) => {
+  const { logs } = useCrystal();
+  // Determine the available height for the logs panel.
+  // For example, if you want the logs panel to be 10 rows high:
+  const containerHeight = 35;
+  return (
+    <Box margin={2} rowGap={2} flexDirection="row">
+      <Box width="50%">
+        <FlatScrollableTaskTreeList
+          key="tasks"
+          taskTree={taskTree}
+          title="Available tasks"
+        />
+      </Box>
+      <Box width="50%" height="100%" flexDirection="column">
+        <Text color="blue">Logs</Text>
+        <Box borderStyle="single" width="100%" height={containerHeight}>
+          <StaticLogs logs={logs} maxHeight={containerHeight - 2} />
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
 const CliApp = ({
   config,
   taskTree,
@@ -299,26 +393,7 @@ const CliApp = ({
 
   return (
     <CrystalProvider>
-      <Box margin={2} rowGap={2} flexDirection="row">
-        {/* <Static items={[crystalConfig]}>
-          {(item) => (
-          )}
-        </Static> */}
-        <Box width="50%">
-          <TaskTreeList
-            key={"tasks"}
-            taskTree={taskTree}
-            title="Available tasks"
-          />
-        </Box>
-
-        <Box width="50%" height="100%" flexDirection="column">
-          <Text color="blue">Logs</Text>
-          <Box borderStyle="single" width="100%" height="100%">
-            <Logs />
-          </Box>
-        </Box>
-      </Box>
+      <UI config={config} taskTree={taskTree} />
     </CrystalProvider>
   )
 }

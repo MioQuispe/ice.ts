@@ -28,7 +28,7 @@ export const CyclesWallet = (
       candid: path.resolve(__dirname, "./cycles_wallet/cycles_wallet.did"),
       wasm: path.resolve(__dirname, "./cycles_wallet/cycles_wallet.wasm"),
     }
-  }).install(async ({ ctx, mode }) => {
+  }).installArgs(async ({ ctx, mode }) => {
     return []
   })
 }

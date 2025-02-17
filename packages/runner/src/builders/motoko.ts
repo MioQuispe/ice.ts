@@ -142,7 +142,7 @@ export const makeMotokoBuilder = <
       )
     },
 
-    install: (installArgsFn) => {
+    installArgs: (installArgsFn) => {
       // TODO: is this a flag, arg, or what?
       const mode = "install"
       // we need to inject dependencies again! or they can be overwritten

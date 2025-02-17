@@ -207,6 +207,21 @@ export const createCanister = (canisterId?: string) =>
     const { mgmt, identity } = yield* DfxService
     const createResult = yield* Effect.tryPromise({
       try: () =>
+        // mgmt.create_canister({
+        //   settings: [
+        //     {
+        //       compute_allocation: Opt<bigint>(),
+        //       memory_allocation: Opt<bigint>(),
+        //       freezing_threshold: Opt<bigint>(),
+        //       controllers: Opt<Principal[]>([identity.getPrincipal()]),
+        //       reserved_cycles_limit: Opt<bigint>(),
+        //       log_visibility: Opt<log_visibility>(),
+        //       wasm_memory_limit: Opt<bigint>(),
+        //     },
+        //   ],
+        //   sender_canister_version: Opt<bigint>(0n),
+        // })
+        // TODO: this only works on local
         mgmt.provisional_create_canister_with_cycles({
           settings: [
             {
@@ -301,10 +316,7 @@ export const installCanister = ({
     const isOverSize = wasm.length > maxSize
     const wasmModuleHash = Array.from(sha256.array(wasm))
     // Install code
-    yield* Effect.logInfo("Installing code", {
-      canisterId,
-      wasmPath,
-    })
+    yield* Effect.logInfo(`Installing code for ${canisterId} at ${wasmPath}`)
     if (isOverSize) {
       // TODO: proper error handling if fails?
       const chunkSize = 1048576
@@ -315,11 +327,7 @@ export const installCanister = ({
         const chunk = wasm.slice(i, i + chunkSize)
         const chunkHash = Array.from(sha256.array(chunk))
         chunkHashes.push({ hash: chunkHash })
-        yield* Effect.logInfo("Uploading chunk", {
-          canisterId,
-          chunkSize: chunk.length,
-          offset: i,
-        })
+        yield* Effect.logInfo(`Uploading chunk ${i} of ${wasm.length} for ${canisterId}`)
         yield* Effect.tryPromise({
           try: () =>
             mgmt.upload_chunk({
@@ -403,10 +411,7 @@ export const installCanister = ({
           }),
       })
     }
-    yield* Effect.logInfo("Code installed", { canisterId })
-
-    Effect.log(`Success with wasm bytes length: ${wasm.length}`)
-    Effect.log(`Installed code for ${canisterId}`)
+    yield* Effect.logInfo(`Code installed for ${canisterId}`)
   })
 
 export const compileMotokoCanister = (
@@ -417,10 +422,10 @@ export const compileMotokoCanister = (
   Effect.gen(function* () {
     const moc = yield* Moc
     // Create output directories if they don't exist
-    yield* Effect.log(`Compiling ${canisterName} to ${wasmOutputFilePath}`)
+    yield* Effect.logInfo(`Compiling ${canisterName} to ${wasmOutputFilePath}`)
     // TODO: we need to make dirs if they don't exist
     yield* moc.compile(src, wasmOutputFilePath)
-    yield* Effect.log(
+    yield* Effect.logInfo(
       `Successfully compiled ${src} ${canisterName} outputFilePath: ${wasmOutputFilePath}`,
     )
     return wasmOutputFilePath
@@ -523,10 +528,6 @@ export const findTaskInTaskTree = (
               // TODO: fix
               // @ts-ignore
               const taskName = node.defaultTask.value
-              Effect.log("default task found", {
-                taskName,
-                node,
-              })
               return node.children[taskName] as Task
             }
           }
@@ -642,7 +643,7 @@ export const DefaultsLayer = Layer.mergeAll(
   CrystalConfigService.Live.pipe(Layer.provide(NodeContext.layer)),
 
   // TODO: set with flag?
-  Logger.minimumLogLevel(LogLevel.Debug),
+  Logger.minimumLogLevel(LogLevel.Info),
 
   // Logger.add(customLogger),
   // Layer.effect(fileLogger),
@@ -774,7 +775,7 @@ export const runTask = <A, E, R, I>(
   return Effect.gen(function* () {
     const cache = yield* TaskRegistry
     const taskPath = yield* getTaskPathById(task.id)
-    yield* Effect.log("Running task: ", { taskPath, task, options })
+    yield* Effect.logInfo(`Running task: ${taskPath}`)
 
     // // const cacheKey = task.id
     // // 1. If there is already a cached result, return it immediately.
@@ -783,7 +784,7 @@ export const runTask = <A, E, R, I>(
     // }
     // type DepsSuccessTypes = DependencySuccessTypes<T["dependencies"]>
     const dependencyResults: Record<string, unknown> = {}
-    yield* Effect.log("Running dependencies", {
+    yield* Effect.logDebug("Running dependencies", {
       dependencies: task.provide,
       taskPath: taskPath,
     })
@@ -871,7 +872,7 @@ export const filterTasks = (
 
 export const canistersDeployTask = () =>
   Effect.gen(function* () {
-    yield* Effect.log("Running canisters:deploy task")
+    yield* Effect.logInfo("Running canisters:deploy")
     const { taskTree } = yield* CrystalConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
@@ -881,13 +882,13 @@ export const canistersDeployTask = () =>
         node.tags.includes(Tags.DEPLOY),
     )
     for (const { task, path } of tasksWithPath) {
-      yield* Effect.log(`Running task ${path.join(":")}`)
       yield* runTaskByPath(path.join(":"))
     }
   })
 
 export const canistersCreateTask = () =>
   Effect.gen(function* () {
+    yield* Effect.logInfo("Running canisters:create")
     const { taskTree } = yield* CrystalConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
@@ -905,7 +906,7 @@ export const canistersCreateTask = () =>
 
 export const canistersBuildTask = () =>
   Effect.gen(function* () {
-    yield* Effect.log("Running canisters:build task")
+    yield* Effect.logInfo("Running canisters:build")
     const { taskTree } = yield* CrystalConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
@@ -916,14 +917,13 @@ export const canistersBuildTask = () =>
     )
     for (const { task, path } of tasksWithPath) {
       // TODO: parallelize? topological sort?
-      yield* Effect.log(`Running task ${path.join(":")}`)
       yield* runTaskByPath(path.join(":"))
     }
   })
 
 export const canistersBindingsTask = () =>
   Effect.gen(function* () {
-    yield* Effect.log("Running canisters:bindings task")
+    yield* Effect.logInfo("Running canisters:bindings")
     const { taskTree } = yield* CrystalConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
@@ -934,14 +934,13 @@ export const canistersBindingsTask = () =>
     )
     for (const { task, path } of tasksWithPath) {
       // TODO: parallelize? topological sort?
-      yield* Effect.log(`Running task ${path.join(":")}`)
       yield* runTaskByPath(path.join(":"))
     }
   })
 
 export const canistersInstallTask = () =>
   Effect.gen(function* () {
-    yield* Effect.log("Running canisters:install task")
+    yield* Effect.logInfo("Running canisters:install")
     const { taskTree } = yield* CrystalConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
@@ -951,14 +950,12 @@ export const canistersInstallTask = () =>
         node.tags.includes(Tags.INSTALL),
     )
     for (const { task, path } of tasksWithPath) {
-      yield* Effect.log(`Running task ${path.join(":")}`)
       yield* runTaskByPath(path.join(":"))
     }
   })
 
 export const canistersStatusTask = () =>
   Effect.gen(function* () {
-    yield* Effect.log("Running canisters:status task")
     const canisterIdsMap = yield* getCanisterIds
     const dfx = yield* DfxService
     // TODO: in parallel? are these tasks?
@@ -1021,7 +1018,7 @@ ${result.right.canisterName} status:
       )
       .join("\n")
 
-    yield* Effect.log(statusLog)
+    yield* Effect.logInfo(statusLog)
   })
 
 export const listTasksTask = () =>
@@ -1040,12 +1037,11 @@ export const listTasksTask = () =>
 
     const formattedTaskList = ["Available tasks:", ...taskList].join("\n")
 
-    yield* Effect.log(formattedTaskList)
+    yield* Effect.logInfo(formattedTaskList)
   })
 
 export const listCanistersTask = () =>
   Effect.gen(function* () {
-    yield* Effect.log("Running list canisters task")
     const { taskTree } = yield* CrystalConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
@@ -1062,7 +1058,7 @@ export const listCanistersTask = () =>
       "\n",
     )
 
-    yield* Effect.log(formattedTaskList)
+    yield* Effect.logInfo(formattedTaskList)
   })
 
 export { runCli } from "./cli/index.js"

@@ -43,7 +43,7 @@ export const NFIDIcrc1Oracle = (
     }
   })
     .dependsOn({ NFIDIdentityManager })
-    .install(async ({ ctx, mode }) => {
+    .installArgs(async ({ ctx, mode }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
       // TODO: Add installation logic if needed.

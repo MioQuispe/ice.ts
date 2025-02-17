@@ -53,7 +53,7 @@ export const Ledger = (
     //    archive_options = null;
     //    send_whitelist = vec {}
     //  }`
-  }).install(async ({ mode, ctx }) => {
+  }).installArgs(async ({ mode, ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function"
         ? initArgsOrFn({ ctx })

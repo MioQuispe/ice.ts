@@ -47,11 +47,10 @@ const makeDeployTask = (scope: CanisterScope): Task => {
     provide: {},
     effect: Effect.gen(function* () {
       const { runTask } = yield* TaskCtx
-      yield* Effect.logInfo("Starting custom canister deployment")
       const { taskPath } = yield* TaskInfo
       const canisterName = taskPath.split(":").slice(0, -1).join(":")
 
-      yield* Effect.logInfo("Loading canister ID", { canisterName })
+      yield* Effect.logDebug(`Loading canister ID for ${canisterName}`)
       let canisterId = yield* loadCanisterId(taskPath).pipe(
         Effect.catchAll((e) => {
           //   Effect.logError(e.message)

@@ -216,7 +216,7 @@ export interface CanisterBuilder<
   // install(installArgsOrFn: I): CanisterBuilder<I, S, D, P, Config>
 
   // only allow functions for now
-  install(
+  installArgs(
     installArgsFn: (args: {
       ctx: TaskCtxShape<
         ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>

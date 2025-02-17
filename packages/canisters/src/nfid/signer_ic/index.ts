@@ -24,7 +24,7 @@ export const NFIDSignerIc = (
       wasm: path.resolve(__dirname, `./nfid/${canisterName}/${canisterName}.wasm`),
       candid: path.resolve(__dirname, `./nfid/${canisterName}/${canisterName}.did`),
     };
-  }).install(async ({ ctx, mode }) => {
+  }).installArgs(async ({ ctx, mode }) => {
     // TODO: Add installation logic if needed.
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
