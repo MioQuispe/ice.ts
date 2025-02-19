@@ -52,27 +52,8 @@ const makeDeployTask = (scope: CanisterScope): Task => {
       const [canisterId] = yield* Effect.all(
         [
           Effect.gen(function* () {
-            yield* Effect.logDebug(`Loading canister ID for ${canisterName}`)
-            let canisterId = yield* loadCanisterId(taskPath).pipe(
-              Effect.catchAll((e) => {
-                //   Effect.logError(e.message)
-                return Effect.succeed(undefined)
-              }),
-            )
-            if (!canisterId) {
-              canisterId = (yield* runTask(scope.children.create)) as string
-            } else {
-              // TODO: check if canister has been created already
-              const canisterInfo = yield* getCanisterInfo(canisterId)
-              // TODO: this may get out of sync when we change the name or taskPath
-              // fix somehow
-              const canisterExists = canisterInfo.status !== "not_installed"
-              if (canisterExists) {
-                yield* Effect.logInfo("Canister already exists")
-              } else {
-                canisterId = (yield* runTask(scope.children.create)) as string
-              }
-            }
+            const canisterId = (yield* runTask(scope.children.create)) as string
+            return canisterId
           }),
           Effect.gen(function* () {
             if (scope.tags.includes(Tags.MOTOKO)) {
@@ -80,6 +61,7 @@ const makeDeployTask = (scope: CanisterScope): Task => {
               yield* runTask(scope.children.build)
               yield* runTask(scope.children.bindings)
             } else {
+              // custom canisters already have candid available so we can parallelize
               yield* Effect.all(
                 [
                   runTask(scope.children.build),

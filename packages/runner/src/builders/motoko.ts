@@ -3,13 +3,11 @@ import {
   createCanister,
   installCanister,
   compileMotokoCanister,
-  writeCanisterIds,
   encodeArgs,
   generateDIDJS,
   TaskCtx,
   type TaskCtxShape,
   createActor,
-  readCanisterIds,
   getCanisterInfo,
   getTaskPathById,
   TaskInfo,
@@ -42,6 +40,7 @@ import {
   makeBindingsTask,
   loadCanisterId,
   resolveConfig,
+  makeStopTask,
 } from "./custom.js"
 import type {
   CanisterBuilder,
@@ -81,8 +80,6 @@ const makeMotokoBuildTask = (
       const path = yield* Path.Path
       const appDir = yield* Config.string("APP_DIR")
       const { taskPath } = yield* TaskInfo
-      const canisterId = yield* loadCanisterId(taskPath)
-      const taskCtx = yield* TaskCtx
       const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
       const canisterName = taskPath.split(":").slice(0, -1).join(":")
       const wasmOutputFilePath = path.join(
@@ -134,7 +131,7 @@ export const makeMotokoBuilder = <
         ...scope,
         children: {
           ...scope.children,
-          create: makeCreateTask(canisterConfigOrFn),
+          create: makeCreateTask(canisterConfigOrFn, [Tags.MOTOKO]),
         },
       } satisfies CanisterScope
       return makeMotokoBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(
@@ -307,6 +304,7 @@ export const motokoCanister = <I = unknown, _SERVICE = unknown>(
       create: makeCreateTask(canisterConfigOrFn),
       build: makeMotokoBuildTask(canisterConfigOrFn),
       bindings: makeBindingsTask(),
+      stop: makeStopTask(),
       // delete: createDeleteTask(),
       install: makeInstallTask<I, Record<string, unknown>, _SERVICE>(),
     },

@@ -1,5 +1,6 @@
 import { Effect, Layer, Console } from "effect"
-import { Command, Options, Args } from "@effect/cli"
+import { Command, Options, Args, ValidationError } from "@effect/cli"
+import { CommandMismatch, isCommandMismatch } from "@effect/cli/ValidationError"
 import {
   canistersBindingsTask,
   canistersBuildTask,
@@ -17,6 +18,7 @@ import type { CrystalConfig, TaskTree } from "../types/types.js"
 import { uiTask } from "./ui/index.js"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
 import { CrystalConfigService } from "../services/crystalConfig.js"
+import { commandMismatch } from "@effect/cli/ValidationError"
 
 // TODO: populate subcommands with tasks from crystalConfig
 const makeCliApp = ({
@@ -98,6 +100,7 @@ const makeCliApp = ({
       uiCommand,
     ]),
   )
+  // .pipe(Effect.catchTag(ValidationError, (error) => Effect.logError(error)))
 
   const cli = Command.run(crystalCommand, {
     name: "Crystal CLI",
@@ -114,6 +117,14 @@ export const runCli = async () => {
       const { config, taskTree } = yield* CrystalConfigService
       const cli = makeCliApp({ config, taskTree })
       return cli(process.argv).pipe(
+        Effect.catchAll((error: unknown) => {
+          // @ts-ignore
+          if (isCommandMismatch(error)) {
+            return Console.error("Invalid command")
+          }
+          return Console.error("CLI Validation Error:", error)
+        }),
+      ).pipe(
         // @ts-ignore
         Effect.provide(DefaultsLayer),
         NodeRuntime.runMain,

@@ -45,6 +45,7 @@ export class CrystalConfigService extends Context.Tag("CrystalConfigService")<
         configPath,
         appDirectory,
       })
+      
       // TODO: apply plugins
       const config = yield* Effect.tryPromise({
         try: () =>
@@ -56,6 +57,7 @@ export class CrystalConfigService extends Context.Tag("CrystalConfigService")<
             message: `Failed to get Crystal config: ${error instanceof Error ? error.message : String(error)}`,
           }),
       })
+
       const taskTree = Object.fromEntries(
         Object.entries(config).filter(([key]) => key !== "default"),
       ) as TaskTree

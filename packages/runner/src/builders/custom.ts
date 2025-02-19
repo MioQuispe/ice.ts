@@ -4,19 +4,18 @@ import {
   installCanister,
   stopCanister,
   compileMotokoCanister,
-  writeCanisterIds,
   encodeArgs,
   generateDIDJS,
   TaskCtx,
   type TaskCtxShape,
   createActor,
-  readCanisterIds,
   getCanisterInfo,
   getTaskPathById,
   TaskInfo,
   DependencyResults,
   deployTaskPlugin,
   candidUITaskPlugin,
+  deleteCanister,
 } from "../index.js"
 import type { Actor, HttpAgent, Identity } from "@dfinity/agent"
 import type { Agent } from "@dfinity/agent"
@@ -44,6 +43,7 @@ import type {
   ExtractProvidedDeps,
 } from "./types.js"
 import { Tags } from "./types.js"
+import { CanisterIdsService } from "../services/canisterIds.js"
 // TODO: later
 // candidUITaskPlugin()
 // const plugins = <T extends TaskTreeNode>(taskTree: T) =>
@@ -68,16 +68,47 @@ export const makeStopTask = () => {
       const appDir = yield* Config.string("APP_DIR")
       const { taskPath } = yield* TaskInfo
       const canisterName = taskPath.split(":").slice(0, -1).join(":")
+      // TODO: handle error
       const canisterId = yield* loadCanisterId(taskPath)
       yield* stopCanister(canisterId)
       yield* Effect.logInfo(`Stopped canister ${canisterName}`)
     }),
     description: "some description",
-    tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BINDINGS],
+    // TODO: no tag custom
+    tags: [Tags.CANISTER, Tags.STOP],
     computeCacheKey: Option.none(),
     input: Option.none(),
   } satisfies Task
 }
+
+export const makeDeleteTask = () => {
+  return {
+    _tag: "task",
+    id: Symbol("customCanister/delete"),
+    dependencies: {},
+    provide: {},
+    // TODO: do we allow a fn as args here?
+    effect: Effect.gen(function* () {
+      const path = yield* Path.Path
+      const fs = yield* FileSystem.FileSystem
+      const appDir = yield* Config.string("APP_DIR")
+      const { taskPath } = yield* TaskInfo
+      const canisterName = taskPath.split(":").slice(0, -1).join(":")
+      // TODO: handle error
+      const canisterId = yield* loadCanisterId(taskPath)
+      yield* deleteCanister(canisterId)
+      const canisterIdsService = yield* CanisterIdsService
+      yield* canisterIdsService.removeCanisterId(canisterName)
+      yield* Effect.logInfo(`Deleted canister ${canisterName}`)
+    }),
+    description: "some description",
+    // TODO: no tag custom
+    tags: [Tags.CANISTER, Tags.DELETE],
+    computeCacheKey: Option.none(),
+    input: Option.none(),
+  } satisfies Task
+}
+
 
 export const makeBindingsTask = () => {
   return {
@@ -333,8 +364,9 @@ export const makeCreateTask = (
     | ((args: { ctx: TaskCtxShape }) => Promise<CreateConfig>)
     | ((args: { ctx: TaskCtxShape }) => CreateConfig)
     | CreateConfig,
+  tags: string[] = [],
 ) => {
-  const id = Symbol("customCanister/create")
+  const id = Symbol("canister/create")
   return {
     _tag: "task",
     id,
@@ -346,18 +378,23 @@ export const makeCreateTask = (
       const taskCtx = yield* TaskCtx
       const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
       const canisterId = yield* createCanister(canisterConfig?.canisterId)
-      // TODO: handle errors? what to do if already exists?
+      const canisterIdsService = yield* CanisterIdsService
       const appDir = yield* Config.string("APP_DIR")
-      // TODO: doesnt work with dynamically run tasks
       const { taskPath } = yield* TaskInfo
       const canisterName = taskPath.split(":").slice(0, -1).join(":")
+      // TODO: network settings
+      yield* canisterIdsService.setCanisterId({
+        canisterName,
+        network: "local",
+        canisterId,
+      })
       const outDir = path.join(appDir, ".artifacts", canisterName)
       yield* fs.makeDirectory(outDir, { recursive: true })
-      yield* writeCanisterIds(canisterName, canisterId)
       return canisterId
     }),
     description: "some description",
-    tags: [Tags.CANISTER, Tags.CUSTOM, Tags.CREATE],
+    // TODO:
+    tags: [Tags.CANISTER, Tags.CREATE, ...tags],
     computeCacheKey: Option.none(),
     input: Option.none(),
   } satisfies Task
@@ -380,7 +417,7 @@ const makeCustomCanisterBuilder = <
         ...scope,
         children: {
           ...scope.children,
-          create: makeCreateTask(canisterConfigOrFn),
+          create: makeCreateTask(canisterConfigOrFn, [Tags.CUSTOM]),
         },
       } satisfies CanisterScope
       return makeCustomCanisterBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(
@@ -554,7 +591,7 @@ export const customCanister = <I = unknown, _SERVICE = unknown>(
     defaultTask: Option.some("deploy"),
     // TODO: default implementations
     children: {
-      create: makeCreateTask(canisterConfigOrFn),
+      create: makeCreateTask(canisterConfigOrFn, [Tags.CUSTOM]),
       bindings: makeBindingsTask(),
 
       // TODO: maybe just the return value of install? like a cleanup
@@ -568,6 +605,7 @@ export const customCanister = <I = unknown, _SERVICE = unknown>(
       // install: makeInstallTask<I>(),
       install: makeInstallTask<I, Record<string, unknown>, _SERVICE>(),
       stop: makeStopTask(),
+      delete: makeDeleteTask(),
     },
   } satisfies CanisterScope
 
@@ -584,7 +622,8 @@ export const customCanister = <I = unknown, _SERVICE = unknown>(
 export const loadCanisterId = (taskPath: string) =>
   Effect.gen(function* () {
     const canisterName = taskPath.split(":").slice(0, -1).join(":")
-    const canisterIds = yield* readCanisterIds()
+    const canisterIdsService = yield* CanisterIdsService
+    const canisterIds = yield* canisterIdsService.getCanisterIds()
     // TODO: dont hardcode local. add support for networks
     const canisterId = canisterIds[canisterName]?.local
     if (canisterId) {

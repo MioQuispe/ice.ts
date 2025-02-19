@@ -72,6 +72,7 @@ import { runCli } from "./cli/index.js"
 import { TaskRegistry } from "./services/taskRegistry.js"
 import type * as ActorTypes from "./types/actor.js"
 import { CrystalConfigService } from "./services/crystalConfig.js"
+import { CanisterIdsService } from "./services/canisterIds.js"
 export * from "./builders/index.js"
 // export * from "./plugins/withContext.js"
 
@@ -84,6 +85,7 @@ import {
   canister_status_result,
   type log_visibility,
 } from "./canisters/management_latest/management.types.js"
+
 export const configMap = new Map([
   ["APP_DIR", fs.realpathSync(process.cwd())],
   ["DFX_CONFIG_FILENAME", "crystal.config.ts"],
@@ -205,6 +207,12 @@ export const getCanisterInfo = (canisterId: string) =>
 export const createCanister = (canisterId?: string) =>
   Effect.gen(function* () {
     const { mgmt, identity } = yield* DfxService
+    if (canisterId) {
+      const canisterInfo = yield* getCanisterInfo(canisterId)
+      if (canisterInfo.status !== "not_installed") {
+        return canisterId
+      }
+    }
     const createResult = yield* Effect.tryPromise({
       try: () =>
         // mgmt.create_canister({
@@ -298,6 +306,17 @@ export const stopCanister = (canisterId: string) =>
     )
   })
 
+export const deleteCanister = (canisterId: string) =>
+  Effect.gen(function* () {
+    const { mgmt } = yield* DfxService
+    yield* Effect.tryPromise(() =>
+      mgmt.delete_canister({
+        canister_id: Principal.fromText(canisterId),
+      }),
+    )
+    // TODO: delete from canister_ids.json
+  })
+
 export const installCanister = ({
   encodedArgs,
   canisterId,
@@ -332,11 +351,11 @@ export const installCanister = ({
       // Maximum size: 1048576
       // export interface chunk_hash { 'hash' : Array<number> }
       const chunkHashes: Array<{ hash: Array<number> }> = []
-      const chunkUploadEffects = [];
+      const chunkUploadEffects = []
       for (let i = 0; i < wasm.length; i += chunkSize) {
-        const chunk = wasm.slice(i, i + chunkSize);
-        const chunkHash = Array.from(sha256.array(chunk));
-        chunkHashes.push({ hash: chunkHash });
+        const chunk = wasm.slice(i, i + chunkSize)
+        const chunkHash = Array.from(sha256.array(chunk))
+        chunkHashes.push({ hash: chunkHash })
         chunkUploadEffects.push(
           Effect.tryPromise({
             try: () =>
@@ -357,11 +376,11 @@ export const installCanister = ({
               ),
             ),
           ),
-        );
+        )
       }
       yield* Effect.all(chunkUploadEffects, {
         concurrency: "unbounded",
-      });
+      })
       // TODO: perform chunked install
       // mgmt.install_code({
       //   // arg: encodedArgs,
@@ -453,49 +472,89 @@ export const compileMotokoCanister = (
     return wasmOutputFilePath
   })
 
-export const writeCanisterIds = (canisterName: string, canisterId: string) =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const appDir = yield* Config.string("APP_DIR")
-    const canisterIdsPath = path.join(appDir, "canister_ids.json")
+// export const removeFromCanisterIds = (canisterName: string) =>
+//   Effect.gen(function* () {
+//     const fs = yield* FileSystem.FileSystem
+//     const path = yield* Path.Path
+//     const appDir = yield* Config.string("APP_DIR")
+//     const canisterIdsPath = path.join(appDir, "canister_ids.json")
 
-    // TODO: should they be shared between dfx / pic-js?
-    let canisterIds: {
-      [canisterName: string]: {
-        [network: string]: string
-      }
-    } = {}
+//     type CanisterIds = Record<string, Record<string, string> | undefined>
+//     let canisterIds: CanisterIds = {}
 
-    const exists = yield* fs.exists(canisterIdsPath)
-    if (exists) {
-      const content = yield* fs.readFileString(canisterIdsPath)
-      canisterIds = yield* Effect.try({
-        try: () => JSON.parse(content),
-        catch: () => ({}),
-      })
-    }
+//     const exists = yield* fs.exists(canisterIdsPath)
+//     if (exists) {
+//       const content = yield* fs.readFileString(canisterIdsPath)
+//       canisterIds = yield* Effect.try({
+//         try: () => JSON.parse(content) as CanisterIds,
+//         catch: () => ({}),
+//       })
+//     }
 
-    canisterIds[canisterName] = {
-      ...canisterIds[canisterName],
-      local: canisterId,
-    }
+//     const updatedCanisterIds: CanisterIds = {}
+//     for (const name in canisterIds) {
+//       if (name !== canisterName) {
+//         updatedCanisterIds[name] = canisterIds[name]
+//       }
+//     }
+//     canisterIds = updatedCanisterIds
 
-    yield* fs.writeFile(
-      canisterIdsPath,
-      Buffer.from(JSON.stringify(canisterIds, null, 2)),
-    )
-  })
+//     yield* fs.writeFile(
+//       canisterIdsPath,
+//       Buffer.from(JSON.stringify(canisterIds, null, 2)),
+//     )
+//   })
 
-export const readCanisterIds = () =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const appDir = yield* Config.string("APP_DIR")
-    const canisterIdsPath = path.join(appDir, "canister_ids.json")
-    const content = yield* fs.readFileString(canisterIdsPath)
-    return JSON.parse(content)
-  })
+// export const writeCanisterIds = (canisterName: string, canisterId: string) =>
+//   Effect.gen(function* () {
+//     const fs = yield* FileSystem.FileSystem
+//     const path = yield* Path.Path
+//     const appDir = yield* Config.string("APP_DIR")
+//     const canisterIdsPath = path.join(appDir, "canister_ids.json")
+
+//     // TODO: should they be shared between dfx / pic-js?
+//     let canisterIds: {
+//       [canisterName: string]: {
+//         [network: string]: string
+//       }
+//     } = {}
+
+//     const exists = yield* fs.exists(canisterIdsPath)
+//     if (exists) {
+//       const content = yield* fs.readFileString(canisterIdsPath)
+//       canisterIds = yield* Effect.try({
+//         try: () => JSON.parse(content),
+//         catch: () => ({}),
+//       })
+//     }
+
+//     canisterIds[canisterName] = {
+//       ...canisterIds[canisterName],
+//       local: canisterId,
+//     }
+
+//     yield* Effect.logInfo(`Writing canister ids: ${canisterIdsPath}`)
+
+//     yield* fs.writeFile(
+//       canisterIdsPath,
+//       Buffer.from(JSON.stringify(canisterIds, null, 2)),
+//     )
+//   })
+
+// export const readCanisterIds = () =>
+//   Effect.gen(function* () {
+//     const fs = yield* FileSystem.FileSystem
+//     const path = yield* Path.Path
+//     const appDir = yield* Config.string("APP_DIR")
+//     const canisterIdsPath = path.join(appDir, "canister_ids.json")
+//     const exists = yield* fs.exists(canisterIdsPath)
+//     if (!exists) {
+//       // Optionally, you can also create the file here if needed.
+//       return {}
+//     }
+//     const content = yield* fs.readFileString(canisterIdsPath)
+//     return JSON.parse(content)
+//   })
 
 export class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
   path: string[]
@@ -665,8 +724,13 @@ export const DefaultsLayer = Layer.mergeAll(
   // Logger.replace(Logger.defaultLogger, Logger.zip(Logger.pretty)),
   Logger.pretty,
   // Logger.replace(Logger.defaultLogger, Logger.jsonLogger), // Use jsonLogger
-  CrystalConfigService.Live.pipe(Layer.provide(NodeContext.layer)),
-
+  CrystalConfigService.Live.pipe(
+    Layer.provide(NodeContext.layer),
+  ),
+  CanisterIdsService.Live.pipe(
+    Layer.provide(NodeContext.layer),
+    Layer.provide(configLayer),
+  ),
   // TODO: set with flag?
   Logger.minimumLogLevel(LogLevel.Info),
 
@@ -675,6 +739,7 @@ export const DefaultsLayer = Layer.mergeAll(
   // LoggerLive,
   // fileLogger,
 )
+
 // TODO: construct later? or this is just defaults
 export const TUILayer = Layer.mergeAll(
   NodeContext.layer,
@@ -689,6 +754,10 @@ export const TUILayer = Layer.mergeAll(
   Moc.Live.pipe(Layer.provide(NodeContext.layer)),
   configLayer,
   CrystalConfigService.Live.pipe(Layer.provide(NodeContext.layer)),
+  CanisterIdsService.Live.pipe(
+    Layer.provide(NodeContext.layer),
+    Layer.provide(configLayer),
+  ),
   // Logger.add(customLogger),
   // Layer.effect(fileLogger),
   // LoggerLive,
@@ -793,14 +862,14 @@ export const runTask = <A, E, R, I>(
         Effect.map(runTask(dependency), (result) => [
           dependencyName,
           result,
-        ]) as Effect.Effect<[string, unknown], unknown, unknown>,
+        ]) as Effect.Effect<[string, unknown], E, R>,
     )
     const results = yield* Effect.all(dependencyEffects, {
       concurrency: "unbounded",
     })
-    results.forEach(([dependencyName, dependencyResult]) => {
+    for (const [dependencyName, dependencyResult] of results) {
       dependencyResults[dependencyName] = dependencyResult
-    })
+    }
 
     const taskLayer = Layer.mergeAll(
       // configLayer,
@@ -971,7 +1040,8 @@ export const canistersInstallTask = () =>
 
 export const canistersStatusTask = () =>
   Effect.gen(function* () {
-    const canisterIdsMap = yield* getCanisterIds
+    const canisterIdsService = yield* CanisterIdsService
+    const canisterIdsMap = yield* canisterIdsService.getCanisterIds()
     const dfx = yield* DfxService
     // TODO: in parallel? are these tasks?
     // Create an effect for each canister that is wrapped with Effect.either
@@ -1160,31 +1230,37 @@ export type CanisterIds = Schema.Schema.Type<typeof CanisterIdsSchema>
 const decodeCanisterIds = Schema.decodeUnknown(CanisterIdsSchema)
 // type CanisterIds = Schema.To<typeof CanisterIdsSchema>
 
-export const getCanisterIds = Effect.gen(function* () {
-  const fs = yield* FileSystem.FileSystem
-  const path = yield* Path.Path
-  const appDir = yield* Config.string("APP_DIR")
-  const canisterIdsFilename = yield* Config.string("CANISTER_IDS_FILENAME")
-  const canisterIdsPath = path.join(appDir, canisterIdsFilename)
+// export const getCanisterIds = Effect.gen(function* () {
+//   const fs = yield* FileSystem.FileSystem
+//   const path = yield* Path.Path
+//   const appDir = yield* Config.string("APP_DIR")
+//   const canisterIdsFilename = yield* Config.string("CANISTER_IDS_FILENAME")
+//   const canisterIdsPath = path.join(appDir, canisterIdsFilename)
 
-  const idsContent = yield* fs.readFileString(canisterIdsPath)
-  const idsUnknown = yield* Effect.try({
-    try: () => JSON.parse(idsContent),
-    catch: () => new ConfigError({ message: "Failed to parse canister IDs" }),
-  })
-  const ids = yield* decodeCanisterIds(idsUnknown)
-  const canisterIds = Object.keys(ids).reduce<CanisterIds>(
-    (acc, canisterName) => {
-      if (canisterName !== "__Candid_UI") {
-        return { ...acc, [canisterName]: ids[canisterName] }
-      }
-      return acc
-    },
-    {},
-  )
+//   // Check whether the file exists before trying to read it.
+//   const exists = yield* fs.exists(canisterIdsPath)
+//   if (!exists) {
+//     return {} as CanisterIds
+//   }
 
-  return canisterIds
-})
+//   const idsContent = yield* fs.readFileString(canisterIdsPath)
+//   const idsUnknown = yield* Effect.try({
+//     try: () => JSON.parse(idsContent),
+//     catch: () => new ConfigError({ message: "Failed to parse canister IDs" }),
+//   })
+//   const ids = yield* decodeCanisterIds(idsUnknown)
+//   const canisterIds = Object.keys(ids).reduce<CanisterIds>(
+//     (acc, canisterName) => {
+//       if (canisterName !== "__Candid_UI") {
+//         return { ...acc, [canisterName]: ids[canisterName] }
+//       }
+//       return acc
+//     },
+//     {} as CanisterIds,
+//   )
+
+//   return canisterIds
+// })
 
 export { deployTaskPlugin } from "./plugins/deploy.js"
 export { candidUITaskPlugin } from "./plugins/candid_ui.js"

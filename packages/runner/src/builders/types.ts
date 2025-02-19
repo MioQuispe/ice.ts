@@ -286,6 +286,7 @@ export const Tags = {
   INSTALL: "$$crystal/install",
   BINDINGS: "$$crystal/bindings",
   DEPLOY: "$$crystal/deploy",
+  STOP: "$$crystal/stop",
   DELETE: "$$crystal/delete",
   UI: "$$crystal/ui",
   // TODO: hmm do we need this?
