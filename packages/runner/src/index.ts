@@ -724,9 +724,7 @@ export const DefaultsLayer = Layer.mergeAll(
   // Logger.replace(Logger.defaultLogger, Logger.zip(Logger.pretty)),
   Logger.pretty,
   // Logger.replace(Logger.defaultLogger, Logger.jsonLogger), // Use jsonLogger
-  CrystalConfigService.Live.pipe(
-    Layer.provide(NodeContext.layer),
-  ),
+  CrystalConfigService.Live.pipe(Layer.provide(NodeContext.layer)),
   CanisterIdsService.Live.pipe(
     Layer.provide(NodeContext.layer),
     Layer.provide(configLayer),
@@ -1087,24 +1085,25 @@ export const canistersStatusTask = () =>
     // For every result, inspect whether it was a success or a failure and prepare a log message accordingly
 
     // TODO: colorize statuses
-    const statusLog = canisterStatuses
-      .map((result) =>
-        result._tag === "Right"
-          ? `
-${result.right.canisterName} status:
-    ID: ${result.right.canisterId}
-    Status: ${Object.keys(result.right.status.status)[0]}
-    Memory Size: ${result.right.status.memory_size}
-    Cycles: ${result.right.status.cycles}
-    Idle Cycles Burned Per Day: ${result.right.status.idle_cycles_burned_per_day}
-    Module Hash: ${
-      result.right.status.module_hash.length > 0 ? "Present" : "Not Present"
-    }`
-          : `Error for canister: ${result.left.message}`,
-      )
-      .join("\n")
+    //     const statusLog = canisterStatuses
+    //       .map((result) =>
+    //         result._tag === "Right"
+    //           ? `
+    // ${result.right.canisterName} status:
+    //     ID: ${result.right.canisterId}
+    //     Status: ${Object.keys(result.right.status.status)[0]}
+    //     Memory Size: ${result.right.status.memory_size}
+    //     Cycles: ${result.right.status.cycles}
+    //     Idle Cycles Burned Per Day: ${result.right.status.idle_cycles_burned_per_day}
+    //     Module Hash: ${
+    //       result.right.status.module_hash.length > 0 ? "Present" : "Not Present"
+    //     }`
+    //           : `Error for canister: ${result.left.message}`,
+    //       )
+    //       .join("\n")
 
-    yield* Effect.logInfo(statusLog)
+    //     yield* Effect.logInfo(statusLog)
+    return canisterStatuses
   })
 
 export const listTasksTask = () =>

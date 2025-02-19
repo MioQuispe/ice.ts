@@ -1,4 +1,4 @@
-#!/usr/bin/env node --experimental-wasm-modules
+#!/usr/bin/env  node --experimental-wasm-modules --no-warnings=ExperimentalWarning
 
 // import { runTasks, getDfxConfig } from "../dist"
 // import fs from "node:fs"

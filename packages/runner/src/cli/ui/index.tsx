@@ -341,9 +341,9 @@ const CliApp = ({
 
   useInput(
     (input, key) => {
-      if (key.upArrow) {
+      if (key.upArrow || input === "k") {
         focusManager.focusPrevious()
-      } else if (key.downArrow) {
+      } else if (key.downArrow || input === "j") {
         focusManager.focusNext()
       } else if (key.escape || input === "q") {
         exit()

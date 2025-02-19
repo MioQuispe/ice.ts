@@ -25,6 +25,15 @@ import { defineCommand, createMain } from "citty"
 // TODO: not in npm?
 // import tab from '@bombsh/tab/citty'
 
+function moduleHashToHexString(moduleHash: [] | [number[]]): string {
+  if (moduleHash.length === 0) {
+    return "Not Present"
+  }
+  const bytes = new Uint8Array(moduleHash[0]) // Ensure it's a Uint8Array
+  const hexString = Buffer.from(bytes).toString("hex")
+  return `0x${hexString}`
+}
+
 //   // TODO: we need to construct this dynamically if we want space delimited task paths
 const runCommand = defineCommand({
   meta: {
@@ -32,9 +41,16 @@ const runCommand = defineCommand({
     description: "Run a Crystal task",
   },
   args: {
-    taskPath: { type: "positional", required: true, description: "The task to run. examples: icrc1:build, nns:governance:install" },
+    taskPath: {
+      type: "positional",
+      required: true,
+      description:
+        "The task to run. examples: icrc1:build, nns:governance:install",
+    },
   },
   run: async ({ args }) => {
+    const s = p.spinner()
+    s.start(`Running task... ${color.green(color.underline(args.taskPath))}`)
     await runtime.runPromise(
       // @ts-ignore
       Effect.gen(function* () {
@@ -42,21 +58,46 @@ const runCommand = defineCommand({
         yield* runTaskByPath(args.taskPath)
       }),
     )
+    s.stop(`Finished task: ${color.green(color.underline(args.taskPath))}`)
   },
 })
 
+const initCommand = defineCommand({
+  meta: {
+    name: "Init",
+    description: "Initialize a new Crystal project",
+  },
+  run: async ({ args }) => {
+    // TODO: prompt which canisters to include
+    // await runtime.runPromise(
+    //   Effect.gen(function* () {
+    //     yield* initTask()
+    //   }),
+    // )
+  },
+})
 const canistersDeployCommand = defineCommand({
   meta: {
     name: "Canisters deploy",
     description: "Deploys all canisters",
   },
   run: async ({ args }) => {
-    await runtime.runPromise(
-      // @ts-ignore
-      Effect.gen(function* () {
-        yield* canistersDeployTask()
-      }),
-    )
+    const s = p.spinner()
+    s.start("Deploying all canisters...")
+    await p.tasks([
+      {
+        title: "Deploying canisters",
+        task: async () => {
+          await runtime.runPromise(
+            // @ts-ignore
+            Effect.gen(function* () {
+              yield* canistersDeployTask()
+            }),
+          )
+        },
+      },
+    ])
+    s.stop("Deployed all canisters")
   },
 })
 
@@ -126,11 +167,31 @@ const canistersStatusCommand = defineCommand({
     description: "Gets the status of all canisters",
   },
   run: async ({ args }) => {
-    await runtime.runPromise(
-      Effect.gen(function* () {
-        yield* canistersStatusTask()
-      }),
-    )
+
+    if (args._.length === 0) {
+      await runtime.runPromise(
+        Effect.gen(function* () {
+          const statuses = yield* canistersStatusTask()
+          const statusLog = statuses
+            .map((result) =>
+              result._tag === "Right"
+                ? `
+${color.underline(result.right.canisterName)}
+  ID: ${result.right.canisterId}
+  Status: ${color.green(Object.keys(result.right.status.status)[0])}
+  Memory Size: ${result.right.status.memory_size.toLocaleString("en-US").replace(/,/g, "_")}
+  Cycles: ${result.right.status.cycles.toLocaleString("en-US").replace(/,/g, "_")}
+  Idle Cycles Burned Per Day: ${result.right.status.idle_cycles_burned_per_day.toLocaleString("en-US").replace(/,/g, "_")}
+  Module Hash: ${moduleHashToHexString(result.right.status.module_hash)}`
+                : `Error for canister: ${result.left.message}`,
+            )
+            .join("\n")
+
+          console.log(statusLog)
+        }),
+      )
+    }
+
   },
 })
 
@@ -198,6 +259,8 @@ const main = defineCommand({
   },
   run: async ({ args }) => {
     if (args._.length === 0) {
+      const s = p.spinner()
+      s.start("Deploying all canisters...")
       // if no subcommand
       await runtime.runPromise(
         // @ts-ignore
@@ -206,6 +269,7 @@ const main = defineCommand({
           yield* canistersDeployTask()
         }),
       )
+      s.stop("Deployed all canisters")
     }
   },
   subCommands: {
@@ -215,10 +279,11 @@ const main = defineCommand({
     "canisters:build": canistersBuildCommand,
     "canisters:bindings": canistersBindingsCommand,
     "canisters:install": canistersInstallCommand,
-    "canisters:status": canistersStatusCommand,
+    status: canistersStatusCommand,
     "canisters:remove": canistersRemoveCommand,
     list: listCommand,
     "list:canisters": listCanistersCommand,
+    init: initCommand,
     ui: uiCommand,
   },
 })
@@ -236,6 +301,10 @@ export const runCli = async () => {
       s: "down",
       a: "left",
       d: "right",
+      j: "down",
+      k: "up",
+      h: "left",
+      l: "right",
     },
   })
   const cli = createMain(main)
