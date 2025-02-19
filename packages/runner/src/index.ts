@@ -733,7 +733,6 @@ export const DefaultsLayer = Layer.mergeAll(
   ),
   // TODO: set with flag?
   Logger.minimumLogLevel(LogLevel.Info),
-
   // Logger.add(customLogger),
   // Layer.effect(fileLogger),
   // LoggerLive,

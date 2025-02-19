@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx --experimental-wasm-modules
+#!/usr/bin/env node --experimental-wasm-modules
 
 // import { runTasks, getDfxConfig } from "../dist"
 // import fs from "node:fs"
@@ -16,7 +16,7 @@
 //   console.log("Done")
 // })()
 
-import { runCli } from "../src"
+import { runCli } from "../dist/index.js"
 
 ;(async () => {
   await runCli()

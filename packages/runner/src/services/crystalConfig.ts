@@ -7,6 +7,7 @@ import type {
 import { Path, FileSystem } from "@effect/platform"
 import { deployTaskPlugin } from "../plugins/deploy.js"
 import { removeBuilders } from "../index.js"
+import { tsImport } from 'tsx/esm/api'
 // import { removeBuilders } from "../plugins/remove_builders.js"
 // import { candidUITaskPlugin } from "../plugins/candid-ui.js"
 
@@ -49,8 +50,9 @@ export class CrystalConfigService extends Context.Tag("CrystalConfigService")<
       // TODO: apply plugins
       const config = yield* Effect.tryPromise({
         try: () =>
-          import(
-            path.resolve(appDirectory, configPath)
+          tsImport(
+            path.resolve(appDirectory, configPath),
+            import.meta.url,
           ) as Promise<CrystalConfigFile>,
         catch: (error) =>
           new ConfigError({
