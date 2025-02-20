@@ -27,6 +27,8 @@ import find from "find-process"
 import { principalToAccountId } from "./utils/utils.js"
 import {
   Effect,
+  Deferred,
+  Console,
   Data,
   Layer,
   ManagedRuntime,
@@ -730,7 +732,7 @@ export const DefaultsLayer = Layer.mergeAll(
     Layer.provide(configLayer),
   ),
   // TODO: set with flag?
-  Logger.minimumLogLevel(LogLevel.Info),
+  Logger.minimumLogLevel(LogLevel.Error),
   // Logger.add(customLogger),
   // Layer.effect(fileLogger),
   // LoggerLive,
@@ -907,6 +909,205 @@ export const runTask = <A, E, R, I>(
   })
 }
 
+/**
+ * Topologically sorts tasks based on the "provide" field dependencies.
+ * The tasks Map now uses symbols as keys.
+ *
+ * @param tasks A map of tasks keyed by their id (as symbol).
+ * @returns An array of tasks sorted in execution order.
+ * @throws Error if a cycle is detected.
+ */
+export const topologicalSortTasks = <A, E, R, I>(
+  tasks: Map<symbol, Task<A, E, R, I>>,
+): Task<A, E, R, I>[] => {
+  const indegree = new Map<symbol, number>()
+  const adjList = new Map<symbol, symbol[]>()
+
+  // Initialize graph nodes.
+  for (const [id, task] of tasks.entries()) {
+    indegree.set(id, 0)
+    adjList.set(id, [])
+  }
+
+  // Build the graph using the "provide" field.
+  for (const [id, task] of tasks.entries()) {
+    for (const key in task.provide) {
+      const providedTask = task.provide[key]
+      const depId = providedTask.id
+      // Only consider provided dependencies that are in our tasks map.
+      if (tasks.has(depId)) {
+        // Add an edge from the dependency to this task.
+        adjList.get(depId)?.push(id)
+        // Increase the indegree for current task.
+        indegree.set(id, (indegree.get(id) ?? 0) + 1)
+      }
+    }
+  }
+
+  // Collect tasks with zero indegree.
+  const queue: symbol[] = []
+  for (const [id, degree] of indegree.entries()) {
+    if (degree === 0) {
+      queue.push(id)
+    }
+  }
+
+  const sortedTasks: Task<A, E, R, I>[] = []
+  while (queue.length > 0) {
+    const currentId = queue.shift()
+    if (!currentId) {
+      throw new Error("No task to shift from queue")
+    }
+    const currentTask = tasks.get(currentId)
+    if (!currentTask) {
+      throw new Error("No task found in tasks map")
+    }
+    sortedTasks.push(currentTask)
+    const neighbors = adjList.get(currentId) || []
+    for (const neighbor of neighbors) {
+      indegree.set(neighbor, (indegree.get(neighbor) ?? 0) - 1)
+      if (indegree.get(neighbor) === 0) {
+        queue.push(neighbor)
+      }
+    }
+  }
+
+  if (sortedTasks.length !== tasks.size) {
+    throw new Error("Cycle detected in task dependencies via 'provide' field.")
+  }
+
+  return sortedTasks
+}
+
+/**
+ * Executes tasks in sorted order sequentially.
+ *
+ * For each task, gathers dependency results from tasks provided via the "provide" field,
+ * injects them as a layer (along with the config layer), and runs the effect.
+ *
+ * @param sortedTasks The tasks in topologically sorted order.
+ * @returns A map from task id (as symbol) to the result of each task.
+ */
+// export const executeSortedTasks = <A, E, R, I>(
+//   sortedTasks: Task<A, E, R, I>[],
+// ) =>
+//   Effect.gen(function* () {
+//     // : Effect.Effect<Map<string, R>>
+//     const results = new Map<symbol, unknown>()
+//     for (const task of sortedTasks) {
+//       // Build dependency results for the current task by looking up each provided dependency.
+//       const dependencyResults: Record<string, unknown> = {}
+//       for (const dependencyName in task.provide) {
+//         const providedTask = task.provide[dependencyName]
+//         if (results.has(providedTask.id)) {
+//           dependencyResults[dependencyName] = results.get(providedTask.id)
+//         }
+//       }
+//       const taskPath = yield* getTaskPathById(task.id)
+//       yield { taskPath, task, status: "executing" }
+
+//       // Create layers for dependency results and configuration.
+//       const taskLayer = Layer.mergeAll(
+//         Layer.succeed(TaskInfo, {
+//           taskPath,
+//           // TODO: provide more?
+//         }),
+//         Layer.succeed(DependencyResults, {
+//           dependencies: dependencyResults,
+//         }),
+//         Layer.setConfigProvider(
+//           ConfigProvider.fromMap(new Map([...Array.from(configMap.entries())])),
+//         ),
+//       )
+//       const result = yield* task.effect.pipe(Effect.provide(taskLayer))
+//       yield { taskPath, task, status: "done" }
+//       results.set(task.id, result)
+//     }
+//     // TODO: execute concurrently and yield results
+//     return { status: "all_done", results }
+//   })
+
+export type ProgressStatus = "starting" | "completed"
+export type ProgressUpdate<A> = {
+  taskId: symbol
+  taskPath: string
+  status: ProgressStatus
+  result?: A
+  error?: unknown
+}
+
+export const executeSortedTasks = <A, E, R, I>(
+  sortedTasks: Task<A, E, R, I>[],
+) =>
+  Stream.async<ProgressUpdate<A>>((emit) => {
+    // Create a deferred for every task to hold its eventual result.
+    const deferredMap = new Map<symbol, Deferred.Deferred<E | unknown, R>>()
+    Effect.gen(function* () {
+      for (const task of sortedTasks) {
+        const deferred = yield* Deferred.make<E | unknown, R>()
+        deferredMap.set(task.id, deferred)
+      }
+    }).pipe(Effect.runPromise)
+    const results = new Map<symbol, unknown>()
+    const taskEffects = sortedTasks.map((task) =>
+      Effect.gen(function* () {
+        // Build dependency results for the current task by looking up each provided dependency.
+        const dependencyResults: Record<string, unknown> = {}
+        for (const dependencyName in task.provide) {
+          const providedTask = task.provide[dependencyName]
+          if (results.has(providedTask.id)) {
+            dependencyResults[dependencyName] = results.get(providedTask.id)
+          }
+        }
+        const taskPath = yield* getTaskPathById(task.id)
+        emit(
+          Effect.succeed(
+            Chunk.of({ taskId: task.id, taskPath, status: "starting" }),
+          ),
+        )
+
+        // Create layers for dependency results and configuration.
+        const taskLayer = Layer.mergeAll(
+          Layer.succeed(TaskInfo, {
+            taskPath,
+            // TODO: provide more?
+          }),
+          Layer.succeed(DependencyResults, {
+            dependencies: dependencyResults,
+          }),
+          Layer.setConfigProvider(
+            ConfigProvider.fromMap(
+              new Map([...Array.from(configMap.entries())]),
+            ),
+          ),
+        )
+        const result = yield* task.effect.pipe(Effect.provide(taskLayer))
+        emit(
+          Effect.succeed(
+            Chunk.of({
+              taskId: task.id,
+              taskPath,
+              status: "completed",
+              result,
+            }),
+          ),
+        )
+        results.set(task.id, result)
+      }),
+    )
+    Effect.all(taskEffects, { concurrency: "unbounded" })
+      .pipe(
+        Effect.tap((results) => {
+          // should close the stream
+          emit(Effect.fail(Option.none()))
+        }),
+      )
+      .pipe(
+        // @ts-ignore
+        runtime.runPromise,
+      )
+  })
+
 export const filterTasks = (
   taskTree: TaskTree,
   predicate: (task: TaskTreeNode) => boolean,
@@ -949,18 +1150,28 @@ export const canistersDeployTask = () =>
   Effect.gen(function* () {
     yield* Effect.logInfo("Running canisters:deploy")
     const { taskTree } = yield* CrystalConfigService
-    const tasksWithPath = yield* filterTasks(
+    const tasksWithPath = (yield* filterTasks(
       taskTree,
       (node) =>
         node._tag === "task" &&
         node.tags.includes(Tags.CANISTER) &&
         node.tags.includes(Tags.DEPLOY),
+    )) as Array<{ task: Task; path: string[] }>
+    // yield* Effect.forEach(
+    //   tasksWithPath,
+    //   ({ path }) => runTaskByPath(path.join(":")),
+    //   { concurrency: "unbounded" },
+    // )
+    // yield* Effect.forEach(
+    //   tasksWithPath.map(({ task }) => task),
+    //   ({ path }) => runTaskByPath(path.join(":")),
+    //   { concurrency: "unbounded" },
+    // )
+    const tasks = tasksWithPath.map(({ task }) => task)
+    const sortedTasks = topologicalSortTasks(
+      new Map(tasks.map((task) => [task.id, task])),
     )
-    yield* Effect.forEach(
-      tasksWithPath,
-      ({ path }) => runTaskByPath(path.join(":")),
-      { concurrency: "unbounded" },
-    )
+    return executeSortedTasks(sortedTasks)
   })
 
 export const canistersCreateTask = () =>

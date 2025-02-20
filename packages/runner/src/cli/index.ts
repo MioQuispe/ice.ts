@@ -1,4 +1,4 @@
-import { Effect, Layer, Console } from "effect"
+import { Effect, Layer, Console, Stream } from "effect"
 import { Command, Options, Args, ValidationError } from "@effect/cli"
 import { CommandMismatch, isCommandMismatch } from "@effect/cli/ValidationError"
 import {
@@ -22,6 +22,8 @@ import { commandMismatch } from "@effect/cli/ValidationError"
 import * as p from "@clack/prompts"
 import color from "picocolors"
 import { defineCommand, createMain } from "citty"
+import { spinner } from "@clack/prompts"
+import { cursor, erase } from "sisteransi"
 // TODO: not in npm?
 // import tab from '@bombsh/tab/citty'
 
@@ -76,6 +78,18 @@ const initCommand = defineCommand({
     // )
   },
 })
+
+export const tasks = async (tasks) => {
+  for (const task of tasks) {
+    if (task.enabled === false) continue
+
+    const s = spinner()
+    s.start(task.title)
+    const result = await task.task(s.message)
+    s.stop(result || task.title)
+  }
+}
+
 const canistersDeployCommand = defineCommand({
   meta: {
     name: "Canisters deploy",
@@ -84,19 +98,47 @@ const canistersDeployCommand = defineCommand({
   run: async ({ args }) => {
     const s = p.spinner()
     s.start("Deploying all canisters...")
-    await p.tasks([
-      {
-        title: "Deploying canisters",
-        task: async () => {
-          await runtime.runPromise(
-            // @ts-ignore
-            Effect.gen(function* () {
-              yield* canistersDeployTask()
-            }),
-          )
-        },
-      },
-    ])
+    const stream = await runtime.runPromise(canistersDeployTask())
+    const spinners = new Map<string, typeof s>()
+    await stream
+      .pipe(
+        Stream.runForEach((update) => {
+          if (update.status === "starting") {
+            // const s = p.spinner()
+            // s.start(`Deploying ${update.taskPath}\n`)
+            // spinners.set(update.taskPath, s)
+            s.message(`Deploying ${update.taskPath}`)
+            // console.log(`Deploying ${update.taskPath}`)
+          }
+          if (update.status === "completed") {
+            // const s = spinners.get(update.taskPath)
+            // s?.stop(`Completed ${update.taskPath}\n`)
+            s.message(`Completed ${update.taskPath}`)
+            // console.log(`Completed ${update.taskPath}`)
+          }
+          // We only want the side effects of the stream
+          return Effect.succeed([])
+        }),
+      )
+      .pipe(runtime.runPromise)
+    // await p.tasks([
+    //   {
+    //     title: "Deploying canisters",
+    //     task: async () => {
+    //       // await runtime.runPromise(
+    //       //   // @ts-ignore
+    //       //   Effect.gen(function* () {
+    //       //     const stream = yield* canistersDeployTask()
+    //       //     yield* Stream.runForEach(stream, (update) => {
+    //       //       return Console.log(update)
+    //       //     })
+    //       //   }),
+    //       // )
+    //     },
+    //   },
+    // ])
+    // await p.tasks()
+    // await canistersDeployTask().
     s.stop("Deployed all canisters")
   },
 })
@@ -167,7 +209,6 @@ const canistersStatusCommand = defineCommand({
     description: "Gets the status of all canisters",
   },
   run: async ({ args }) => {
-
     if (args._.length === 0) {
       await runtime.runPromise(
         Effect.gen(function* () {
@@ -191,7 +232,6 @@ ${color.underline(result.right.canisterName)}
         }),
       )
     }
-
   },
 })
 
