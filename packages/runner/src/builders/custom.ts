@@ -21,7 +21,7 @@ import type { Actor, HttpAgent, Identity } from "@dfinity/agent"
 import type { Agent } from "@dfinity/agent"
 import type {
   BuilderResult,
-  CrystalContext,
+  ICEContext,
   Scope,
   Task,
   TaskTree,
@@ -44,6 +44,7 @@ import type {
 } from "./types.js"
 import { Tags } from "./types.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
+import { instrumentActor } from "../utils/instrumentActor.js"
 // TODO: later
 // candidUITaskPlugin()
 // const plugins = <T extends TaskTreeNode>(taskTree: T) =>
@@ -54,6 +55,8 @@ type CustomCanisterConfig = {
   candid: string
   canisterId?: string
 }
+
+export const iceDirName = ".ice"
 
 export const makeStopTask = () => {
   return {
@@ -109,8 +112,12 @@ export const makeDeleteTask = () => {
   } satisfies Task
 }
 
-
-export const makeBindingsTask = () => {
+export const makeCustomBindingsTask = (
+  canisterConfigOrFn:
+    | ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)
+    | ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)
+    | CustomCanisterConfig,
+) => {
   return {
     _tag: "task",
     id: Symbol("customCanister/bindings"),
@@ -118,26 +125,14 @@ export const makeBindingsTask = () => {
     provide: {},
     // TODO: do we allow a fn as args here?
     effect: Effect.gen(function* () {
+      const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
       const path = yield* Path.Path
       const fs = yield* FileSystem.FileSystem
       const appDir = yield* Config.string("APP_DIR")
       const { taskPath } = yield* TaskInfo
       const canisterName = taskPath.split(":").slice(0, -1).join(":")
-      yield* canisterBuildGuard
-      yield* Effect.logDebug(`Bindings build guard check passed for ${canisterName}`)
-
-      const wasmPath = path.join(
-        appDir,
-        ".artifacts",
-        canisterName,
-        `${canisterName}.wasm`,
-      )
-      const didPath = path.join(
-        appDir,
-        ".artifacts",
-        canisterName,
-        `${canisterName}.did`,
-      )
+      const didPath = canisterConfig.candid
+      const wasmPath = canisterConfig.wasm
       yield* Effect.logDebug("Artifact paths", { wasmPath, didPath })
 
       yield* generateDIDJS(canisterName, didPath)
@@ -188,7 +183,8 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 
       const didJSPath = path.join(
         appDir,
-        ".artifacts",
+        iceDirName,
+        "canisters",
         canisterName,
         `${canisterName}.did.js`,
       )
@@ -243,16 +239,17 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
             // @ts-ignore
             try: () => encodeArgs(installArgs, canisterDID),
             catch: (error) => {
-          throw new Error(
-            `Failed to encode args: ${error instanceof Error ? error.message : String(error)}`,
-          )
-        },
-      })
+              throw new Error(
+                `Failed to encode args: ${error instanceof Error ? error.message : String(error)}`,
+              )
+            },
+          })
       yield* Effect.logDebug("Args encoded successfully")
 
       const wasmPath = path.join(
         appDir,
-        ".artifacts",
+        iceDirName,
+        "canisters",
         canisterName,
         `${canisterName}.wasm`,
       )
@@ -269,7 +266,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
       return {
         canisterId,
         canisterName,
-        actor,
+        actor: instrumentActor(canisterName, actor),
       }
     }),
     description: "Install canister code",
@@ -299,16 +296,20 @@ const makeBuildTask = (
       const canisterName = taskPath.split(":").slice(0, -1).join(":")
       const outWasmPath = path.join(
         appDir,
-        ".artifacts",
+        iceDirName,
+        "canisters",
         canisterName,
         `${canisterName}.wasm`,
       )
       const wasm = yield* fs.readFile(canisterConfig.wasm)
+      // Ensure the directory exists
+      yield* fs.makeDirectory(path.dirname(outWasmPath), { recursive: true })
       yield* fs.writeFile(outWasmPath, wasm)
 
       const outCandidPath = path.join(
         appDir,
-        ".artifacts",
+        iceDirName,
+        "canisters",
         canisterName,
         `${canisterName}.did`,
       )
@@ -339,7 +340,9 @@ export const resolveConfig = <T>(
   Effect.gen(function* () {
     const taskCtx = yield* TaskCtx
     if (typeof configOrFn === "function") {
-      const configFn = configOrFn as (args: { ctx: TaskCtxShape }) => Promise<T> | T
+      const configFn = configOrFn as (args: {
+        ctx: TaskCtxShape
+      }) => Promise<T> | T
       const configResult = configFn({ ctx: taskCtx })
       if (configResult instanceof Promise) {
         return yield* Effect.tryPromise({
@@ -388,7 +391,7 @@ export const makeCreateTask = (
         network: "local",
         canisterId,
       })
-      const outDir = path.join(appDir, ".artifacts", canisterName)
+      const outDir = path.join(appDir, iceDirName, "canisters", canisterName)
       yield* fs.makeDirectory(outDir, { recursive: true })
       return canisterId
     }),
@@ -420,9 +423,14 @@ const makeCustomCanisterBuilder = <
           create: makeCreateTask(canisterConfigOrFn, [Tags.CUSTOM]),
         },
       } satisfies CanisterScope
-      return makeCustomCanisterBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(
-        updatedScope,
-      )
+      return makeCustomCanisterBuilder<
+        I,
+        typeof updatedScope,
+        D,
+        P,
+        Config,
+        _SERVICE
+      >(updatedScope)
     },
     installArgs: (installArgsFn) => {
       // TODO: is this a flag, arg, or what?
@@ -447,9 +455,14 @@ const makeCustomCanisterBuilder = <
           },
         },
       } satisfies CanisterScope
-      return makeCustomCanisterBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(
-        updatedScope,
-      )
+      return makeCustomCanisterBuilder<
+        I,
+        typeof updatedScope,
+        D,
+        P,
+        Config,
+        _SERVICE
+      >(updatedScope)
     },
     build: (canisterConfigOrFn) => {
       const updatedScope = {
@@ -459,9 +472,14 @@ const makeCustomCanisterBuilder = <
           build: makeBuildTask(canisterConfigOrFn),
         },
       } satisfies CanisterScope
-      return makeCustomCanisterBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(
-        updatedScope,
-      )
+      return makeCustomCanisterBuilder<
+        I,
+        typeof updatedScope,
+        D,
+        P,
+        Config,
+        _SERVICE
+      >(updatedScope)
     },
     // Here we extract the real tasks from the deps
     // is it enough to compare symbols?
@@ -523,7 +541,7 @@ const makeCustomCanisterBuilder = <
     deps: (providedDeps) => {
       // TODO: do we transform here?
       // TODO: do we type check here?
-      
+
       const finalDeps = Object.fromEntries(
         Object.entries(providedDeps).map(([key, dep]) => {
           // if (dep._tag === "builder") {
@@ -549,7 +567,10 @@ const makeCustomCanisterBuilder = <
             provide: finalDeps,
           },
         },
-      } satisfies CanisterScope as MergeScopeProvide<S, ExtractProvidedDeps<typeof providedDeps>>
+      } satisfies CanisterScope as MergeScopeProvide<
+        S,
+        ExtractProvidedDeps<typeof providedDeps>
+      >
       // return makeCustomCanisterBuilder<
       //   I,
       //   typeof updatedScope,
@@ -592,7 +613,7 @@ export const customCanister = <I = unknown, _SERVICE = unknown>(
     // TODO: default implementations
     children: {
       create: makeCreateTask(canisterConfigOrFn, [Tags.CUSTOM]),
-      bindings: makeBindingsTask(),
+      bindings: makeCustomBindingsTask(canisterConfigOrFn),
 
       // TODO: maybe just the return value of install? like a cleanup
       // delete: {
@@ -641,19 +662,25 @@ export const canisterBuildGuard = Effect.gen(function* () {
   const canisterName = taskPath.split(":").slice(0, -1).join(":")
   const didPath = path.join(
     appDir,
-    ".artifacts",
+    iceDirName,
+    "canisters",
     canisterName,
     `${canisterName}.did`,
   )
   const wasmPath = path.join(
     appDir,
-    ".artifacts",
+    iceDirName,
+    "canisters",
     canisterName,
     `${canisterName}.wasm`,
   )
   const didExists = yield* fs.exists(didPath)
   if (!didExists) {
-    yield* Effect.fail(new Error("Candid file not found"))
+    yield* Effect.fail(
+      new Error(
+        `Candid file not found: ${didPath}, ${canisterName}, taskPath: ${taskPath}`,
+      ),
+    )
   }
   const wasmExists = yield* fs
     .exists(wasmPath)
@@ -664,8 +691,8 @@ export const canisterBuildGuard = Effect.gen(function* () {
   return true
 })
 
-type CrystalConfig = CrystalContext & {
-  setup?: () => Promise<CrystalContext>
+type ICEConfig = ICEContext & {
+  setup?: () => Promise<ICEContext>
 }
 
 // TODO: Do more here?
@@ -811,8 +838,8 @@ const test = customCanister(async () => ({
 // // // }
 
 const t = test
-  .dependsOn({ 
-    asd: test.done().children.install 
+  .dependsOn({
+    asd: test.done().children.install,
   })
   .deps({
     asd: test.done().children.install,
@@ -821,7 +848,7 @@ const t = test
   })
   // ._scope.children
   .installArgs(async ({ ctx, mode }) => {
-    // TODO: allow chaining builders with crystal.customCanister() 
+    // TODO: allow chaining builders with ice.customCanister()
     // to pass in context?
     // ctx.users.default
     // TODO: type the actors

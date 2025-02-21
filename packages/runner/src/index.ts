@@ -66,19 +66,20 @@ import type {
   BuilderResult,
   TaskTree,
   TaskTreeNode,
-  CrystalContext,
-  CrystalConfigFile,
+  ICEContext,
+  ICEConfigFile,
 } from "./types/types.js"
 import { Moc } from "./services/moc.js"
 import { runCli } from "./cli/index.js"
 import { TaskRegistry } from "./services/taskRegistry.js"
 import type * as ActorTypes from "./types/actor.js"
-import { CrystalConfigService } from "./services/crystalConfig.js"
+import { ICEConfigService } from "./services/iceConfig.js"
 import { CanisterIdsService } from "./services/canisterIds.js"
 export * from "./builders/index.js"
 // export * from "./plugins/withContext.js"
 
 import * as didc from "didc_js"
+import { iceDirName } from "./builders/custom.js"
 import { Tags } from "./builders/types.js"
 import { deployTaskPlugin } from "./plugins/deploy.js"
 import { candidUITaskPlugin } from "./plugins/candid_ui.js"
@@ -87,10 +88,11 @@ import {
   canister_status_result,
   type log_visibility,
 } from "./canisters/management_latest/management.types.js"
+import { writeLogEntry } from "./utils/instrumentActor.js"
 
 export const configMap = new Map([
   ["APP_DIR", fs.realpathSync(process.cwd())],
-  ["DFX_CONFIG_FILENAME", "crystal.config.ts"],
+  ["DFX_CONFIG_FILENAME", "ice.config.ts"],
   ["CANISTER_IDS_FILENAME", "canister_ids.json"],
   // TODO: IC_PORT / IC_HOST
   ["DFX_PORT", "8080"],
@@ -144,7 +146,7 @@ export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {
     Effect.gen(function* () {
       // TODO: should be dynamically determined, whether this or pocket-ic?
       const { agent, identity } = yield* DfxService
-      // const crystalConfig = yield* getCrystalConfig()
+      // const iceConfig = yield* getICEConfig()
       // TODO: get layers or runtime? we need access to the tasks dependencies here
 
       return {
@@ -270,11 +272,13 @@ export const generateDIDJS = (canisterName: string, didPath: string) =>
     const didJSString = didc.did_to_js(didString)
     const didJSPath = path.join(
       appDir,
-      ".artifacts",
+      iceDirName,
+      "canisters",
       canisterName,
       `${canisterName}.did.js`,
     )
-    yield* fs.writeFile(didJSPath, Buffer.from(didJSString ?? "")) // TODO: check
+    yield* fs.makeDirectory(path.dirname(didJSPath), { recursive: true })
+    yield* fs.writeFile(didJSPath, Buffer.from(didJSString ?? ""))
 
     const canisterDID = yield* Effect.tryPromise({
       try: () => import(didJSPath),
@@ -678,19 +682,19 @@ type TaskFullName = string
 export const getTaskByPath = (taskPathString: TaskFullName) =>
   Effect.gen(function* () {
     const taskPath: string[] = taskPathString.split(":")
-    const { taskTree, config } = yield* CrystalConfigService
+    const { taskTree, config } = yield* ICEConfigService
     const task = yield* findTaskInTaskTree(taskTree, taskPath)
     return { task, config }
   })
 
 // const fileLogger = Logger.logfmtLogger.pipe(
-//   PlatformLogger.toFile("logs/crystal.log", { flag: "a" }),
+//   PlatformLogger.toFile("logs/ice.log", { flag: "a" }),
 // )
 // const LoggerLive = Logger.replaceScoped(Logger.defaultLogger, fileLogger).pipe(
 //   Layer.provide(NodeFileSystem.layer)
 // )
 // const fileLogger = Logger.logfmtLogger.pipe(
-//   PlatformLogger.toFile("logs/crystal.log"),
+//   PlatformLogger.toFile("logs/ice.log"),
 // )
 // const LoggerLive = Logger.addScoped(fileLogger).pipe(
 //   Layer.provide(NodeFileSystem.layer),
@@ -702,7 +706,7 @@ export const getTaskByPath = (taskPathString: TaskFullName) =>
 
 // const customLogger = Logger.make((ctx) => {
 //   // console.log("attempting to serialize:", ctx)
-//   fs.appendFileSync("logs/crystal.log", `${JSON.stringify(ctx, null, 2)}\n`)
+//   fs.appendFileSync("logs/ice.log", `${JSON.stringify(ctx, null, 2)}\n`)
 // })
 
 // TODO: layer memoization should work? do we need this?
@@ -715,75 +719,30 @@ export const DefaultsLayer = Layer.mergeAll(
   NodeContext.layer,
   DfxLayer,
   TaskRegistry.Live,
-  // TODO: do not depend on DfxService directly?
-  TaskCtx.Live.pipe(
-    // Layer.provide(DfxService.Live),
-    Layer.provide(DfxLayer),
-    Layer.provide(NodeContext.layer),
-  ),
+  TaskCtx.Live.pipe(Layer.provide(DfxLayer), Layer.provide(NodeContext.layer)),
   Moc.Live.pipe(Layer.provide(NodeContext.layer)),
   configLayer,
-  // Logger.replace(Logger.defaultLogger, Logger.zip(Logger.pretty)),
+  ICEConfigService.Live.pipe(Layer.provide(NodeContext.layer)),
+  CanisterIdsService.Live.pipe(
+    Layer.provide(NodeContext.layer),
+    Layer.provide(configLayer),
+  ),
+)
+
+export const CLILayer = Layer.mergeAll(
+  DefaultsLayer,
   Logger.pretty,
-  // Logger.replace(Logger.defaultLogger, Logger.jsonLogger), // Use jsonLogger
-  CrystalConfigService.Live.pipe(Layer.provide(NodeContext.layer)),
-  CanisterIdsService.Live.pipe(
-    Layer.provide(NodeContext.layer),
-    Layer.provide(configLayer),
-  ),
-  // TODO: set with flag?
+  // TODO: set with logLevel flag
   Logger.minimumLogLevel(LogLevel.Error),
-  // Logger.add(customLogger),
-  // Layer.effect(fileLogger),
-  // LoggerLive,
-  // fileLogger,
 )
 
-// TODO: construct later? or this is just defaults
-export const TUILayer = Layer.mergeAll(
-  NodeContext.layer,
-  DfxLayer,
-  TaskRegistry.Live,
-  // TODO: do not depend on DfxService directly?
-  TaskCtx.Live.pipe(
-    // Layer.provide(DfxService.Live),
-    Layer.provide(DfxLayer),
-    Layer.provide(NodeContext.layer),
-  ),
-  Moc.Live.pipe(Layer.provide(NodeContext.layer)),
-  configLayer,
-  CrystalConfigService.Live.pipe(Layer.provide(NodeContext.layer)),
-  CanisterIdsService.Live.pipe(
-    Layer.provide(NodeContext.layer),
-    Layer.provide(configLayer),
-  ),
-  // Logger.add(customLogger),
-  // Layer.effect(fileLogger),
-  // LoggerLive,
-  // fileLogger,
-)
-export const runtime = ManagedRuntime.make(DefaultsLayer)
-
-// export const runCLI = async () => {
-//   const result = await runtime.runPromise(cliProgram)
-//   console.log(result)
-// }
-
-export type LayerRequirements<L extends Layer.Layer<any, any, any>> =
-  L extends Layer.Layer<infer R, any, any> ? R : never
-
-// export const DependencyResultsArray = Context.Tag<DependencyResultsArray, any[]>("DependencyResultsArray") // Tag for the array
-// export type DependencyResultsArrayShape = Context.Tag.Service<typeof DependencyResultsArray>
-
-// class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
-//   message: string
-// }> {}
+export const TUILayer = Layer.mergeAll(DefaultsLayer)
+export const runtime = ManagedRuntime.make(CLILayer)
 
 // TODO: do we need to get by id? will symbol work?
 export const getTaskPathById = (id: Symbol) =>
   Effect.gen(function* () {
-    // TODO: initialize with all tasks
-    const { taskTree } = yield* CrystalConfigService
+    const { taskTree } = yield* ICEConfigService
     const result = yield* filterTasks(
       taskTree,
       (node) => node._tag === "task" && node.id === id,
@@ -820,17 +779,6 @@ export class TaskInfo extends Context.Tag("TaskInfo")<
     readonly taskPath: string
   }
 >() {}
-
-class RunTaskError extends Data.TaggedError("RunTaskError")<{
-  message: string
-}> {}
-
-// Type to extract success types from an array of Tasks
-type DependencySuccessTypes<Dependencies extends Task<any, any, any>[]> = {
-  [K in keyof Dependencies]: Dependencies[K] extends Task<infer A, any, any>
-    ? A
-    : never
-}
 
 export interface RunTaskOptions {
   forceRun?: boolean
@@ -979,54 +927,6 @@ export const topologicalSortTasks = <A, E, R, I>(
   return sortedTasks
 }
 
-/**
- * Executes tasks in sorted order sequentially.
- *
- * For each task, gathers dependency results from tasks provided via the "provide" field,
- * injects them as a layer (along with the config layer), and runs the effect.
- *
- * @param sortedTasks The tasks in topologically sorted order.
- * @returns A map from task id (as symbol) to the result of each task.
- */
-// export const executeSortedTasks = <A, E, R, I>(
-//   sortedTasks: Task<A, E, R, I>[],
-// ) =>
-//   Effect.gen(function* () {
-//     // : Effect.Effect<Map<string, R>>
-//     const results = new Map<symbol, unknown>()
-//     for (const task of sortedTasks) {
-//       // Build dependency results for the current task by looking up each provided dependency.
-//       const dependencyResults: Record<string, unknown> = {}
-//       for (const dependencyName in task.provide) {
-//         const providedTask = task.provide[dependencyName]
-//         if (results.has(providedTask.id)) {
-//           dependencyResults[dependencyName] = results.get(providedTask.id)
-//         }
-//       }
-//       const taskPath = yield* getTaskPathById(task.id)
-//       yield { taskPath, task, status: "executing" }
-
-//       // Create layers for dependency results and configuration.
-//       const taskLayer = Layer.mergeAll(
-//         Layer.succeed(TaskInfo, {
-//           taskPath,
-//           // TODO: provide more?
-//         }),
-//         Layer.succeed(DependencyResults, {
-//           dependencies: dependencyResults,
-//         }),
-//         Layer.setConfigProvider(
-//           ConfigProvider.fromMap(new Map([...Array.from(configMap.entries())])),
-//         ),
-//       )
-//       const result = yield* task.effect.pipe(Effect.provide(taskLayer))
-//       yield { taskPath, task, status: "done" }
-//       results.set(task.id, result)
-//     }
-//     // TODO: execute concurrently and yield results
-//     return { status: "all_done", results }
-//   })
-
 export type ProgressStatus = "starting" | "completed"
 export type ProgressUpdate<A> = {
   taskId: symbol
@@ -1051,12 +951,14 @@ export const executeSortedTasks = <A, E, R, I>(
     const results = new Map<symbol, unknown>()
     const taskEffects = sortedTasks.map((task) =>
       Effect.gen(function* () {
-        // Build dependency results for the current task by looking up each provided dependency.
+
         const dependencyResults: Record<string, unknown> = {}
         for (const dependencyName in task.provide) {
           const providedTask = task.provide[dependencyName]
-          if (results.has(providedTask.id)) {
-            dependencyResults[dependencyName] = results.get(providedTask.id)
+          const depDeferred = deferredMap.get(providedTask.id)
+          if (depDeferred) {
+            const depResult = yield* Deferred.await(depDeferred)
+            dependencyResults[dependencyName] = depResult
           }
         }
         const taskPath = yield* getTaskPathById(task.id)
@@ -1066,7 +968,6 @@ export const executeSortedTasks = <A, E, R, I>(
           ),
         )
 
-        // Create layers for dependency results and configuration.
         const taskLayer = Layer.mergeAll(
           Layer.succeed(TaskInfo, {
             taskPath,
@@ -1082,6 +983,12 @@ export const executeSortedTasks = <A, E, R, I>(
           ),
         )
         const result = yield* task.effect.pipe(Effect.provide(taskLayer))
+
+        const currentDeferred = deferredMap.get(task.id)
+        if (currentDeferred) {
+          yield* Deferred.succeed(currentDeferred, result)
+        }
+
         emit(
           Effect.succeed(
             Chunk.of({
@@ -1098,7 +1005,7 @@ export const executeSortedTasks = <A, E, R, I>(
     Effect.all(taskEffects, { concurrency: "unbounded" })
       .pipe(
         Effect.tap((results) => {
-          // should close the stream
+          // close the stream
           emit(Effect.fail(Option.none()))
         }),
       )
@@ -1141,15 +1048,14 @@ export const filterTasks = (
     return matchingNodes
   })
 
-// const findTasksByTags = (config: CrystalConfigFile, tags: string[]) =>
+// const findTasksByTags = (config: ICEConfigFile, tags: string[]) =>
 //   Effect.gen(function* () {
 //     return matchingTasks
 //   })
 
 export const canistersDeployTask = () =>
   Effect.gen(function* () {
-    yield* Effect.logInfo("Running canisters:deploy")
-    const { taskTree } = yield* CrystalConfigService
+    const { taskTree } = yield* ICEConfigService
     const tasksWithPath = (yield* filterTasks(
       taskTree,
       (node) =>
@@ -1177,7 +1083,7 @@ export const canistersDeployTask = () =>
 export const canistersCreateTask = () =>
   Effect.gen(function* () {
     yield* Effect.logInfo("Running canisters:create")
-    const { taskTree } = yield* CrystalConfigService
+    const { taskTree } = yield* ICEConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
       (node) =>
@@ -1195,7 +1101,7 @@ export const canistersCreateTask = () =>
 export const canistersBuildTask = () =>
   Effect.gen(function* () {
     yield* Effect.logInfo("Running canisters:build")
-    const { taskTree } = yield* CrystalConfigService
+    const { taskTree } = yield* ICEConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
       (node) =>
@@ -1213,7 +1119,7 @@ export const canistersBuildTask = () =>
 export const canistersBindingsTask = () =>
   Effect.gen(function* () {
     yield* Effect.logInfo("Running canisters:bindings")
-    const { taskTree } = yield* CrystalConfigService
+    const { taskTree } = yield* ICEConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
       (node) =>
@@ -1231,7 +1137,7 @@ export const canistersBindingsTask = () =>
 export const canistersInstallTask = () =>
   Effect.gen(function* () {
     yield* Effect.logInfo("Running canisters:install")
-    const { taskTree } = yield* CrystalConfigService
+    const { taskTree } = yield* ICEConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
       (node) =>
@@ -1320,7 +1226,7 @@ export const canistersStatusTask = () =>
 export const listTasksTask = () =>
   Effect.gen(function* () {
     // TODO: remove builders
-    const { taskTree } = yield* CrystalConfigService
+    const { taskTree } = yield* ICEConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
       (node) => node._tag === "task",
@@ -1338,7 +1244,7 @@ export const listTasksTask = () =>
 
 export const listCanistersTask = () =>
   Effect.gen(function* () {
-    const { taskTree } = yield* CrystalConfigService
+    const { taskTree } = yield* ICEConfigService
     const tasksWithPath = yield* filterTasks(
       taskTree,
       (node) => node._tag === "task" && node.tags.includes(Tags.CANISTER),
@@ -1473,3 +1379,5 @@ const decodeCanisterIds = Schema.decodeUnknown(CanisterIdsSchema)
 
 export { deployTaskPlugin } from "./plugins/deploy.js"
 export { candidUITaskPlugin } from "./plugins/candid_ui.js"
+
+export { runWithPatchedConsole } from "./utils/instrumentActor.js"

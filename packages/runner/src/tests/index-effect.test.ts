@@ -26,8 +26,8 @@ import {
   createTaskStreamEffect,
   deployCanister,
   DeploymentError,
-  CrystalEnvironment,
-  CrystalConfig,
+  ICEEnvironment,
+  ICEConfig,
   getCanisterIdsEffect,
   getCurrentIdentityEffect,
   getIdentityEffect,
@@ -36,7 +36,7 @@ import {
   type TaskContext,
   type TaskFullName,
 } from "../index"
-import { DIP721 } from "@crystal/canisters"
+import { DIP721 } from "@ice/canisters"
 import { Actor, ActorSubclass } from "@dfinity/agent"
 
 const mockCanisterIds = {
@@ -169,9 +169,9 @@ describe("getIdentityEffect", () => {
 })
 
 /**
- * @group CrystalEnvironment.Live
+ * @group ICEEnvironment.Live
  */
-describe("CrystalEnvironment.Live", () => {
+describe("ICEEnvironment.Live", () => {
   // TODO: import of cystal.config.ts fails
   const FileSystemTest = FileSystem.makeNoop({
     exists: (_path: string) => Effect.succeed(true),
@@ -179,12 +179,12 @@ describe("CrystalEnvironment.Live", () => {
       Effect.succeed(mockPem),
   })
 
-  it("should create CrystalEnvironment with correct properties", async () => {
+  it("should create ICEEnvironment with correct properties", async () => {
     const layers = Layer.mergeAll(
       NodeContext.layer,
       configLayer,
       Layer.provide(
-        CrystalEnvironment.Live,
+        ICEEnvironment.Live,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -194,7 +194,7 @@ describe("CrystalEnvironment.Live", () => {
     )
     const runtime = ManagedRuntime.make(layers)
     const program = Effect.gen(function* () {
-      const env = yield* CrystalEnvironment
+      const env = yield* ICEEnvironment
       return env
     })
 
@@ -217,7 +217,7 @@ describe("CrystalEnvironment.Live", () => {
       NodeContext.layer,
       configLayer,
       Layer.provide(
-        CrystalEnvironment.Live,
+        ICEEnvironment.Live,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -227,7 +227,7 @@ describe("CrystalEnvironment.Live", () => {
     )
     const runtime = ManagedRuntime.make(layers)
     const program = Effect.gen(function* () {
-      const env = yield* CrystalEnvironment
+      const env = yield* ICEEnvironment
       return env
     })
     const result = await runtime.runPromiseExit(program)
@@ -253,7 +253,7 @@ describe("CrystalEnvironment.Live", () => {
  * @group deployCanisterEffect
  */
 describe("deployCanisterEffect", () => {
-  // TODO: use real canister from @crystal/canisters
+  // TODO: use real canister from @ice/canisters
   const mockCanisterId = "rrkah-fqaaa-aaaaa-aaaaq-cai"
   let mockCanisterConfig: ReturnType<typeof DIP721> = {
     // TODO: fix DIP721 type
@@ -320,7 +320,7 @@ describe("deployCanisterEffect", () => {
       FileSystemTestLayer,
       configLayer,
       Layer.provide(
-        CrystalEnvironment.Live,
+        ICEEnvironment.Live,
         Layer.mergeAll(configLayer, NodeContext.layer, FileSystemTestLayer),
       ),
     )
@@ -339,7 +339,7 @@ describe("deployCanisterEffect", () => {
       FileSystemErrorLayer,
       configLayer,
       Layer.provide(
-        CrystalEnvironment.Live,
+        ICEEnvironment.Live,
         Layer.mergeAll(configLayer, NodeContext.layer, FileSystemTestLayer),
       ),
     )
@@ -375,7 +375,7 @@ describe("deployCanisterEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemBadDid),
       configLayer,
       Layer.provide(
-        CrystalEnvironment.Live,
+        ICEEnvironment.Live,
         Layer.mergeAll(configLayer, NodeContext.layer, FileSystemTestLayer),
       ),
     )
@@ -402,7 +402,7 @@ describe("deployCanisterEffect", () => {
       FileSystemTestLayer,
       configLayer,
       Layer.provide(
-        CrystalEnvironment.Live,
+        ICEEnvironment.Live,
         Layer.mergeAll(configLayer, NodeContext.layer, FileSystemTestLayer),
       ),
     )
@@ -465,7 +465,7 @@ describe("createActorsEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemTest),
       configLayer,
       Layer.provide(
-        CrystalEnvironment.Live,
+        ICEEnvironment.Live,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -495,7 +495,7 @@ describe("createActorsEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemError),
       configLayer,
       Layer.provide(
-        CrystalEnvironment.Live,
+        ICEEnvironment.Live,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -825,7 +825,7 @@ describe("runTasksEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemTest),
       configLayer,
       Layer.provide(
-        CrystalEnvironment.Live,
+        ICEEnvironment.Live,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -866,7 +866,7 @@ describe("runTasksEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemTest),
       configLayer,
       Layer.provide(
-        CrystalEnvironment.Live,
+        ICEEnvironment.Live,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -904,7 +904,7 @@ describe("runTasksEffect", () => {
       Layer.succeed(FileSystem.FileSystem, FileSystemTest),
       configLayer,
       Layer.provide(
-        CrystalEnvironment.Live,
+        ICEEnvironment.Live,
         Layer.mergeAll(
           configLayer,
           NodeContext.layer,
@@ -944,7 +944,7 @@ describe("runTasksEffect", () => {
     //   Layer.succeed(FileSystem.FileSystem, FileSystemTest),
     //   configLayer,
     //   Layer.provide(
-    //     CrystalEnvironment.Live,
+    //     ICEEnvironment.Live,
     //     Layer.mergeAll(
     //       configLayer,
     //       NodeContext.layer,

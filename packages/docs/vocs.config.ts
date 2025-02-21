@@ -1,14 +1,14 @@
 import { defineConfig } from 'vocs'
 
 export default defineConfig({
-  title: 'Crystal Documentation',
+  title: 'ICE Documentation',
   description: 'A powerful CLI and SDK for Internet Computer developers',
   
   sidebar: [
     {
       text: 'Introduction',
       items: [
-        { text: 'What is Crystal?', link: '/introduction/what-is-crystal' },
+        { text: 'What is ICE?', link: '/introduction/what-is-ice' },
         { text: 'Getting Started', link: '/introduction/getting-started' },
       ],
     },
@@ -31,7 +31,7 @@ export default defineConfig({
     {
       text: 'Advanced Topics',
       items: [
-        { text: 'Testing with Crystal', link: '/advanced/testing' },
+        { text: 'Testing with ICE', link: '/advanced/testing' },
         { text: 'Extensibility', link: '/advanced/extensibility' },
       ],
     },

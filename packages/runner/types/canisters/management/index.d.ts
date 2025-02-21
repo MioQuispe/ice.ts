@@ -1,4 +1,4 @@
-import type { ExtendedCanisterConfiguration } from "@crystal/runner";
+import type { ExtendedCanisterConfiguration } from "@ice/runner";
 type InitArgs = {
     owner: string;
 };

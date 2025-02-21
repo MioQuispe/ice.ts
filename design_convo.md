@@ -1,20 +1,20 @@
 Heres my previous convo with gpt o1, to create my task runner. help me figure out if theres some additional improvements, techniques or design considerations:
 
-The following is my WIP task runner for the Internet Computer, meant to replace or augment the default dfx CLI tool which uses a json based dfx.json configuration to declare canisters. The goal is to create a more composable way to build canisters and run common tasks, as well as make them installable and distributable on npm (can be seen in @crystal/canisters). There is a great emphasis on composability, hence why Im using effect-ts and adopted its patterns. it also takes a bit of inspiration from hardhat, but aims to be more composable. a few notable design decisions: tasks depending on / calling other tasks by an explicit reference to the task, instead of hardcoded strings like hardhat. this allows for automatic type inference and less conflicts, while making dependencies explit (the type system can warn us and notify which dependency is lacking). Also, instead of calling task('taskName', fn...) as a side effect like in hardhat, they are just data objects which the module can export. this makes them easier to test and more composable. 
+The following is my WIP task runner for the Internet Computer, meant to replace or augment the default dfx CLI tool which uses a json based dfx.json configuration to declare canisters. The goal is to create a more composable way to build canisters and run common tasks, as well as make them installable and distributable on npm (can be seen in @ice/canisters). There is a great emphasis on composability, hence why Im using effect-ts and adopted its patterns. it also takes a bit of inspiration from hardhat, but aims to be more composable. a few notable design decisions: tasks depending on / calling other tasks by an explicit reference to the task, instead of hardcoded strings like hardhat. this allows for automatic type inference and less conflicts, while making dependencies explit (the type system can warn us and notify which dependency is lacking). Also, instead of calling task('taskName', fn...) as a side effect like in hardhat, they are just data objects which the module can export. this makes them easier to test and more composable. 
 
 Some issues are however:
 I want to let users specify tasks as regular async functions also, instead of effects. this doesnt let the type system warn us about missing dependencies (I think). 
 
-I want crystal.config.ts files to be composable with each other (if possible). so they become self-contained and can be executed by the CLI, but also potentially be imported by other apps, without having to change anything.
+I want ice.config.ts files to be composable with each other (if possible). so they become self-contained and can be executed by the CLI, but also potentially be imported by other apps, without having to change anything.
 
 Another issue is how to specify that tasks depend on each other. explicitly calling ctx.runTask(task) means that it will potentially a task again unnecessarily. Im not sure what the best approach here is, whether its memoizing the result, or some completely different way of doing it.
 
 Additionally, I need some way to provide dependencies for the tasks, and have the type system reflect that when all the requirements are met. currently Im using effect Layers under the hood. It may or may not work. but the async fns make that a bit problematic.
 
 Additionally, the current way of defining tasks is:
-export const task = crystal.motokoCanister(...
+export const task = ice.motokoCanister(...
 
-its this way, because this allows me to pass in the required context for the task nicely, while producing a reference to the task (const) so other tasks can refernce it and exporting it all at the same time in just one definition. I was intially thinking of putting them in an object, but it doesnt let me reference the keys. however one problem with this approach is that I cant provide the referenced task before its been defined. so the type system cant warn me if theres something not provided. I would need to do crystal().provide(SomeCanister) I guess. or alternatively just provide all the exported tasks automatically when the CLI gets called, however that would not produce warnings at the type level. Im not sure how to solve this. 
+its this way, because this allows me to pass in the required context for the task nicely, while producing a reference to the task (const) so other tasks can refernce it and exporting it all at the same time in just one definition. I was intially thinking of putting them in an object, but it doesnt let me reference the keys. however one problem with this approach is that I cant provide the referenced task before its been defined. so the type system cant warn me if theres something not provided. I would need to do ice().provide(SomeCanister) I guess. or alternatively just provide all the exported tasks automatically when the CLI gets called, however that would not produce warnings at the type level. Im not sure how to solve this. 
 
 Also I need some concept of taskGroups or Scopes that allow me to group tasks together, define subtasks (or provide some way to define a hierachy of tasks) and distribute them as a bundle and provide other metadata. Im not sure if I should unify this with the tasks context, or if each task Object should store its own required context in its data. the less concepts the better, but without sacrificing composability and flexibility.
 
@@ -52,14 +52,14 @@ Internally, you unify them by creating an Effect from the async function (e.g., 
 This still provides a typed environment layer if needed, but remains user-friendly.
 Tradeoff: The hybrid approach is flexible and can preserve the effect-based typed environment for advanced use cases while also letting newcomers just write an async function.
 
-2. Composing Multiple Crystal Configs
-Problem: You want crystal.config.ts files to be composable, meaning you can import tasks or entire scopes from one config into another, or merge them for a “master config.”
+2. Composing Multiple ICE Configs
+Problem: You want ice.config.ts files to be composable, meaning you can import tasks or entire scopes from one config into another, or merge them for a “master config.”
 
 Potential Approaches:
 
 Single “Root” Config with Imports
 
-Each separate “config” exports tasks/scopes. The root config does import {someScope} from 'other-package/crystal.config' and merges them in a top-level dictionary:
+Each separate “config” exports tasks/scopes. The root config does import {someScope} from 'other-package/ice.config' and merges them in a top-level dictionary:
 ts
 Copy
 export default {
@@ -76,7 +76,7 @@ You can unify them in a single tree or registry.
 If everything is “just data,” merging is basically object or map merging.
 Task DSL
 
-You might have something like a Crystal.merge(...) function that merges two Scopes and returns a bigger Scope.
+You might have something like a ICE.merge(...) function that merges two Scopes and returns a bigger Scope.
 In effect, Scope becomes a “tree node” that can be merged or extended.
 Tradeoff: If the system remains a “task registry” (like record<string, Task> or record<string, Scope>), you get a straightforward approach for composition: just import and merge. Make sure your design explicitly handles collisions or how to rename tasks if they conflict.
 
@@ -131,7 +131,7 @@ Possibly less modular.
 But you can define tasks in dependency order or do forward references with lazy definitions.
 Two-Pass Registration
 
-Let tasks “declare” themselves using a function (like crystal.task("A", ...)) that returns a reference or register-later object.
+Let tasks “declare” themselves using a function (like ice.task("A", ...)) that returns a reference or register-later object.
 The tasks are created with placeholders for dependencies. Then, the runner runs a “resolve phase” that wires them up.
 This is somewhat similar to how NestJS or Angular has a “module system” that wires up dependencies after declarations.
 One “Dependency Injection Container”
@@ -164,7 +164,7 @@ You can nest them arbitrarily: scopeA.scopes.subscopeB.tasks.build.
 Just Another Task
 
 A “group” is just a special task that runs multiple tasks, or a piece of data with references.
-The user can do something like crystal.run("groupA:subtaskB").
+The user can do something like ice.run("groupA:subtaskB").
 Effect Layers for Sub-Scopes
 
 Each scope could have its own partial “Layer” that it merges with the global environment, so tasks in that scope have specialized configuration.
@@ -222,7 +222,7 @@ export async function runTask<A>(task: Task<any, any, A>, layer: Layer<any, any,
 User Code (example usage):
 ts
 Copy
-import { Task, asyncTask, Scope } from "my-crystal-lib";
+import { Task, asyncTask, Scope } from "my-ice-lib";
 
 const build = asyncTask("build", async () => {
   console.log("Building canister...");
@@ -239,7 +239,7 @@ const deploy = new Task("deploy", Effect.gen(function*(_) {
   // run the code to do a full deploy
 }), [build, install]); // depends on build & install
 
-export const crystal = new Scope("myProject", {
+export const ice = new Scope("myProject", {
   build,
   install,
   deploy
@@ -248,10 +248,10 @@ Composition
 ts
 Copy
 // If you have another scope from an npm package:
-import { internetIdentity } from "@crystal/canisters"; // hypothetical
-import { mergeScopes } from "my-crystal-lib";
+import { internetIdentity } from "@ice/canisters"; // hypothetical
+import { mergeScopes } from "my-ice-lib";
 
-export const combined = mergeScopes(crystal, internetIdentity);
+export const combined = mergeScopes(ice, internetIdentity);
 // combined has .tasks / .scopes from both
 This structure allows:
 
@@ -281,7 +281,7 @@ You said:
 I want to come up with a different name for the project. it could be something with a theme related to the Internet Computer (space, computer, or minerals / rocks / matter like beryllium, thorium, etc..)
 Or another angle is to emphasize the composability of it. it should feel slick and modern and not be too long.
 A few ideas I have had so far, but not satisfied with:
-crystal
+ice
 macros
 ic-macros
 ICLandia
@@ -294,7 +294,7 @@ Below are some naming ideas (and quick rationales) you might consider for your n
 
 Beryl
 
-A short mineral name with a crystalline connotation. It hints at clarity and structure, and it’s easy to pronounce.
+A short mineral name with a iceline connotation. It hints at clarity and structure, and it’s easy to pronounce.
 Nebula
 
 Space-themed, evokes the idea of forming and composing star systems out of cosmic dust (akin to building canisters from components).
@@ -327,7 +327,7 @@ Galatea
 Mythological reference (Pygmalion’s statue brought to life) if you want something more cryptic. Suggests transformation and new creation.
 Silica
 
-A mineral common in crystals, short, and easily pronounced. Conveys a “foundation” vibe.
+A mineral common in ices, short, and easily pronounced. Conveys a “foundation” vibe.
 Shortlisting Tips:
 
 Brevity & Memorability: “Beryl,” “Lattice,” or “Argon” are all short, distinctive, and easy to type.
@@ -481,8 +481,8 @@ currently there is only the ctx.runTask() way:
 export const internet_identity = InternetIdentity({
   assignedUserNumberRange: [BigInt(0), BigInt(10000)],
 }).install(async (taskCtx) => {
-    const crystal_test_backend_canister_id = taskCtx.runTask(
-      crystal_test_backend.deploy
+    const ice_test_backend_canister_id = taskCtx.runTask(
+      ice_test_backend.deploy
     );
 })
 
@@ -501,7 +501,7 @@ ts
 Copy
 export const internet_identity = InternetIdentity(...)
   .install(async (ctx) => {
-    const result = await ctx.runTask(crystal_test_backend.deploy);
+    const result = await ctx.runTask(ice_test_backend.deploy);
     // do something with result
   });
 There is no separate dependencies: [...] field. The user effectively writes code that calls tasks in the desired sequence.
@@ -532,7 +532,7 @@ Each task object declares its dependencies in a field or builder method, e.g.:
 ts
 Copy
 export const internet_identity = InternetIdentity(...)
-  .deps(crystal_test_backend.deploy)
+  .deps(ice_test_backend.deploy)
   .install(async (ctx) => { /* body */ });
 The runner sees a “task graph” with nodes (tasks) and edges (deps). It topologically sorts them and runs in order.
 Pros
@@ -622,7 +622,7 @@ Then the user can do:
 ts
 Copy
 export const internet_identity = createTask("internet_identity")
-  .deps(crystal_test_backend.deploy)
+  .deps(ice_test_backend.deploy)
   .run(async (ctx) => { /* body */ })
   .build();
 5. Choosing What’s Right for You
@@ -874,13 +874,13 @@ Context: Provides runTask to tasks, allowing them to invoke other tasks programm
 
 This approach ensures tasks run efficiently, avoids redundancy through caching, supports both static and dynamic dependencies, and allows for future enhancements like parallel execution.
 
-Here are my types Tasks and Scopes, they are meant to be nested so that users can call them from the CLI like: crystal run scope:task
+Here are my types Tasks and Scopes, they are meant to be nested so that users can call them from the CLI like: ice run scope:task
 or
-crystal run scope task
+ice run scope task
 or
-crystal run scope scope2 task
+ice run scope scope2 task
 or
-crystal run scope task task2
+ice run scope task task2
 
 Im not exactly sure whats the best choice here. help me figure this out
 
@@ -910,7 +910,7 @@ export type Scope<T = Record<string, unknown>> = {
   description: string
   tasks: T
 }
-Okay, let's start by understanding the problem. The user is designing a task runner for the Internet Computer, aiming to replace or augment the dfx CLI tool. They want tasks and scopes to be composable, nestable, and callable via the CLI with various structures like "crystal run scope:task" or "crystal run scope task". They also need to define TypeScript types for Task and Scope, ensuring flexibility and ease of use.
+Okay, let's start by understanding the problem. The user is designing a task runner for the Internet Computer, aiming to replace or augment the dfx CLI tool. They want tasks and scopes to be composable, nestable, and callable via the CLI with various structures like "ice run scope:task" or "ice run scope task". They also need to define TypeScript types for Task and Scope, ensuring flexibility and ease of use.
 
 First, the user is unsure about the CLI syntax. They provided examples like "scope:task" or "scope task" or even nested "scope scope2 task". I need to consider common CLI patterns. Using colons for nesting is seen in tools like npm namespaces (e.g., npm run workspace:task), whereas spaces are more common in other tools. Colons might be clearer for indicating hierarchy without ambiguity, especially with nested scopes.
 
@@ -932,9 +932,9 @@ For the Scope type, including a description and tags makes sense for documentati
 
 Putting this together, the Scope type would have a tasks property that's a record of string keys to either Task or Scope. But TypeScript needs a way to represent recursive types. Using an interface with a generic type parameter that extends a record of string to Task or Scope might work. However, TypeScript's type system can handle this with a union type.
 
-Another point is task execution. When a user runs "crystal run scope:task", the CLI needs to traverse the scope hierarchy to find the task. Each Scope should have a way to look up subtasks or subscopes. If Scopes are just nested objects, the CLI can recursively search through the tasks and scopes.
+Another point is task execution. When a user runs "ice run scope:task", the CLI needs to traverse the scope hierarchy to find the task. Each Scope should have a way to look up subtasks or subscopes. If Scopes are just nested objects, the CLI can recursively search through the tasks and scopes.
 
-Testing this structure with some examples would help. For instance, a root Scope with a 'build' task and a 'canisters' scope that contains 'deploy' and 'test' tasks. The CLI command "crystal run canisters:deploy" would navigate to the 'canisters' scope and execute the 'deploy' task.
+Testing this structure with some examples would help. For instance, a root Scope with a 'build' task and a 'canisters' scope that contains 'deploy' and 'test' tasks. The CLI command "ice run canisters:deploy" would navigate to the 'canisters' scope and execute the 'deploy' task.
 
 In terms of code, defining Scope as an interface with a tasks property that is a record of string keys to either Task or another Scope. Using TypeScript's recursive type aliases, but since they can be tricky, using an interface that references itself might be better.
 
@@ -985,9 +985,9 @@ Use colon-separated syntax for clear hierarchy:
 
 bash
 Copy
-crystal run parent:child:task
-crystal run canisters:identity:deploy
-crystal run build:optimized --release
+ice run parent:child:task
+ice run canisters:identity:deploy
+ice run build:optimized --release
 Why colons?
 
 Clear visual hierarchy
@@ -1074,7 +1074,7 @@ function isTask(entity: Task | Scope): entity is Task {
   return 'run' in entity
 }
 5. Execution Flow
-Parse CLI command: crystal run scope:subscope:task --args
+Parse CLI command: ice run scope:subscope:task --args
 
 Split path into ['scope', 'subscope', 'task']
 
@@ -1135,7 +1135,7 @@ function createTask<A extends TaskArgs>(
 7. Example Structure
 typescript
 Copy
-// crystal.config.ts
+// ice.config.ts
 export default {
   name: "my-project",
   description: "Main project scope",
@@ -1202,27 +1202,27 @@ Okay, let's tackle this problem. The user is trying to decide between using colo
 
 First, I need to understand the core requirements and trade-offs. The user values autocomplete highly, which is a significant usability feature. They also want the CLI to be intuitive and easy to use. The concern with colon-separated syntax is that it might complicate autocomplete because the colon is part of the task path, whereas spaces allow the CLI to parse each segment separately, making autocomplete more straightforward.
 
-Let me think about how command-line autocomplete typically works. When using spaces, each segment after a space can trigger a new level of autocomplete suggestions. For example, if the user types "crystal run build ", the autocomplete can suggest subtasks under "build" because the space indicates a new level in the hierarchy. With colons, the entire string "build:debug" is treated as a single argument, so autocomplete would need to parse the string and handle the colon as a delimiter, which might be more complex.
+Let me think about how command-line autocomplete typically works. When using spaces, each segment after a space can trigger a new level of autocomplete suggestions. For example, if the user types "ice run build ", the autocomplete can suggest subtasks under "build" because the space indicates a new level in the hierarchy. With colons, the entire string "build:debug" is treated as a single argument, so autocomplete would need to parse the string and handle the colon as a delimiter, which might be more complex.
 
 Another consideration is how other tools handle this. For instance, npm uses both approaches: scripts are defined with names that can include colons, but when running them, you use "npm run script:name". However, npm's autocomplete might not be as hierarchical as the user wants. On the other hand, tools like git have subcommands separated by spaces (e.g., "git remote add"), which allows for clear autocomplete at each subcommand level.
 
 The user's point about path parsing being almost equally easy with spaces or colons is valid. Splitting a string by spaces or colons is straightforward in code. However, the difference lies in how the CLI interprets those splits. With spaces, each segment is a separate argument, which aligns naturally with hierarchical command structures. With colons, the entire task path is a single argument that needs to be split internally.
 
-Usability is another factor. For users, typing "crystal run build debug" might feel more intuitive and faster than "crystal run build:debug". It reduces the need for special characters, which can be easier to remember and type, especially for those not familiar with the colon convention.
+Usability is another factor. For users, typing "ice run build debug" might feel more intuitive and faster than "ice run build:debug". It reduces the need for special characters, which can be easier to remember and type, especially for those not familiar with the colon convention.
 
-Error handling and clarity also come into play. If a user mistypes a space as a colon or vice versa, the error messages need to be clear. Spaces might lead to more straightforward error messages because each segment is validated step by step. For example, if "crystal run build debu" is typed, the autocomplete can suggest "debug" immediately after "build", whereas with colons, the user has to type "build:debu" and the autocomplete has to parse the entire string.
+Error handling and clarity also come into play. If a user mistypes a space as a colon or vice versa, the error messages need to be clear. Spaces might lead to more straightforward error messages because each segment is validated step by step. For example, if "ice run build debu" is typed, the autocomplete can suggest "debug" immediately after "build", whereas with colons, the user has to type "build:debu" and the autocomplete has to parse the entire string.
 
 Another angle is the flexibility of task names. If tasks can't have spaces, then using spaces as separators doesn't conflict. This avoids ambiguity between task names with spaces and hierarchy levels. For example, a task named "deploy staging" would be problematic if spaces are used as separators, but the user already prohibits spaces in task names, so this isn't an issue.
 
 Looking at the implementation side, using spaces would require the CLI to parse the command-line arguments as a hierarchy. Each argument after "run" represents a scope or task level. This can be handled by treating the arguments as an array where each element is a node in the hierarchy. For example, ["scope", "subscope", "task"] can be directly mapped to the nested structure.
 
-Autocomplete implementation with spaces would involve, at each step, knowing the current hierarchy level and suggesting the available scopes or tasks at that level. For instance, after typing "crystal run scope ", the autocomplete script would look into the "scope" children and suggest the next possible tasks or scopes. This is more straightforward because each level is a separate argument, and the autocomplete can track the current depth easily.
+Autocomplete implementation with spaces would involve, at each step, knowing the current hierarchy level and suggesting the available scopes or tasks at that level. For instance, after typing "ice run scope ", the autocomplete script would look into the "scope" children and suggest the next possible tasks or scopes. This is more straightforward because each level is a separate argument, and the autocomplete can track the current depth easily.
 
-In contrast, with colon-separated syntax, the autocomplete script would need to split the current word by colons to determine the hierarchy. For example, if the user types "crystal run scope:sub", the autocomplete has to split "scope:sub" into ["scope", "sub"] and then find the next possible tasks under "scope" that start with "sub". This requires more complex parsing but is still feasible.
+In contrast, with colon-separated syntax, the autocomplete script would need to split the current word by colons to determine the hierarchy. For example, if the user types "ice run scope:sub", the autocomplete has to split "scope:sub" into ["scope", "sub"] and then find the next possible tasks under "scope" that start with "sub". This requires more complex parsing but is still feasible.
 
 However, the user's main point is that spaces allow for better autocomplete. If the goal is to maximize usability and autocomplete effectiveness, spaces might be the better choice. It's also worth considering common user expectations. Users accustomed to CLI tools like git or docker, which use spaces for subcommands, might find a space-separated hierarchy more intuitive.
 
-Another aspect is documentation and help commands. With spaces, the help output can display the hierarchy in a tree-like structure, making it easier for users to understand the available tasks and scopes. For example, "crystal run help" could show:
+Another aspect is documentation and help commands. With spaces, the help output can display the hierarchy in a tree-like structure, making it easier for users to understand the available tasks and scopes. For example, "ice run help" could show:
 
 Available tasks:
 
@@ -1240,7 +1240,7 @@ create
 
 This is clear and mirrors the directory structure, which is familiar to users.
 
-In terms of potential drawbacks, using spaces might lead to longer command lines, especially with deeply nested tasks. For example, "crystal run scope subscope task" is longer than "crystal run scope:subscope:task". However, this is a minor issue compared to the benefits of autocomplete and usability.
+In terms of potential drawbacks, using spaces might lead to longer command lines, especially with deeply nested tasks. For example, "ice run scope subscope task" is longer than "ice run scope:subscope:task". However, this is a minor issue compared to the benefits of autocomplete and usability.
 
 Security considerations: If task names could include special characters, there might be parsing issues, but since the user disallows spaces in task names, this isn't a concern. The CLI can safely split arguments by spaces to determine the task path.
 
@@ -1250,14 +1250,14 @@ In conclusion, recommending space-separated syntax aligns with the user's priori
 
 Based on your emphasis on autocomplete usability and hierarchical clarity, here's the recommendation:
 
-Space-Separated Syntax: crystal run <scope1> <scope2> <task>
+Space-Separated Syntax: ice run <scope1> <scope2> <task>
 Implementation Example:
 
 bash
 Copy
-crystal run build debug
-crystal run canisters identity deploy
-crystal run deploy staging --fast
+ice run build debug
+ice run canisters identity deploy
+ice run deploy staging --fast
 Key Advantages for Your Use Case:
 Superior Autocomplete
 
@@ -1265,7 +1265,7 @@ Enables per-segment suggestions:
 
 bash
 Copy
-$ crystal run build [TAB]
+$ ice run build [TAB]
 debug   release optimized
 Each space triggers new autocomplete context
 
@@ -1275,7 +1275,7 @@ Natural Hierarchical Parsing
 
 typescript
 Copy
-// CLI input: "crystal run build debug --watch"
+// CLI input: "ice run build debug --watch"
 const pathSegments = ["build", "debug"] 
 const args = ["--watch"]
 Error Prevention
@@ -1284,7 +1284,7 @@ Clear missing scope feedback:
 
 bash
 Copy
-$ crystal run invalidscope task
+$ ice run invalidscope task
 Error: Scope "invalidscope" not found. Available: build, canisters, deploy
 Familiar Mental Model
 
@@ -1292,7 +1292,7 @@ Mirrors filesystem navigation:
 
 bash
 Copy
-cd build/debug => crystal run build debug
+cd build/debug => ice run build debug
 Simpler Implementation
 
 No need for custom path splitting
@@ -1340,14 +1340,14 @@ graph TD
 
 bash
 Copy
-$ crystal run build debu[TAB]
+$ ice run build debu[TAB]
 # Autocomplete suggests:
 debug   debug-optimized
 4. Help Output Structure
 
 bash
 Copy
-$ crystal run help
+$ ice run help
 Available commands:
   build
     debug         Build development version
@@ -1380,12 +1380,12 @@ If you need colon compatibility later, add optional aliasing:
 
 bash
 Copy
-# crystal run build:debug would work as equivalent to build debug
-alias crystal-run='crystal run "${@//:/ }"'
+# ice run build:debug would work as equivalent to build debug
+alias ice-run='ice run "${@//:/ }"'
 how about the types? Do we need two separate types, or is just one Task type enough, which can contain one task and multiple subtasks. help me figure this out and what the tradeoffs are
 Okay, let's tackle this problem. The user is trying to decide whether to use two separate types (Task and Scope) or a single unified type for their task runner system. They want to know the trade-offs and which approach might be better for their needs.
 
-First, I need to recall the context. The task runner allows nesting tasks and scopes, so users can run commands like `crystal run scope task` or `crystal run scope subscope task`. The current types they have are Task and Scope, but they're considering merging them into one type.
+First, I need to recall the context. The task runner allows nesting tasks and scopes, so users can run commands like `ice run scope task` or `ice run scope subscope task`. The current types they have are Task and Scope, but they're considering merging them into one type.
 
 Let me start by understanding what each type represents. A Task is an executable unit with an Effect, description, tags, etc. A Scope is a container that groups Tasks and other Scopes. The question is whether these should be separate or combined.
 
@@ -1403,7 +1403,7 @@ Looking at existing systems, tools like Hardhat use a mix where tasks can have s
 
 The user also wants the system to be composable, allowing configurations to be imported and merged. If Scopes and Tasks are separate, merging could be more straightforward because you know exactly what each part does. With a single type, merging might require additional checks to handle both tasks and scopes appropriately.
 
-Another angle is the CLI parsing and autocomplete. If using separate types, the CLI can easily distinguish between scopes and tasks when suggesting completions. For example, when a user types `crystal run scope`, the CLI knows to only suggest child scopes or tasks under that scope. With a unified type, determining whether a node is executable or a container might require checking properties, which could be less efficient.
+Another angle is the CLI parsing and autocomplete. If using separate types, the CLI can easily distinguish between scopes and tasks when suggesting completions. For example, when a user types `ice run scope`, the CLI knows to only suggest child scopes or tasks under that scope. With a unified type, determining whether a node is executable or a container might require checking properties, which could be less efficient.
 
 Considering the trade-offs:
 
@@ -1625,7 +1625,7 @@ Clean separation for documentation:
 
 bash
 Copy
-$ crystal run help build
+$ ice run help build
 Scope: build
 Available tasks:
   debug  Build development version
@@ -1710,7 +1710,7 @@ Scope-aware suggestions:
 
 bash
 Copy
-$ crystal run build [TAB]
+$ ice run build [TAB]
 debug   # (only shows tasks)
 Optimized Execution
 Zero-cost type checks:
@@ -1758,7 +1758,7 @@ Wait, but if you have a Task that runs other tasks via ctx.runTask(), that's dif
 
 The user's concern is about structural composability. They might want to take an existing Task and add subtasks to it, but with the dual-type model, that's not possible. Instead, they would need to wrap the Task in a Scope. For example, if there's a Task "build", and they want to add "build:debug" and "build:release", they can't add those as subtasks under "build" if "build" is a Task. Instead, they would create a Scope "build" containing the original "build" task (maybe renamed to "default") and the new subtasks.
 
-But that might be a bit awkward. Alternatively, the user could design "build" as a Scope from the start, with a default task. So when you run "crystal run build", it could execute a default task within the "build" Scope. That way, adding subtasks later is natural.
+But that might be a bit awkward. Alternatively, the user could design "build" as a Scope from the start, with a default task. So when you run "ice run build", it could execute a default task within the "build" Scope. That way, adding subtasks later is natural.
 
 So the key is to encourage users to use Scopes for any node that might need subtasks, even if it currently has just one task. Then, the default task in the Scope can be the main entry point, and additional subtasks can be added later without changing the structure.
 
@@ -1808,8 +1808,8 @@ CLI Usage:
 
 bash
 Copy
-crystal run build       # Runs default task
-crystal run build debug # Runs debug variant
+ice run build       # Runs default task
+ice run build debug # Runs debug variant
 Pattern 2: Task Combinators
 ts
 Copy
@@ -1892,9 +1892,9 @@ Flexible Execution Semantics:
 bash
 Copy
 # All valid for same scope structure
-crystal run build
-crystal run build default
-crystal run build debug
+ice run build
+ice run build default
+ice run build debug
 Implementation:
 
 ts
@@ -2141,7 +2141,7 @@ const dbTask = task("db:migrate", "Run database migrations")
   .seq(task("db:seed", "Seed test data"))
   .par(task("cache:clear", "Clear Redis cache"))
 
-// CLI: crystal run db:migrate+db:seed|cache:clear
+// CLI: ice run db:migrate+db:seed|cache:clear
 Scope Conversion:
 
 typescript
@@ -2152,8 +2152,8 @@ const testScope = task("test", "Run tests")
     e2e: task("test:e2e", "Run end-to-end tests")
   })
 
-// CLI: crystal run test (runs default)
-//      crystal run test unit
+// CLI: ice run test (runs default)
+//      ice run test unit
 5. Advanced Composition Patterns
 1. Environment Propagation
 
@@ -2927,8 +2927,8 @@ Tradeoffs and Risks
 bash
 Copy
 # Problematic example - moving task breaks deps
-crystal run api:v1:task  # Correct deps
-crystal run legacy:task  # Same task, wrong deps
+ice run api:v1:task  # Correct deps
+ice run legacy:task  # Same task, wrong deps
 ⚠️ Implicit Behavior
 typescript
 Copy
@@ -2964,7 +2964,7 @@ const task = createTask({
   run: () => { /* ... */ }
 })
 
-// CLI: crystal run task --env=prod
+// CLI: ice run task --env=prod
 2. Environment Flags
 typescript
 Copy
@@ -3004,8 +3004,8 @@ const UserTask = createTask({
 })
 
 // 3. CLI ties them together
-// crystal run dev user-task
-// crystal run prod user-task
+// ice run dev user-task
+// ice run prod user-task
 Execution Flow:
 
 Select environment scope (dev/prod)
@@ -3504,7 +3504,7 @@ Zero-Config for Simple Cases
 typescript
 Copy
 // Just works out of the box
-crystal run my-task
+ice run my-task
 Tradeoffs & Mitigations
 Concern	Solution
 Effect Concept Leakage	Hide behind simplified TaskContext
@@ -5049,7 +5049,7 @@ Custom DSL	Tailored to needs	High learning curve, AI-unfriendly
 Example Full Specification
 yaml
 Copy
-# crystal-task-spec.yml
+# ice-task-spec.yml
 meta:
   version: "0.1"
   author: "Your Team"
@@ -5175,7 +5175,7 @@ Example Library - Build comprehensive scenario catalog
 
 AI Fine-Tuning - Use spec as training dataset
 
-CLI Integration - Add crystal validate-spec command
+CLI Integration - Add ice validate-spec command
 
 This approach gives you an AI-friendly specification that doubles as developer documentation while maintaining strong type safety through the companion TypeScript definitions.
 
@@ -5386,7 +5386,7 @@ Automate Validation
 bash
 Copy
 # Validate against JSON Schema
-$ crystal validate ./tasks/*.ts --schema ./spec/types/task-schema.json
+$ ice validate ./tasks/*.ts --schema ./spec/types/task-schema.json
 
 # Check Alloy models
 $ alloy compile ./spec/models/task.als
@@ -5519,49 +5519,49 @@ Would you like me to elaborate on any particular component or flow?
 okay it looks somewhat accurate, we can refine it later. but now I want to list all the different ways to use it so that we can explore all the scenarios and figure out issues and better ways of doing things. Help me write this out, I will sketch below a rough starting point:
 
 The main idea is that users install it with:
-npm i -S @crystal/runner @crystal/canisters tsx
+npm i -S @ice/runner @ice/canisters tsx
 into their project. tsx is unfortunately required for now, because I want the config to be in typescript. Ideally it shouldnt have to be installed by the user.
 
-then users create a crystal.config.ts in their project root.
+then users create a ice.config.ts in their project root.
 they can add to their npm scripts then:
-"canister1": "crystal run canister1", // for example
-"canister2": "crystal run scope1 canister2", 
+"canister1": "ice run canister1", // for example
+"canister2": "ice run scope1 canister2", 
 
 or they could run it from the command-line:
-npx crystal run canister1   // etc...
+npx ice run canister1   // etc...
 
 we also need to figure out the rest of the list of commands.
 --help should be one for sure.
 in the future perhaps we have
-npx crystal ui
+npx ice ui
 which launches an ink (react-based) terminal ui which allows one to visualize all tasks and the hierachy and run them through the ui.
 
-heres an example crystal.config.ts:
-import { Crystal } from "@crystal/runner";
-import { InternetIdentity } from "@crystal/canisters";
+heres an example ice.config.ts:
+import { ICE } from "@ice/runner";
+import { InternetIdentity } from "@ice/canisters";
 
-export const crystal = Crystal();
+export const ice = ICE();
 
-export const crystal_test_backend = crystal.motokoCanister({
-  src: "src/crystal_test_backend/main.mo",
+export const ice_test_backend = ice.motokoCanister({
+  src: "src/ice_test_backend/main.mo",
   canisterId: "ryjl3-tyaaa-aaaaa-aaaba-cai",
 });
 
 // TODO: also possible?
 // TODO: should it be able to take command line args from ctx.args?
-export const crystal_test_backend2 = crystal.motokoCanister((ctx) => ({
-  src: "src/crystal_test_backend/main.mo",
+export const ice_test_backend2 = ice.motokoCanister((ctx) => ({
+  src: "src/ice_test_backend/main.mo",
   canisterId: "ryjl3-tyaaa-aaaaa-aaaba-cai",
 }));
 
-export const internet_identity_2 = crystal.withContext((ctx) =>
+export const internet_identity_2 = ice.withContext((ctx) =>
   InternetIdentity({
     owner: ctx.users.defaultUser.principal,
     assignedUserNumberRange: [BigInt(0), BigInt(10000)],
   })
 );
 
-// TODO: doesnt have access to crystal context?
+// TODO: doesnt have access to ice context?
 export const internet_identity = InternetIdentity({
   // TODO:
   //   owner: ctx.users.defaultUser.principal,
@@ -5582,9 +5582,9 @@ import * as url from "node:url"
 import type { ActorSubclass } from "@dfinity/agent"
 import { idlFactory } from "./internet_identity.did"
 import type { InternetIdentityInit } from "./internet_identity.types"
-import { Crystal, type TaskCtxShape } from "@crystal/runner"
+import { ICE, type TaskCtxShape } from "@ice/runner"
 
-const crystal = Crystal()
+const ice = ICE()
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 
@@ -5605,7 +5605,7 @@ type InitArgs = {
 export const InternetIdentity = (
   initArgsOrFn: InitArgs | ((ctx: TaskCtxShape) => Promise<InitArgs>)
 ) => {
-  return crystal
+  return ice
     .customCanister<CanisterInitArgs>({
       canisterId: InternetIdentityIds.local,
       candid: path.resolve(
@@ -5670,10 +5670,10 @@ export type Scope = {
 }
 
 Its currently missing the dependencies field but I need to figure out what type that should be.
-in general you can see that I provide the user with nice builder apis through crystal. which passes the context to the tasks. This is a starting point, lets refine this and create a nice spec with all the features and use cases
+in general you can see that I provide the user with nice builder apis through ice. which passes the context to the tasks. This is a starting point, lets refine this and create a nice spec with all the features and use cases
 Okay, let me try to work through this problem. The user is developing a task runner for the Internet Computer (IC) using TypeScript and Effect-TS. They want to create a comprehensive specification that covers all use cases, addresses current architectural gaps, and ensures composability. Let me break down their requirements and the current state of their project based on the provided code and discussion.
 
-First, the user mentioned that users install the task runner via npm, create a `crystal.config.ts` file, and define tasks and scopes. The main commands are `crystal run` with task names or scopes. They also plan to add a TUI (terminal UI) in the future. The example config shows how canisters are defined using a builder API, and there's a third-party canister example (Internet Identity) that demonstrates composability.
+First, the user mentioned that users install the task runner via npm, create a `ice.config.ts` file, and define tasks and scopes. The main commands are `ice run` with task names or scopes. They also plan to add a TUI (terminal UI) in the future. The example config shows how canisters are defined using a builder API, and there's a third-party canister example (Internet Identity) that demonstrates composability.
 
 The existing `Task` and `Scope` interfaces are minimal, with `Task` having an Effect, description, tags, and `Scope` containing children (tasks or scopes). The user is unsure about handling dependencies and wants to ensure tasks are infinitely composable, even across npm packages.
 
@@ -5693,13 +5693,13 @@ Key points to address:
 
 Let me start by considering dependency management. The current `Task` doesn't have a dependencies field. Since they're using Effect-TS, dependencies are likely handled via Layers and Context. However, the user wants to expose this in a user-friendly way. Maybe tasks should declare required services or other tasks they depend on, which the runner resolves automatically.
 
-For composability, tasks should be importable from npm modules. This suggests that tasks and scopes need to be serializable or exportable in a way that preserves their structure and dependencies. The builder API (like `crystal.motokoCanister`) should allow chaining or combining tasks, possibly through methods like `.dependsOn()` or `.with()`.
+For composability, tasks should be importable from npm modules. This suggests that tasks and scopes need to be serializable or exportable in a way that preserves their structure and dependencies. The builder API (like `ice.motokoCanister`) should allow chaining or combining tasks, possibly through methods like `.dependsOn()` or `.with()`.
 
 Looking at the Internet Identity example, the factory function uses a custom canister definition with installation logic based on mode (install, reinstall, upgrade). This indicates that tasks might have lifecycle methods or hooks (pre/post install). The user also wants to allow overriding subtasks, which suggests a need for middleware or hooks in the task definition.
 
-The `Scope` type currently has children as a record of tasks or scopes. To support CLI commands like `crystal run scope1 task1`, the scope hierarchy must be parsed correctly. Scopes might also need their own dependencies or context that gets inherited by their children.
+The `Scope` type currently has children as a record of tasks or scopes. To support CLI commands like `ice run scope1 task1`, the scope hierarchy must be parsed correctly. Scopes might also need their own dependencies or context that gets inherited by their children.
 
-The user's example config shows both static and dynamic canister configurations. For instance, `crystal_test_backend2` takes a context function, allowing dynamic values. This implies that context resolution is crucial, and the runner must evaluate these functions with the appropriate context (like user principals, network settings).
+The user's example config shows both static and dynamic canister configurations. For instance, `ice_test_backend2` takes a context function, allowing dynamic values. This implies that context resolution is crucial, and the runner must evaluate these functions with the appropriate context (like user principals, network settings).
 
 Error handling is another area. If a task's dependency isn't met, the runner should provide a clear error. Effect-TS's error channels can help, but the user needs to surface these errors in a user-friendly way, possibly through the CLI or logs.
 
@@ -5741,7 +5741,7 @@ To validate these thoughts, I'll outline the specification structure, ensuring e
 
 Here's a structured specification addressing all key aspects of the task runner system:
 
-Crystal Task Runner Specification v1.0
+ICE Task Runner Specification v1.0
 1. Core Concepts
 Task: Atomic unit of work (canister deployment, script execution, etc.)
 
@@ -5778,28 +5778,28 @@ graph TD
 bash
 Copy
 # Basic execution
-crystal run <task-path>
-crystal run <scope> <task>
+ice run <task-path>
+ice run <scope> <task>
 
 # Information
-crystal list [--tree]
-crystal describe <task-path>
-crystal docs
+ice list [--tree]
+ice describe <task-path>
+ice docs
 
 # Project setup
-crystal init
-crystal install
+ice init
+ice install
 
 # Advanced
-crystal debug <task-path>
-crystal test <task-path>
+ice debug <task-path>
+ice test <task-path>
 4. Configuration Syntax
 typescript
 Copy
-// crystal.config.ts
-import { Crystal, Context, Canister } from "@crystal/runner";
+// ice.config.ts
+import { ICE, Context, Canister } from "@ice/runner";
 
-export const { task, scope, canister } = Crystal();
+export const { task, scope, canister } = ICE();
 
 // Basic canister definition
 export const backend = canister.motoko({
@@ -5820,7 +5820,7 @@ export const production = scope("production", {
 });
 
 // Composable third-party integration
-import { InternetIdentity } from "@crystal/canisters";
+import { InternetIdentity } from "@ice/canisters";
 export const auth = InternetIdentity({
   range: [0n, 10000n]
 }).withInstallHook(async (ctx) => {
@@ -5874,7 +5874,7 @@ const workflow = task("build")
   .andThen(task("deploy"))
   .andThen(task("verify"));
 
-// CLI: crystal run build → deploy → verify
+// CLI: ice run build → deploy → verify
 2. Parallel Execution
 
 typescript
@@ -5883,7 +5883,7 @@ const parallel = scope("ci", {
   tests: task("unit").concurrently(task("integration"))
 });
 
-// CLI: crystal run ci tests
+// CLI: ice run ci tests
 3. Contextual Overrides
 
 typescript
@@ -5952,12 +5952,12 @@ Interactive UI
 
 bash
 Copy
-crystal ui --view=graph
+ice ui --view=graph
 Diff-Based Execution
 
 bash
 Copy
-crystal run --dry-run --diff
+ice run --dry-run --diff
 Performance Optimizations
 
 Parallel dependency resolution
@@ -5984,9 +5984,9 @@ Okay, let me try to break down how I arrived at the specification based on the u
 
 First, the user wants a task runner that's highly composable, integrates with the Internet Computer, and allows users to define tasks and scopes in TypeScript. They mentioned using Effect-TS under the hood but want to shield users from its complexity. The main goal is to enable tasks to depend on each other explicitly, support nesting through scopes, and allow importing tasks from npm packages.
 
-The user provided examples of a crystal.config.ts file, showing how tasks and scopes are defined. They emphasized that tasks should be able to take command-line arguments and that third-party tasks (like InternetIdentity) should be composable. The existing Task and Scope interfaces were shared, noting that dependencies aren't yet handled.
+The user provided examples of a ice.config.ts file, showing how tasks and scopes are defined. They emphasized that tasks should be able to take command-line arguments and that third-party tasks (like InternetIdentity) should be composable. The existing Task and Scope interfaces were shared, noting that dependencies aren't yet handled.
 
-I started by outlining the core concepts: Task, Scope, Context, and Effect. Tasks are the units of work, Scopes organize them, Context manages dependencies, and Effect handles the underlying operations. Next, the CLI commands needed to cover basic execution, information retrieval, and setup. The example crystal.config.ts showed how users define tasks and scopes, so I structured the configuration syntax around that, ensuring it supports both local and imported tasks.
+I started by outlining the core concepts: Task, Scope, Context, and Effect. Tasks are the units of work, Scopes organize them, Context manages dependencies, and Effect handles the underlying operations. Next, the CLI commands needed to cover basic execution, information retrieval, and setup. The example ice.config.ts showed how users define tasks and scopes, so I structured the configuration syntax around that, ensuring it supports both local and imported tasks.
 
 For dependencies, since the user mentioned tasks depending on others explicitly, I included a requires field in the TaskDef, which can reference other tasks or Context tags. The dependency resolution strategy needed to handle both task execution order (DAG-based) and service injection (Layer composition).
 
@@ -5996,7 +5996,7 @@ Error handling needed to be robust but not yet advanced, so I focused on basic l
 
 Finally, I made sure to exclude any additional features beyond what the user specified, focusing on the current state and immediate needs. The result is a clear, structured spec that aligns with the user's examples and requirements, providing a foundation for implementation without unnecessary complexity.
 
-Crystal Task Runner Specification (Core Features Only)
+ICE Task Runner Specification (Core Features Only)
 1. Core Concepts
 Task: Executable unit with defined dependencies/effects
 
@@ -6008,23 +6008,23 @@ Context: Execution environment with services and arguments
 bash
 Copy
 # Basic execution
-crystal run <task-path>
-crystal run <scope> <task>
+ice run <task-path>
+ice run <scope> <task>
 
 # Examples
-crystal run deploy
-crystal run canisters identity install
+ice run deploy
+ice run canisters identity install
 
 # Helpers
-crystal --help
-crystal list # Show all tasks/scopes
-3. Configuration Syntax (crystal.config.ts)
+ice --help
+ice list # Show all tasks/scopes
+3. Configuration Syntax (ice.config.ts)
 typescript
 Copy
-import { Crystal } from "@crystal/runner";
-import { InternetIdentity } from "@crystal/canisters";
+import { ICE } from "@ice/runner";
+import { InternetIdentity } from "@ice/canisters";
 
-const { task, scope, canister } = Crystal();
+const { task, scope, canister } = ICE();
 
 // Basic canister definition
 export const backend = canister.motoko({
@@ -6096,7 +6096,7 @@ task.withContext({
 mermaid
 Copy
 sequenceDiagram
-  User->>CLI: crystal run canister1
+  User->>CLI: ice run canister1
   CLI->>Parser: Resolve task path
   Parser->>Registry: Find task definition
   Registry->>Resolver: Check dependencies
@@ -6108,12 +6108,12 @@ sequenceDiagram
 8. Third-Party Composition
 typescript
 Copy
-// node_modules/@crystal/canisters/src/internet-identity.ts
+// node_modules/@ice/canisters/src/internet-identity.ts
 export const InternetIdentity = (config: {
   owner: Principal;
   range: [bigint, bigint];
 }) => {
-  return crystal
+  return ice
     .customCanister({
       candid: "./internet_identity.did",
       wasm: "./internet_identity.wasm"
@@ -6153,17 +6153,17 @@ This specification strictly follows your provided code examples and requirements
 
 a few corrections:
 1.
-all the export const taskName = task(...) in the crystal.config.ts are what become available for the run command.
+all the export const taskName = task(...) in the ice.config.ts are what become available for the run command.
 so theres no need to have a name field, neither for scopes nor tasks. simply:
 
 export const myScope = scope(...)
 
 2. scopes shouldnt contain anything related to configuration, they are strictly for hierarchy in the CLI (or perhaps UI as well, not sure)
 
-configuration is a separate concept, as can be seen with context. crystal.motokoCanister(...) // this makes the configuration & environment available for the task
+configuration is a separate concept, as can be seen with context. ice.motokoCanister(...) // this makes the configuration & environment available for the task
 Okay, let's break down the user's corrections and see what needs to be adjusted in the specification.
 
-First, the user clarified that tasks and scopes are defined by their exported names in `crystal.config.ts`, so explicit `id` or `name` fields aren't necessary. That makes sense because the variable names themselves become the identifiers. So, I need to remove any `id` or `name` properties from the `Task` and `Scope` interfaces.
+First, the user clarified that tasks and scopes are defined by their exported names in `ice.config.ts`, so explicit `id` or `name` fields aren't necessary. That makes sense because the variable names themselves become the identifiers. So, I need to remove any `id` or `name` properties from the `Task` and `Scope` interfaces.
 
 Next, the user mentioned that scopes should be purely for CLI hierarchy and not include configuration. Configuration is handled separately via context. So, any configuration-related properties in the `Scope` interface, like `context`, should be moved elsewhere. Instead, configuration should be part of the task definitions, perhaps through the context or when creating tasks with methods like `motokoCanister`.
 
@@ -6175,13 +6175,13 @@ I need to ensure that the `Scope` interface only contains `children` and maybe a
 
 Additionally, the user wants dependencies to be explicit, either as other tasks or context services. So the `dependencies` array in `Task` should reference other `Task` objects or `Context.Tag` values.
 
-For the CLI, since scopes are just for hierarchy, commands like `crystal run scope1 task1` would map directly to the exported `scope1` and `task1` in the config. The parser needs to resolve these nested scopes and tasks based on their exported names.
+For the CLI, since scopes are just for hierarchy, commands like `ice run scope1 task1` would map directly to the exported `scope1` and `task1` in the config. The parser needs to resolve these nested scopes and tasks based on their exported names.
 
-I should also update the example `crystal.config.ts` to reflect that scopes don't have configuration and tasks are configured directly. For instance, the `InternetIdentity` example uses a factory function that takes configuration parameters, which aligns with the idea that configuration is part of task creation, not scopes.
+I should also update the example `ice.config.ts` to reflect that scopes don't have configuration and tasks are configured directly. For instance, the `InternetIdentity` example uses a factory function that takes configuration parameters, which aligns with the idea that configuration is part of task creation, not scopes.
 
 Finally, ensure that the dependency resolution and execution flow diagrams don't include scope configuration, focusing instead on task dependencies and context provision.
 
-Revised Crystal Task Runner Specification (Core Only)
+Revised ICE Task Runner Specification (Core Only)
 1. Core Concepts
 Task: Executable unit with configuration + effects
 
@@ -6189,13 +6189,13 @@ Scope: Pure CLI/U hierarchy container (no configuration)
 
 Context: Configuration passed to tasks during execution
 
-2. Configuration Syntax (crystal.config.ts)
+2. Configuration Syntax (ice.config.ts)
 typescript
 Copy
-import { Crystal } from "@crystal/runner";
-import { InternetIdentity } from "@crystal/canisters";
+import { ICE } from "@ice/runner";
+import { InternetIdentity } from "@ice/canisters";
 
-const { task, scope, canister } = Crystal();
+const { task, scope, canister } = ICE();
 
 // Task = Export with configuration
 export const backend = canister.motoko({
@@ -6241,7 +6241,7 @@ interface Scope {
 }
 5. CLI Resolution Rules
 Task Paths mirror export names:
-crystal run production deploy →
+ice run production deploy →
 export const production = scope({ deploy: ... })
 
 No Name Collisions:
@@ -6264,12 +6264,12 @@ sequenceDiagram
 7. Third-Party Pattern
 typescript
 Copy
-// node_modules/@crystal/canisters/src/internet-identity.ts
+// node_modules/@ice/canisters/src/internet-identity.ts
 export const InternetIdentity = (config: {
   owner: string;
   range: [bigint, bigint];
 }) => {
-  return crystal
+  return ice
     .customCanister({
       // Package-internal config
       wasm: "./internet_identity.wasm",
@@ -6300,12 +6300,12 @@ Context separate from hierarchy
 Export names as CLI paths
 
 corrections:
-const { task, scope, canister } = Crystal();
+const { task, scope, canister } = ICE();
 wrong. heres how it should look:
-const crystal = Crystal(someOptionalConfig);
-export const task = crystal.task(async(ctx) => {})
-export const motokoCanister = crystal.motokoCanister(...).build(...).install(...)
-export const customCanister = crystal.customCanister(...).build(...).install(...)
+const ice = ICE(someOptionalConfig);
+export const task = ice.task(async(ctx) => {})
+export const motokoCanister = ice.motokoCanister(...).build(...).install(...)
+export const customCanister = ice.customCanister(...).build(...).install(...)
 
 export const scope = Scope("description", { task, task2 })
 
@@ -6324,17 +6324,17 @@ export type Scope = {
 }
 Okay, let me try to work through this. The user has provided several iterations of their task runner specification, with corrections each time. Now they want the final spec based on the latest details.
 
-First, I need to make sure I understand the current structure. The user mentioned that tasks and scopes are defined in the crystal.config.ts file. The Crystal instance is created with optional config, and then tasks are built using methods like motokoCanister, which have build and install steps. Scopes are created with Scope("description", { tasks }), and the main types are Task and Scope, which include effect, description, tags, and children for scopes.
+First, I need to make sure I understand the current structure. The user mentioned that tasks and scopes are defined in the ice.config.ts file. The ICE instance is created with optional config, and then tasks are built using methods like motokoCanister, which have build and install steps. Scopes are created with Scope("description", { tasks }), and the main types are Task and Scope, which include effect, description, tags, and children for scopes.
 
-The user corrected previous specs where the Crystal initialization was wrong. They showed that you create a Crystal instance, then export tasks and scopes built from that instance. Also, scopes shouldn't have configuration, just hierarchy. The Task type has an effect, description, and tags, while Scope has tags, description, and children.
+The user corrected previous specs where the ICE initialization was wrong. They showed that you create a ICE instance, then export tasks and scopes built from that instance. Also, scopes shouldn't have configuration, just hierarchy. The Task type has an effect, description, and tags, while Scope has tags, description, and children.
 
 I need to structure the spec to reflect this. Start with the Core Concepts, then Installation and Setup, Configuration Syntax, CLI Commands, Task Definition, Scope Definition, Composition, Context and Dependencies, Error Handling, and Third-Party Integration.
 
-I should make sure that the examples match the corrected code structure. For instance, using crystal.motokoCanister(...).build(...).install(...) and exporting scopes with Scope(). Also, ensure that the Task and Scope interfaces are correctly represented without extra fields.
+I should make sure that the examples match the corrected code structure. For instance, using ice.motokoCanister(...).build(...).install(...) and exporting scopes with Scope(). Also, ensure that the Task and Scope interfaces are correctly represented without extra fields.
 
 I need to avoid adding any extra features beyond what the user specified. Focus on the builder API, task/scopes structure, context usage, and CLI commands as per their examples.
 
-Double-check that the Scope function is used correctly, taking a description and an object of children. Tasks are built with the Crystal instance methods, chaining build and install. The Task interface includes effect, description, tags, and dependencies are handled through the context, not a separate field.
+Double-check that the Scope function is used correctly, taking a description and an object of children. Tasks are built with the ICE instance methods, chaining build and install. The Task interface includes effect, description, tags, and dependencies are handled through the context, not a separate field.
 
 Also, ensure that the third-party example uses the InternetIdentity correctly, showing how it's built and installed with context.
 
@@ -6342,7 +6342,7 @@ Finally, list the error cases they mentioned, like missing tasks, circular deps,
 
 Putting it all together in a clear, concise spec that matches the user's latest corrections.
 
-Crystal Task Runner Specification (Final)
+ICE Task Runner Specification (Final)
 1. Core Concepts
 Task: Executable unit with Effect-based implementation
 
@@ -6353,15 +6353,15 @@ Context: Execution parameters passed to tasks at runtime
 2. Installation & Setup
 bash
 Copy
-npm install @crystal/runner @crystal/canisters
+npm install @ice/runner @ice/canisters
 typescript
 Copy
-// crystal.config.ts
-import { Crystal, Scope } from "@crystal/runner";
+// ice.config.ts
+import { ICE, Scope } from "@ice/runner";
 
-const crystal = Crystal(); // Optional config
+const ice = ICE(); // Optional config
 
-export const backend = crystal
+export const backend = ice
   .motokoCanister({
     src: "src/main.mo",
     canisterId: "ryjl3-tyaaa-aaaaa-aaaba-cai"
@@ -6376,12 +6376,12 @@ export const production = Scope("Production Environment", {
 typescript
 Copy
 // Task Definition
-export const task = crystal.task(async (ctx) => {
+export const task = ice.task(async (ctx) => {
   // ctx contains merged config/context
 });
 
 // Canister Specialization
-export const canister = crystal
+export const canister = ice
   .customCanister({
     wasm: "./canister.wasm",
     candid: "./canister.did"
@@ -6392,14 +6392,14 @@ export const canister = crystal
 bash
 Copy
 # Run exported tasks
-npx crystal run backend
-npx crystal run production deploy
+npx ice run backend
+npx ice run production deploy
 
 # List available tasks
-npx crystal list 
+npx ice list 
 
 # Show task details
-npx crystal describe backend
+npx ice describe backend
 5. Task Type Schema
 typescript
 Copy
@@ -6427,7 +6427,7 @@ interface Scope {
 const scope = Scope(
   "Scope Description", 
   {
-    task1: crystal.task(...),
+    task1: ice.task(...),
     nested: Scope(...)
   }
 );
@@ -6435,7 +6435,7 @@ const scope = Scope(
 typescript
 Copy
 // During task definition
-export const task = crystal
+export const task = ice
   .task(async (ctx) => {
     // ctx includes merged config
   })
@@ -6445,7 +6445,7 @@ export const task = crystal
   });
 
 // At runtime
-npx crystal run task --arg value
+npx ice run task --arg value
 8. Error Cases Handled
 Missing task/scoped path
 
@@ -6465,7 +6465,7 @@ export const InternetIdentity = (config: {
   owner: string
   range: [bigint, bigint]
 }) => {
-  return crystal
+  return ice
     .customCanister({
       wasm: "./identity.wasm",
       candid: "./identity.did"

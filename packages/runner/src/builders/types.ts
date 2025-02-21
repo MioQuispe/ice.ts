@@ -16,7 +16,7 @@ export type { TaskCtxShape }
  */
 export type TaskDependencyMismatchError<T extends Task> = {
   // This property key is your custom error message.
-  "[CRYSTAL-ERROR: Dependency mismatch. Please provide all required dependencies.]": true
+  "[ICE-ERROR: Dependency mismatch. Please provide all required dependencies.]": true
 }
 
 /**
@@ -173,7 +173,7 @@ export type ExtractTaskEffectSuccess<T extends Record<string, Task>> = {
  */
 export type DependencyMismatchError<S extends CanisterScope> = {
   // This property key is your custom error message.
-  "[CRYSTAL-ERROR: Dependency mismatch. Please provide all required dependencies.]": true
+  "[ICE-ERROR: Dependency mismatch. Please provide all required dependencies.]": true
 }
 
 // Compute a boolean flag from our check.
@@ -274,23 +274,23 @@ export interface CanisterBuilder<
 }
 
 export const Tags = {
-  CANISTER: "$$crystal/canister",
-  CUSTOM: "$$crystal/canister/custom",
-  MOTOKO: "$$crystal/canister/motoko",
-  RUST: "$$crystal/canister/rust",
-  AZLE: "$$crystal/canister/azle",
-  KYBRA: "$$crystal/canister/kybra",
+  CANISTER: "$$ice/canister",
+  CUSTOM: "$$ice/canister/custom",
+  MOTOKO: "$$ice/canister/motoko",
+  RUST: "$$ice/canister/rust",
+  AZLE: "$$ice/canister/azle",
+  KYBRA: "$$ice/canister/kybra",
 
-  CREATE: "$$crystal/create",
-  BUILD: "$$crystal/build",
-  INSTALL: "$$crystal/install",
-  BINDINGS: "$$crystal/bindings",
-  DEPLOY: "$$crystal/deploy",
-  STOP: "$$crystal/stop",
-  DELETE: "$$crystal/delete",
-  UI: "$$crystal/ui",
+  CREATE: "$$ice/create",
+  BUILD: "$$ice/build",
+  INSTALL: "$$ice/install",
+  BINDINGS: "$$ice/bindings",
+  DEPLOY: "$$ice/deploy",
+  STOP: "$$ice/stop",
+  DELETE: "$$ice/delete",
+  UI: "$$ice/ui",
   // TODO: hmm do we need this?
-  SCRIPT: "$$crystal/script",
+  SCRIPT: "$$ice/script",
 }
 
 const testTask = {
@@ -455,7 +455,7 @@ const providedTestScope = {
 //   })
 //   // ._scope.children
 //   .install(async ({ ctx, mode }) => {
-//     // TODO: allow chaining builders with crystal.customCanister()
+//     // TODO: allow chaining builders with ice.customCanister()
 //     // to pass in context?
 //     // ctx.users.default
 //     // TODO: type the actors

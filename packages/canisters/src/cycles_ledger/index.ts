@@ -1,6 +1,6 @@
 import path from "node:path"
 import * as url from "node:url"
-import { customCanister, Opt, type TaskCtxShape } from "@crystal/runner"
+import { customCanister, Opt, type TaskCtxShape } from "@ice/runner"
 import type { _SERVICE, LedgerArgs } from "./cycles_ledger.types"
 import type { Principal } from "@dfinity/principal"
 

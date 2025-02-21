@@ -30,12 +30,12 @@ import {
   useStdout,
 } from "ink"
 import type {
-  CrystalConfigFile,
+  ICEConfigFile,
   Scope,
   Task,
   TaskTree,
   TaskTreeNode,
-  CrystalConfig,
+  ICEConfig,
 } from "../../types/types.js"
 import { filterTasks, runTaskByPath, TUILayer } from "../../index.js"
 import { TaskList, TaskListItem, type StateOthers } from "./components/Task.js"
@@ -90,7 +90,7 @@ export const TaskTreeListItem = <A, E, R, I>({
   const [state, setState] = useState<StateOthers>("pending")
   const [logs, setLogs] = useState<string[]>([])
   // TODO: should logs be separate for each task?
-  const { runTask } = useCrystal()
+  const { runTask } = useICE()
   useInput(
     async (input, key) => {
       if (!isFocused) {
@@ -122,17 +122,17 @@ export const TaskTreeListItem = <A, E, R, I>({
     </>
   )
 }
-const CrystalContext = createContext<{
+const ICEContext = createContext<{
   logs: string[]
   runTask: (path: string[]) => Promise<void>
 } | null>(null)
 
 /**
- * CrystalProvider initializes the runtime environment, including a custom logger.
+ * ICEProvider initializes the runtime environment, including a custom logger.
  * It also overrides console.log so that any calls to it are captured into the logs state,
  * allowing StaticLogs to render them.
  */
-const CrystalProvider: React.FC<{
+const ICEProvider: React.FC<{
   children: React.ReactNode
 }> = ({ children }) => {
   const [logs, setLogs] = useState<string[]>([])
@@ -187,18 +187,18 @@ const CrystalProvider: React.FC<{
   }
 
   return (
-    <CrystalContext.Provider value={{ logs, runTask }}>
+    <ICEContext.Provider value={{ logs, runTask }}>
       {children}
-    </CrystalContext.Provider>
+    </ICEContext.Provider>
   )
 }
 
-export const useCrystal = () => {
-  const crystal = useContext(CrystalContext)
-  if (!crystal) {
-    throw new Error("useCrystal must be used within a CrystalProvider")
+export const useICE = () => {
+  const ice = useContext(ICEContext)
+  if (!ice) {
+    throw new Error("useICE must be used within a ICEProvider")
   }
-  return crystal
+  return ice
 }
 
 const TaskTreeList = ({
@@ -282,7 +282,7 @@ function useStdoutDimensions(): [number, number] {
 }
 
 const Logs = () => {
-  const { logs } = useCrystal()
+  const { logs } = useICE()
   const [columns, rows] = useStdoutDimensions()
   const offset = columns * rows * 0.25
   // const offset = 40
@@ -296,8 +296,8 @@ const Logs = () => {
   )
 }
 
-const UI = ({ config, taskTree }: { config: CrystalConfig; taskTree: TaskTree }) => {
-  const { logs } = useCrystal();
+const UI = ({ config, taskTree }: { config: ICEConfig; taskTree: TaskTree }) => {
+  const { logs } = useICE();
   // Determine the available height for the logs panel.
   // For example, if you want the logs panel to be 10 rows high:
   const containerHeight = 35;
@@ -324,7 +324,7 @@ const CliApp = ({
   config,
   taskTree,
 }: {
-  config: CrystalConfig
+  config: ICEConfig
   taskTree: TaskTree
 }) => {
   const focusManager = useFocusManager()
@@ -353,9 +353,9 @@ const CliApp = ({
   )
 
   return (
-    <CrystalProvider>
+    <ICEProvider>
       <UI config={config} taskTree={taskTree} />
-    </CrystalProvider>
+    </ICEProvider>
   )
 }
 
@@ -364,7 +364,7 @@ export const uiTask = ({
   config,
   taskTree,
 }: {
-  config: CrystalConfig
+  config: ICEConfig
   taskTree: TaskTree
 }) =>
   Effect.gen(function* () {

@@ -1,6 +1,6 @@
 import path from "node:path"
-import type { TaskCtxShape } from "@crystal/runner"
-import { customCanister, Opt } from "@crystal/runner"
+import type { TaskCtxShape } from "@ice/runner"
+import { customCanister, Opt } from "@ice/runner"
 import type {
   _SERVICE,
   InitArgList,

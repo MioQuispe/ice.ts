@@ -15,7 +15,7 @@ export type ManagementActor = import("@dfinity/agent").ActorSubclass<
 >
 
 // TODO: create service? dependencies?
-export type CrystalContext = {
+export type ICEContext = {
   // dfxConfig: DfxConfig
   // currentUser: {
   //   identity: Identity
@@ -93,14 +93,14 @@ export type TaskTree = Record<string, TaskTreeNode>
 
 // export type Plugin = {
 //   _tag: "plugin"
-//   transform: (ctx: CrystalContext) => PreTaskTree;
+//   transform: (ctx: ICEContext) => PreTaskTree;
 //   children: PreTaskTree | ((args: any) => PreTaskTree)
 // }
 
 // TODO: fix
-export type CrystalConfig = CrystalContext
-export type CrystalConfigFile = {
-  default: CrystalContext
+export type ICEConfig = ICEContext
+export type ICEConfigFile = {
+  default: ICEContext
 } & {
   [key: string]: TaskTreeNode
 }

@@ -4,9 +4,9 @@ import * as url from "node:url"
 import type { ActorSubclass } from "@dfinity/agent"
 import { idlFactory } from "./internet_identity.did"
 import type { InternetIdentityInit, _SERVICE } from "./internet_identity.types"
-import { Crystal, customCanister, type TaskCtxShape } from "@crystal/runner"
+import { ICE, customCanister, type TaskCtxShape } from "@ice/runner"
 
-const crystal = Crystal()
+const ice = ICE()
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 

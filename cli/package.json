@@ -1,5 +1,5 @@
 {
-  "name": "@crystal/cli",
+  "name": "@ice/cli",
   "version": "0.0.1",
   "description": "<img height=160 src=\"https://sdk.dfinity.org/_/img/logo.svg\" />",
   "main": "index.js",

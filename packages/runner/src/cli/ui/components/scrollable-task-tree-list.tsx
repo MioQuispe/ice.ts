@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { Box, useInput, useStdout } from "ink";
 import { TaskList, TaskListItem } from "./Task.js";
 import type { Task, TaskTree, Scope } from "../../../types/types.js";
-import { useCrystal } from "../index.js"; // import runTask from context
+import { useICE } from "../index.js"; // import runTask from context
 import type { StateOthers } from "./Task.js";
 
 /**
@@ -103,7 +103,7 @@ export const FlatScrollableTaskTreeList: React.FC<{
   path?: string[];
 }> = ({ taskTree, title, path = [] }) => {
   const { stdout } = useStdout();
-  const { runTask } = useCrystal();
+  const { runTask } = useICE();
   const [taskStates, setTaskStates] = useState<Record<string, StateOthers>>({});
   const margin = 10;
   // Calculate the view height (with a minimum height for usability).

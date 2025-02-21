@@ -19,7 +19,7 @@ import type { Actor, HttpAgent, Identity } from "@dfinity/agent"
 import type { Agent } from "@dfinity/agent"
 import type {
   BuilderResult,
-  CrystalContext,
+  ICEContext,
   Scope,
   Task,
   TaskTree,
@@ -37,10 +37,10 @@ import {
   canisterBuildGuard,
   makeInstallTask,
   makeCreateTask,
-  makeBindingsTask,
   loadCanisterId,
   resolveConfig,
   makeStopTask,
+  iceDirName,
 } from "./custom.js"
 import type {
   CanisterBuilder,
@@ -58,6 +58,53 @@ import { Tags } from "./types.js"
 type MotokoCanisterConfig = {
   src: string
   canisterId?: string
+}
+
+
+export const makeMotokoBindingsTask = (
+) => {
+  return {
+    _tag: "task",
+    id: Symbol("motokoCanister/bindings"),
+    dependencies: {},
+    provide: {},
+    // TODO: do we allow a fn as args here?
+    effect: Effect.gen(function* () {
+      const path = yield* Path.Path
+      const fs = yield* FileSystem.FileSystem
+      const appDir = yield* Config.string("APP_DIR")
+      const { taskPath } = yield* TaskInfo
+      const canisterName = taskPath.split(":").slice(0, -1).join(":")
+      yield* canisterBuildGuard
+      yield* Effect.logDebug(`Bindings build guard check passed for ${canisterName}`)
+
+      const wasmPath = path.join(
+        appDir,
+        iceDirName,
+        "canisters",
+        canisterName,
+        `${canisterName}.wasm`,
+      )
+      const didPath = path.join(
+        appDir,
+        iceDirName,
+        "canisters",
+        canisterName,
+        `${canisterName}.did`,
+      )
+      yield* Effect.logDebug("Artifact paths", { wasmPath, didPath })
+
+      // yield* fs.makeDirectory(path.dirname(didPath), { recursive: true })
+      yield* fs.makeDirectory(path.dirname(wasmPath), { recursive: true })
+
+      yield* generateDIDJS(canisterName, didPath)
+      yield* Effect.logDebug(`Generated DID JS for ${canisterName}`)
+    }),
+    description: "some description",
+    tags: [Tags.CANISTER, Tags.MOTOKO, Tags.BINDINGS],
+    computeCacheKey: Option.none(),
+    input: Option.none(),
+  } satisfies Task
 }
 
 // const plugins = <T extends TaskTreeNode>(taskTree: T) =>
@@ -78,18 +125,22 @@ const makeMotokoBuildTask = (
     computeCacheKey: Option.none(),
     effect: Effect.gen(function* () {
       const path = yield* Path.Path
+      const fs = yield* FileSystem.FileSystem
       const appDir = yield* Config.string("APP_DIR")
       const { taskPath } = yield* TaskInfo
       const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
       const canisterName = taskPath.split(":").slice(0, -1).join(":")
       const wasmOutputFilePath = path.join(
         appDir,
-        ".artifacts",
+        iceDirName,
+        "canisters",
         canisterName,
         `${canisterName}.wasm`,
       )
+      // Ensure the directory exists
+      yield* fs.makeDirectory(path.dirname(wasmOutputFilePath), { recursive: true })
       yield* compileMotokoCanister(
-        canisterConfig.src,
+        path.resolve(appDir, canisterConfig.src),
         canisterName,
         wasmOutputFilePath,
       )
@@ -301,9 +352,9 @@ export const motokoCanister = <I = unknown, _SERVICE = unknown>(
     description: "some description",
     defaultTask: Option.none(),
     children: {
-      create: makeCreateTask(canisterConfigOrFn),
+      create: makeCreateTask(canisterConfigOrFn, [Tags.MOTOKO]),
       build: makeMotokoBuildTask(canisterConfigOrFn),
-      bindings: makeBindingsTask(),
+      bindings: makeMotokoBindingsTask(),
       stop: makeStopTask(),
       // delete: createDeleteTask(),
       install: makeInstallTask<I, Record<string, unknown>, _SERVICE>(),

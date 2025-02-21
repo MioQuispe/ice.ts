@@ -1,10 +1,10 @@
 import * as url from "node:url"
 import path from "node:path"
 import { Principal } from "@dfinity/principal"
-import { customCanister, type TaskCtxShape } from "@crystal/runner"
+import { customCanister, type TaskCtxShape } from "@ice/runner"
 import { CapRouter } from "../cap"
 import type { _SERVICE } from "./dip20.did"
-import { CanisterConstructor } from "@crystal/runner/dist/types/types"
+import { CanisterConstructor } from "@ice/runner/dist/types/types"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 

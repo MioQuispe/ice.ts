@@ -1,10 +1,10 @@
-# Crystal CLI/SDK
+# ICE CLI/SDK
 
-Crystal is a powerful command-line tool and SDK that simplifies and automates complex `dfx` tasks for Internet Computer developers. It provides a TypeScript interface for managing canisters, making your development workflow more efficient and type-safe.
+ICE is a powerful command-line tool and SDK that simplifies and automates complex `dfx` tasks for Internet Computer developers. It provides a TypeScript interface for managing canisters, making your development workflow more efficient and type-safe.
 
 ## 🚀 Key Features
 
-- **TypeScript-based Configuration**: Replace `dfx.json` with a more ergonomic `crystal.config.ts`
+- **TypeScript-based Configuration**: Replace `dfx.json` with a more ergonomic `ice.config.ts`
 - **Task Automation**: Create dependency chains with async logic for maximum efficiency
 - **Canister Management**: Install and manage canisters directly via npm
 - **Boilerplate Generation**: Quickly scaffold common patterns like tokens, NFTs, and DAOs
@@ -15,17 +15,17 @@ Crystal is a powerful command-line tool and SDK that simplifies and automates co
 
 1. Initialize a new project or integrate with an existing one:
    ```bash
-   npx crystal init
+   npx ice init
    ```
 
 2. Install the necessary packages:
    ```bash
-   npm install @crystal/runner @crystal/canisters
+   npm install @ice/runner @ice/canisters
    ```
 
-3. Create a `crystal.config.ts` file in your project root:
+3. Create a `ice.config.ts` file in your project root:
    ```typescript
-   import { defineConfig } from '@crystal/runner';
+   import { defineConfig } from '@ice/runner';
 
    export default defineConfig({
      canisters: {
@@ -39,26 +39,26 @@ Crystal is a powerful command-line tool and SDK that simplifies and automates co
 
 4. Build your canisters:
    ```bash
-   npx crystal c
+   npx ice c
    ```
 
 5. Run custom tasks:
    ```bash
-   npx crystal run <task-name>
+   npx ice run <task-name>
    ```
 
 ## 📚 Documentation
 
-For comprehensive documentation, visit our [official docs](https://docs.crystal-ic.dev).
+For comprehensive documentation, visit our [official docs](https://docs.ice-ic.dev).
 
 ## 🤝 Community & Support
 
-- [GitHub Issues](https://github.com/MioQuispe/crystal/issues)
-- [Community Forum](https://forum.dfinity.org/t/introducing-crystal-cli-sdk)
+- [GitHub Issues](https://github.com/MioQuispe/ice/issues)
+- [Community Forum](https://forum.dfinity.org/t/introducing-ice-cli-sdk)
 - [Twitter](https://twitter.com/antimaximal)
-<!-- - [Telegram](https://t.me/crystal_ic_dev) -->
+<!-- - [Telegram](https://t.me/ice_ic_dev) -->
 
-## 🌟 Why Crystal?
+## 🌟 Why ICE?
 
 - **Type Safety**: Catch configuration errors at compile-time
 - **Improved Developer Experience**: Intuitive TypeScript-based configuration
@@ -68,8 +68,8 @@ For comprehensive documentation, visit our [official docs](https://docs.crystal-
 
 ## 📣 Feedback
 
-We're constantly improving Crystal based on your feedback. Don't hesitate to open an issue or contribute to the project!
+We're constantly improving ICE based on your feedback. Don't hesitate to open an issue or contribute to the project!
 
 ## 📄 License
 
-Crystal is open-source software licensed under the MIT license.
+ICE is open-source software licensed under the MIT license.

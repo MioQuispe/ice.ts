@@ -8,20 +8,19 @@ import {
   canistersDeployTask,
   canistersInstallTask,
   canistersStatusTask,
-  DefaultsLayer,
   listCanistersTask,
   listTasksTask,
   runTaskByPath,
   runtime,
 } from "../index.js"
-import type { CrystalConfig, TaskTree } from "../types/types.js"
+import type { ICEConfig, TaskTree } from "../types/types.js"
 import { uiTask } from "./ui/index.js"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
-import { CrystalConfigService } from "../services/crystalConfig.js"
+import { ICEConfigService } from "../services/iceConfig.js"
 import { commandMismatch } from "@effect/cli/ValidationError"
 import * as p from "@clack/prompts"
 import color from "picocolors"
-import { defineCommand, createMain } from "citty"
+import { defineCommand, createMain, CommandContext, ArgsDef } from "citty"
 import { spinner } from "@clack/prompts"
 import { cursor, erase } from "sisteransi"
 // TODO: not in npm?
@@ -40,7 +39,7 @@ function moduleHashToHexString(moduleHash: [] | [number[]]): string {
 const runCommand = defineCommand({
   meta: {
     name: "run",
-    description: "Run a Crystal task",
+    description: "Run a ICE task",
   },
   args: {
     taskPath: {
@@ -56,7 +55,7 @@ const runCommand = defineCommand({
     await runtime.runPromise(
       // @ts-ignore
       Effect.gen(function* () {
-        const { config, taskTree } = yield* CrystalConfigService
+        const { config, taskTree } = yield* ICEConfigService
         yield* runTaskByPath(args.taskPath)
       }),
     )
@@ -67,7 +66,7 @@ const runCommand = defineCommand({
 const initCommand = defineCommand({
   meta: {
     name: "Init",
-    description: "Initialize a new Crystal project",
+    description: "Initialize a new ICE project",
   },
   run: async ({ args }) => {
     // TODO: prompt which canisters to include
@@ -79,23 +78,18 @@ const initCommand = defineCommand({
   },
 })
 
-export const tasks = async (tasks) => {
-  for (const task of tasks) {
-    if (task.enabled === false) continue
+// export const tasks = async (tasks) => {
+//   for (const task of tasks) {
+//     if (task.enabled === false) continue
 
-    const s = spinner()
-    s.start(task.title)
-    const result = await task.task(s.message)
-    s.stop(result || task.title)
-  }
-}
+//     const s = spinner()
+//     s.start(task.title)
+//     const result = await task.task(s.message)
+//     s.stop(result || task.title)
+//   }
+// }
 
-const canistersDeployCommand = defineCommand({
-  meta: {
-    name: "Canisters deploy",
-    description: "Deploys all canisters",
-  },
-  run: async ({ args }) => {
+const deployRun = async ({ args }: CommandContext<ArgsDef>) => {
     const s = p.spinner()
     s.start("Deploying all canisters...")
     const stream = await runtime.runPromise(canistersDeployTask())
@@ -107,7 +101,7 @@ const canistersDeployCommand = defineCommand({
             // const s = p.spinner()
             // s.start(`Deploying ${update.taskPath}\n`)
             // spinners.set(update.taskPath, s)
-            s.message(`Deploying ${update.taskPath}`)
+            s.message(`Running ${update.taskPath}`)
             // console.log(`Deploying ${update.taskPath}`)
           }
           if (update.status === "completed") {
@@ -140,7 +134,14 @@ const canistersDeployCommand = defineCommand({
     // await p.tasks()
     // await canistersDeployTask().
     s.stop("Deployed all canisters")
+}
+
+const canistersDeployCommand = defineCommand({
+  meta: {
+    name: "Canisters deploy",
+    description: "Deploys all canisters",
   },
+  run: deployRun,
 })
 
 const canistersCreateCommand = defineCommand({
@@ -280,12 +281,12 @@ const listCanistersCommand = defineCommand({
 const uiCommand = defineCommand({
   meta: {
     name: "UI",
-    description: "Open the Crystal UI",
+    description: "Open the ICE UI",
   },
   run: async ({ args }) => {
     await runtime.runPromise(
       Effect.gen(function* () {
-        const { config, taskTree } = yield* CrystalConfigService
+        const { config, taskTree } = yield* ICEConfigService
         yield* uiTask({ config, taskTree })
       }),
     )
@@ -294,22 +295,12 @@ const uiCommand = defineCommand({
 
 const main = defineCommand({
   meta: {
-    name: "crystal",
-    description: "Crystal CLI",
+    name: "ice",
+    description: "ICE CLI",
   },
-  run: async ({ args }) => {
-    if (args._.length === 0) {
-      const s = p.spinner()
-      s.start("Deploying all canisters...")
-      // if no subcommand
-      await runtime.runPromise(
-        // @ts-ignore
-        Effect.gen(function* () {
-          const { config, taskTree } = yield* CrystalConfigService
-          yield* canistersDeployTask()
-        }),
-      )
-      s.stop("Deployed all canisters")
+  run: async (ctx) => {
+    if (ctx.args._.length === 0) {
+      await deployRun(ctx)
     }
   },
   subCommands: {
@@ -328,13 +319,13 @@ const main = defineCommand({
   },
 })
 
-// TODO: can we load the crystalConfig before running the cli?
+// TODO: can we load the iceConfig before running the cli?
 // Prepare and run the CLI application
 export const runCli = async () => {
   // TODO: not in npm?
   // const completion = await tab(main);
 
-  p.intro(`${color.bgCyan(color.black(" Crystal CLI "))}`)
+  p.intro(`${color.bgCyan(color.black(" ICE CLI "))}`)
   p.updateSettings({
     aliases: {
       w: "up",
@@ -410,9 +401,9 @@ export const runCli = async () => {
   // );
 
   // const s = p.spinner()
-  // s.start(`Running task... ${color.green(color.underline("crystal:build"))}`)
+  // s.start(`Running task... ${color.green(color.underline("ice:build"))}`)
   // await new Promise((resolve) => setTimeout(resolve, 2500))
-  // s.stop(`Finished task: ${color.green(color.underline("crystal:build"))}`)
+  // s.stop(`Finished task: ${color.green(color.underline("ice:build"))}`)
 
   // // const nextSteps = `cd ${project.path}        \n${project.install ? "" : "pnpm install\n"}pnpm dev`
 

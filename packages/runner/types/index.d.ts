@@ -6,7 +6,7 @@ import { Schema, ParseResult } from "@effect/schema";
 import { NodeContext } from "@effect/platform-node";
 import { Path, FileSystem, CommandExecutor } from "@effect/platform";
 import { DfxService } from "./services/dfx.js";
-import type { Task, TaskTree, TaskTreeNode, CrystalConfigFile } from "./types/types.js";
+import type { Task, TaskTree, TaskTreeNode, ICEConfigFile } from "./types/types.js";
 import { Moc } from "./services/moc.js";
 import { TaskRegistry } from "./services/taskRegistry.js";
 export * from "./core/builder.js";
@@ -89,7 +89,7 @@ export declare const findTaskInTaskTree: (obj: TaskTree, keys: Array<string>) =>
 type TaskFullName = string;
 export declare const getTaskByPath: (taskPathString: TaskFullName) => Effect.Effect<{
     task: Task<unknown, unknown, unknown, unknown>;
-    crystalConfig: TaskTreeNode;
+    iceConfig: TaskTreeNode;
 }, import("@effect/platform/Error").PlatformError | ConfigError | TaskNotFoundError, FileSystem.FileSystem | Path.Path>;
 export declare const DefaultsLayer: Layer.Layer<DfxService | Moc | NodeContext.NodeContext | TaskRegistry | TaskCtx, import("@effect/platform/Error").PlatformError | ConfigError | import("effect/ConfigError").ConfigError | import("./services/moc.js").MocError, never>;
 export declare const runtime: ManagedRuntime.ManagedRuntime<DfxService | Moc | NodeContext.NodeContext | TaskRegistry | TaskCtx, import("@effect/platform/Error").PlatformError | ConfigError | import("effect/ConfigError").ConfigError | import("./services/moc.js").MocError>;
@@ -119,7 +119,7 @@ export declare const canistersStatusTask: () => Effect.Effect<void, Error | impo
 export declare const listTasksTask: () => Effect.Effect<void, import("@effect/platform/Error").PlatformError | ConfigError, FileSystem.FileSystem | Path.Path>;
 export declare const listCanistersTask: () => Effect.Effect<void, import("@effect/platform/Error").PlatformError | ConfigError, FileSystem.FileSystem | Path.Path>;
 export { runCli } from "./cli/index.js";
-export declare const getCrystalConfig: (configPath?: string) => Effect.Effect<CrystalConfigFile, import("@effect/platform/Error").PlatformError | ConfigError, FileSystem.FileSystem | Path.Path>;
+export declare const getICEConfig: (configPath?: string) => Effect.Effect<ICEConfigFile, import("@effect/platform/Error").PlatformError | ConfigError, FileSystem.FileSystem | Path.Path>;
 export declare const createActor: <T>({ canisterId, canisterDID, }: {
     canisterId: string;
     canisterDID: any;

@@ -4,7 +4,7 @@
 
 - convert runner to use effect-ts library for errors, loggings, etc.
 
-- let every canister declare its own crystal.config.ts which can be used independently as well as composed with other crystal configs
+- let every canister declare its own ice.config.ts which can be used independently as well as composed with other ice configs
 
 - Add testing support with pocket-ic. Have canisters deployed already in the test environment (see hardhat-deploy).
 
@@ -22,7 +22,7 @@ A workspace should have a vitest.workspace or vitest.projects file in its root (
 
 - Allow defining tasks as streams
 
-- what if we could just clone a git repo and import the crystal config and run it?
+- what if we could just clone a git repo and import the ice config and run it?
     - or package.json? add fields? hmm
     - import dfx.json files?
 

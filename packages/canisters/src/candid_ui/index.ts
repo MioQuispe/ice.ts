@@ -1,7 +1,7 @@
 import * as url from "node:url"
 import path from "node:path"
 import { Principal } from "@dfinity/principal"
-import { customCanister, type TaskCtxShape } from "@crystal/runner"
+import { customCanister, type TaskCtxShape } from "@ice/runner"
 import { CapRouter } from "../cap"
 import type { _SERVICE } from "./candid_ui.types"
 

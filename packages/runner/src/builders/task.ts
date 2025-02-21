@@ -6,7 +6,7 @@ import type {
   MergeTaskProvide,
   CanisterScope,
 } from "./types.js"
-import { TaskCtx, TaskInfo, DependencyResults } from "../index.js"
+import { TaskCtx, TaskInfo, DependencyResults, runWithPatchedConsole } from "../index.js"
 import { Tags, type TaskCtxShape } from "./types.js"
 
 function normalizeDep(
@@ -219,7 +219,7 @@ function runTask<I, T extends Task, D extends Record<string, Task>, P extends Re
         dependencies,
       } as TaskCtxShape<ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>>
       const result = yield* Effect.tryPromise({
-        try: () => fn({ ctx }),
+        try: () => runWithPatchedConsole(() => fn({ ctx })),
         catch: (error) => {
           console.error("Error executing task:", error)
           return error instanceof Error ? error : new Error(String(error))

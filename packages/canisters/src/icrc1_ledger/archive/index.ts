@@ -1,6 +1,6 @@
 import path from "node:path"
-import type { TaskCtxShape } from "@crystal/runner"
-import { customCanister } from "@crystal/runner"
+import type { TaskCtxShape } from "@ice/runner"
+import { customCanister } from "@ice/runner"
 import type { ICRC1ArchiveInitArgs } from "./index"
 import type { ArchiveArg } from "./icrc1_archive.types"
 import type { _SERVICE } from "./icrc1_archive.did"

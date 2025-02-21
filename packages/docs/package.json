@@ -1,7 +1,7 @@
 {
-  "name": "@crystal/docs",
+  "name": "@ice/docs",
   "version": "0.0.1",
-  "description": "Documentation for Crystal",
+  "description": "Documentation for ICE",
   "scripts": {
     "dev": "vocs dev",
     "build": "vocs build",

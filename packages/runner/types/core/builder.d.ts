@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { type TaskCtxShape } from "../index.js";
-import type { CrystalContext, Scope, Task, TaskTree } from "../types/types.js";
+import type { ICEContext, Scope, Task, TaskTree } from "../types/types.js";
 import { Path, FileSystem } from "@effect/platform";
 export declare const Tags: {
     CANISTER: string;
@@ -44,8 +44,8 @@ export type MotokoCanisterBuilder<I = unknown> = {
 };
 export declare const loadCanisterId: (taskPath: string) => Effect.Effect<string, Error | import("@effect/platform/Error").PlatformError | import("effect/ConfigError").ConfigError, FileSystem.FileSystem | Path.Path>;
 export declare const motokoCanister: <I>(canisterConfigOrFn: MotokoCanisterConfig | ((ctx: TaskCtxShape) => MotokoCanisterConfig)) => MotokoCanisterBuilder<I>;
-type CrystalConfig = CrystalContext & {
-    setup?: () => Promise<CrystalContext>;
+type ICEConfig = ICEContext & {
+    setup?: () => Promise<ICEContext>;
 };
 export declare const scope: (description: string, children: TaskTree) => {
     _tag: string;
@@ -53,5 +53,5 @@ export declare const scope: (description: string, children: TaskTree) => {
     description: string;
     children: TaskTree;
 };
-export declare const Crystal: (config?: CrystalConfig) => {};
+export declare const ICE: (config?: ICEConfig) => {};
 export {};

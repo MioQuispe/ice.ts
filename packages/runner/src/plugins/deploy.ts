@@ -1,7 +1,7 @@
 import { Effect, Match, Option } from "effect"
 import type {
   BuilderResult,
-  CrystalConfigFile,
+  ICEConfigFile,
   Scope,
   Task,
   TaskTree,
@@ -62,6 +62,8 @@ const makeDeployTask = (scope: CanisterScope): Task => {
               yield* runTask(scope.children.bindings)
             } else {
               // custom canisters already have candid available so we can parallelize
+              // yield* runTask(scope.children.build)
+              // yield* runTask(scope.children.bindings)
               yield* Effect.all(
                 [
                   runTask(scope.children.build),

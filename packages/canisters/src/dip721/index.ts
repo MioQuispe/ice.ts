@@ -1,8 +1,8 @@
 import { Opt } from "../types"
 import * as url from "node:url"
 import path from "node:path"
-import { customCanister } from "@crystal/runner"
-import type { TaskCtxShape } from "@crystal/runner"
+import { customCanister } from "@ice/runner"
+import type { TaskCtxShape } from "@ice/runner"
 import { Principal } from "@dfinity/principal"
 import type { InitArgs, _SERVICE } from "./dip721.did.d"
 

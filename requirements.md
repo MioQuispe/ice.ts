@@ -1,10 +1,10 @@
-# Crystal CLI/SDK - Requirements Specification
+# ICE CLI/SDK - Requirements Specification
 
 ## Overview
-**Crystal** is a command-line tool (CLI) and SDK designed to simplify and automate complex `dfx` tasks for Internet Computer developers. It provides a TypeScript interface for managing canisters, making canister-related tasks composable and easier to automate. Crystal replaces the traditional `dfx.json` with a more ergonomic and type-safe `crystal.config.ts` file. It is a task runner and allows you to generate templates, bindings and boilerplate code for tokens, NFTs, and DAOs as well.
+**ICE** is a command-line tool (CLI) and SDK designed to simplify and automate complex `dfx` tasks for Internet Computer developers. It provides a TypeScript interface for managing canisters, making canister-related tasks composable and easier to automate. ICE replaces the traditional `dfx.json` with a more ergonomic and type-safe `ice.config.ts` file. It is a task runner and allows you to generate templates, bindings and boilerplate code for tokens, NFTs, and DAOs as well.
 
 ## Purpose
-Crystal aims to:
+ICE aims to:
 - Automate workflows for the Internet Computer with a focus on ease of use and developer experience.
 - Provide a TypeScript-based configuration system that reduces errors through type checking.
 - Generate common boilerplate code for tokens, NFTs, and DAOs to accelerate development.
@@ -16,27 +16,27 @@ Crystal aims to:
 ## Tech Stack
 - **Blockchain**: Internet Computer
 - **Languages**: Motoko / Rust (for smart contracts) and TypeScript (for configuration).
-- **Installation**: Via npm: `npm i -S @crystal/runner`
+- **Installation**: Via npm: `npm i -S @ice/runner`
 
 ## User Flow
-1. Users either initialize a new project with `npx crystal` or integrate Crystal into an existing project.
-2. Install necessary packages: `@crystal/runner` and `@crystal/canisters` via npm.
-3. Create a `crystal.config.ts` file in the project root.
-4. Define canisters and tasks within `crystal.config.ts`.
-5. Build canisters using `npx crystal c` or as an npm script (e.g., `"canisters": "crystal canisters:*"`).
+1. Users either initialize a new project with `npx ice` or integrate ICE into an existing project.
+2. Install necessary packages: `@ice/runner` and `@ice/canisters` via npm.
+3. Create a `ice.config.ts` file in the project root.
+4. Define canisters and tasks within `ice.config.ts`.
+5. Build canisters using `npx ice c` or as an npm script (e.g., `"canisters": "ice canisters:*"`).
 6. Automatically generate TypeScript declarations and types for the canisters, which can be imported by the developer.
 
 ## Core Features
 
 ### 1. Canister Installation via npm
-Crystal allows developers to install canisters directly from npm, managing dependencies in a more efficient way than modifying `dfx.json` manually.
+ICE allows developers to install canisters directly from npm, managing dependencies in a more efficient way than modifying `dfx.json` manually.
 
 #### Requirements:
 - Use `npm i <canister-name>` to install a canister.
-- Configure installed canisters in `crystal.config.ts`.
+- Configure installed canisters in `ice.config.ts`.
 
-### 2. TypeScript-Based Configuration (`crystal.config.ts`)
-Crystal replaces the `dfx.json` file with `crystal.config.ts`, giving developers the power of TypeScript for their canister configurations.
+### 2. TypeScript-Based Configuration (`ice.config.ts`)
+ICE replaces the `dfx.json` file with `ice.config.ts`, giving developers the power of TypeScript for their canister configurations.
 
 #### Requirements:
 - Developers define canisters, tasks, and configurations using TypeScript.
@@ -44,26 +44,26 @@ Crystal replaces the `dfx.json` file with `crystal.config.ts`, giving developers
 - Automatically catch type errors at compile time.
 
 ### 3. Task Automation with Dependencies & Async Logic
-Crystal allows developers to create tasks with dependency chains and asynchronous logic. Tasks should run concurrently with maximum parallelism, enhancing workflow efficiency.
+ICE allows developers to create tasks with dependency chains and asynchronous logic. Tasks should run concurrently with maximum parallelism, enhancing workflow efficiency.
 
 #### Requirements:
 - Tasks should support dependencies and concurrent execution.
 - Developers can define tasks with async/await syntax.
-- Tasks can be executed via the CLI with commands such as `crystal run <task-name>`.
+- Tasks can be executed via the CLI with commands such as `ice run <task-name>`.
 
 ### 4. Boilerplate Code Generation (Tokens, NFTs, DAOs)
-Crystal generates starter templates for common use cases, reducing the need for developers to write repetitive boilerplate code.
+ICE generates starter templates for common use cases, reducing the need for developers to write repetitive boilerplate code.
 
 #### Requirements:
 - Generate `icrc1` token boilerplate code with future plans to add NFTs and DAOs.
-- Developers should use a command like `crystal generate <type>` to create the necessary scaffolding.
+- Developers should use a command like `ice generate <type>` to create the necessary scaffolding.
 - Support customization of generated code (e.g., initial token supply for `icrc1` tokens).
 
 ### 5. Declarations and Type Generation
-Crystal generates TypeScript declarations and types for the canisters to facilitate easy importing and type-safe interactions.
+ICE generates TypeScript declarations and types for the canisters to facilitate easy importing and type-safe interactions.
 
 #### Requirements:
-- Automatically generate types when canisters are built with `crystal c`.
+- Automatically generate types when canisters are built with `ice c`.
 - Types should be importable into the project’s TypeScript codebase.
 - Generate React, Vue, Svelte and other frameworks bindings for canisters.
     - useCanister() hook for React
@@ -79,17 +79,17 @@ Crystal generates TypeScript declarations and types for the canisters to facilit
 
 ### 2. Documentation and Help
 - Provide a comprehensive documentation site detailing all commands, configurations, and features.
-- Offer inline help via `crystal <command> --help` to provide immediate assistance with syntax and options.
+- Offer inline help via `ice <command> --help` to provide immediate assistance with syntax and options.
 
 ### 3. Testing Support
-Crystal includes utilities for easier testing of canisters, possibly integrating with `pocket-ic`. Have canisters deployed already in the test environment (see hardhat-deploy).
+ICE includes utilities for easier testing of canisters, possibly integrating with `pocket-ic`. Have canisters deployed already in the test environment (see hardhat-deploy).
 
 #### Requirements:
 - Simplify testing by generating test utilities for canisters.
 - Potential integration with lightweight tools such as `pocket-ic` for running tests.
 
 ### 4. Extensibility
-Crystal’s architecture should support future extensibility, including potential integration with a plugin system.
+ICE’s architecture should support future extensibility, including potential integration with a plugin system.
 
 #### Future Requirement:
 - Support plugin extensions to allow developers to add custom functionality.
@@ -110,6 +110,6 @@ Crystal’s architecture should support future extensibility, including potentia
 
 ## Future Features (Backlog)
 - **Canister Update Automation**: Automate updating of canisters to newer versions.
-- **Multi-Environment Configuration**: Add support for handling multiple environments (e.g., development, production) within `crystal.config.ts`.
-- **Plugin System**: Evolve the architecture to support a plugin system, allowing developers to extend Crystal’s functionality with custom commands and features.
-- **Templates**: Add templates for React, Vue, Svelte, and more with `crystal create <project-name>`
+- **Multi-Environment Configuration**: Add support for handling multiple environments (e.g., development, production) within `ice.config.ts`.
+- **Plugin System**: Evolve the architecture to support a plugin system, allowing developers to extend ICE’s functionality with custom commands and features.
+- **Templates**: Add templates for React, Vue, Svelte, and more with `ice create <project-name>`

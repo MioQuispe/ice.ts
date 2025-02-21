@@ -1,5 +1,5 @@
 {
-  "name": "@crystal/runner",
+  "name": "@ice/runner",
   "type": "module",
   "version": "0.0.1",
   "main": "dist/index.js",
@@ -9,7 +9,7 @@
     "bin"
   ],
   "bin": {
-    "crystal": "./bin/index.js"
+    "ice": "./bin/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -61,7 +61,7 @@
     "tsx": "^3.12.2"
   },
   "devDependencies": {
-    "@crystal/canisters": "*",
+    "@ice/canisters": "*",
     "@effect/vitest": "^0.17.3",
     "@types/express": "^5.0.0",
     "@types/node": "^22.7.5",
