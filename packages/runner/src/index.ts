@@ -1379,5 +1379,3 @@ const decodeCanisterIds = Schema.decodeUnknown(CanisterIdsSchema)
 
 export { deployTaskPlugin } from "./plugins/deploy.js"
 export { candidUITaskPlugin } from "./plugins/candid_ui.js"
-
-export { runWithPatchedConsole } from "./utils/instrumentActor.js"

@@ -6,7 +6,8 @@ import type {
   MergeTaskProvide,
   CanisterScope,
 } from "./types.js"
-import { TaskCtx, TaskInfo, DependencyResults, runWithPatchedConsole } from "../index.js"
+import { TaskCtx, TaskInfo, DependencyResults } from "../index.js"
+import { runWithPatchedConsole } from "../utils/instrumentActor.js"
 import { Tags, type TaskCtxShape } from "./types.js"
 
 function normalizeDep(
