@@ -16,4 +16,5 @@ cursor/**
 .vscode/**
 **/.vscode
 
-dfx_wasms/**
+**/.cursorrules
+**/.cursorignore
