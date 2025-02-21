@@ -26,7 +26,7 @@ export const CyclesWallet = (
       canisterId: initArgs?.canisterId,
       type: "custom",
       candid: path.resolve(__dirname, "./cycles_wallet/cycles_wallet.did"),
-      wasm: path.resolve(__dirname, "./cycles_wallet/cycles_wallet.wasm"),
+      wasm: path.resolve(__dirname, "./cycles_wallet/cycles_wallet.wasm.gz"),
     }
   }).installArgs(async ({ ctx, mode }) => {
     return []

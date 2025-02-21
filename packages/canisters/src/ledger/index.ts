@@ -39,7 +39,7 @@ export const Ledger = (
     canisterId: LedgerIds.local,
     // TODO: change from private => public
     candid: path.resolve(__dirname, `${canisterName}/${canisterName}.private.did`),
-    wasm: path.resolve(__dirname, `${canisterName}/${canisterName}.wasm`),
+    wasm: path.resolve(__dirname, `${canisterName}/${canisterName}.wasm.gz`),
     // `record {
     //    minting_account = \"60bbbbcf3efc1ae7d97a8392d977ec5e54d065a79eee3bc147f259f02fd252d6\";
     //    initial_values = vec {
@@ -132,7 +132,7 @@ export type LedgerActor = import("@dfinity/agent").ActorSubclass<
 //   return {
 //     type: "custom",
 //     candid: path.resolve(__dirname, "./ledger/ledger.public.did"),
-//     wasm: path.resolve(__dirname, "./ledger/ledger.wasm"),
+//     wasm: path.resolve(__dirname, "./ledger/ledger.wasm.gz"),
 //     build: "",
 //     remote: {
 //       id: LedgerIds,

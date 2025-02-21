@@ -33,7 +33,7 @@ export const NFIDDelegationFactory = (
       canisterId: initArgs?.canisterId,
       wasm: path.resolve(
         __dirname,
-        `./nfid/${canisterName}/${canisterName}.wasm`,
+        `./nfid/${canisterName}/${canisterName}.wasm.gz`,
       ),
       candid: path.resolve(
         __dirname,

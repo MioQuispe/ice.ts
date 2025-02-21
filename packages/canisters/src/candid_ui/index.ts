@@ -33,7 +33,7 @@ export const CandidUI = (
     }
     return {
       canisterId: initArgs?.canisterId,
-      wasm: path.resolve(__dirname, `./${canisterName}/${canisterName}.wasm`),
+      wasm: path.resolve(__dirname, `./${canisterName}/${canisterName}.wasm.gz`),
       candid: path.resolve(__dirname, `./${canisterName}/${canisterName}.did`),
     }
   })

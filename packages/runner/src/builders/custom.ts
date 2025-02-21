@@ -221,12 +221,13 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 					})
 			yield* Effect.logDebug("Args encoded successfully")
 
+      const isGzipped = yield* fs.exists(path.join(appDir, iceDirName, "canisters", canisterName, `${canisterName}.wasm.gz`))
 			const wasmPath = path.join(
 				appDir,
 				iceDirName,
 				"canisters",
 				canisterName,
-				`${canisterName}.wasm`,
+				isGzipped ? `${canisterName}.wasm.gz` : `${canisterName}.wasm`,
 			)
 			yield* installCanister({
 				encodedArgs,
@@ -269,12 +270,13 @@ const makeBuildTask = (
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
 			const { taskPath } = yield* TaskInfo
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
+			const isGzipped = yield* fs.exists(path.join(appDir, iceDirName, "canisters", canisterName, `${canisterName}.wasm.gz`))
 			const outWasmPath = path.join(
 				appDir,
 				iceDirName,
 				"canisters",
 				canisterName,
-				`${canisterName}.wasm`,
+				isGzipped ? `${canisterName}.wasm.gz` : `${canisterName}.wasm`,
 			)
 			const wasm = yield* fs.readFile(canisterConfig.wasm)
 			// Ensure the directory exists
@@ -642,12 +644,13 @@ export const canisterBuildGuard = Effect.gen(function* () {
 		canisterName,
 		`${canisterName}.did`,
 	)
+	const isGzipped = yield* fs.exists(path.join(appDir, iceDirName, "canisters", canisterName, `${canisterName}.wasm.gz`))
 	const wasmPath = path.join(
 		appDir,
 		iceDirName,
 		"canisters",
 		canisterName,
-		`${canisterName}.wasm`,
+		isGzipped ? `${canisterName}.wasm.gz` : `${canisterName}.wasm`,
 	)
 	const didExists = yield* fs.exists(didPath)
 	if (!didExists) {

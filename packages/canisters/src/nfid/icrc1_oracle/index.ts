@@ -38,7 +38,7 @@ export const NFIDIcrc1Oracle = (
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
       canisterId: initArgs?.canisterId,
-      wasm: path.resolve(__dirname, `./nfid/${canisterName}/${canisterName}.wasm`),
+      wasm: path.resolve(__dirname, `./nfid/${canisterName}/${canisterName}.wasm.gz`),
       candid: path.resolve(__dirname, `./nfid/${canisterName}/${canisterName}.did`),
     }
   })

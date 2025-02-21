@@ -37,7 +37,7 @@ export const InternetIdentity = (
       ),
       wasm: path.resolve(
         __dirname,
-        "./internet-identity/internet_identity.wasm",
+        "./internet-identity/internet_identity.wasm.gz",
       ),
     })
     .installArgs(async ({ mode, ctx }) => { // TODO: better signature

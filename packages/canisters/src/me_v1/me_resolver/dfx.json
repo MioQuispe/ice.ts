@@ -1,1 +1,0 @@
-{"canisters":{"me_resolver":{"type":"custom","candid":"me_resolver.did","wasm":"me_resolver_opt.wasm.gz","build":[]}},"defaults":{"build":{"packtool":""}},"version":1}

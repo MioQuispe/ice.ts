@@ -68,7 +68,7 @@ export const NNSDapp = (
         : initArgsOrFn
     return {
       canisterId: NNSDappIds.local,
-      wasm: path.resolve(__dirname, "./nns/nns-ui/nns.wasm"),
+      wasm: path.resolve(__dirname, "./nns/nns-ui/nns.wasm.gz"),
       candid: path.resolve(__dirname, "./nns/nns-ui/nns.did"),
     }
   }).installArgs(async ({ ctx }) => {
@@ -107,7 +107,7 @@ export const NNSSNSWasm = (
           : initArgsOrFn
       return {
         canisterId: NNSSNSWasmIds.local,
-        wasm: path.resolve(__dirname, "./nns/nns-sns-wasm/nns-sns-wasm.wasm"),
+        wasm: path.resolve(__dirname, "./nns/nns-sns-wasm/nns-sns-wasm.wasm.gz"),
         candid: path.resolve(__dirname, "./nns/nns-sns-wasm/nns-sns-wasm.did"),
       }
     },
@@ -193,7 +193,7 @@ export const NNSRoot = (
         : initArgsOrFn
     return {
       canisterId: NNSRootIds.local,
-      wasm: path.resolve(__dirname, "./nns/nns-root/nns-root.wasm"),
+      wasm: path.resolve(__dirname, "./nns/nns-root/nns-root.wasm.gz"),
       candid: path.resolve(__dirname, "./nns/nns-root/nns-root.did"),
     }
   }).installArgs(async ({ ctx }) => {
@@ -291,6 +291,7 @@ export const NNSRegistry = (
           : initArgsOrFn
       return {
         canisterId: NNSRegistryIds.local,
+        // For some reason the init args are not working with a gzipped wasm
         wasm: path.resolve(__dirname, "./nns/nns-registry/nns-registry.wasm"),
         candid: path.resolve(__dirname, "./nns/nns-registry/nns-registry.did"),
       }
@@ -524,7 +525,7 @@ export const NNSLedger = (
         : initArgsOrFn
     return {
       canisterId: NNSLedgerIds.local,
-      wasm: path.resolve(__dirname, "./nns/nns-ledger/nns-ledger.wasm"),
+      wasm: path.resolve(__dirname, "./nns/nns-ledger/nns-ledger.wasm.gz"),
       candid: path.resolve(__dirname, "./nns/nns-ledger/nns-ledger.did"),
     }
   }).installArgs(async ({ ctx }) => {
@@ -563,7 +564,7 @@ export const NNSGenesisToken = (
       canisterId: NNSGenesisTokenIds.local,
       wasm: path.resolve(
         __dirname,
-        "./nns/nns-genesis-token/nns-genesis-token-opt.wasm",
+        "./nns/nns-genesis-token/nns-genesis-token.wasm.gz",
       ),
       candid: path.resolve(
         __dirname,
@@ -621,7 +622,7 @@ export const NNSCyclesMinting = (
         canisterId: NNSCyclesMintingIds.local,
         wasm: path.resolve(
           __dirname,
-          "./nns/nns-cycles-minting/nns-cycles-minting.wasm",
+          "./nns/nns-cycles-minting/nns-cycles-minting.wasm.gz",
         ),
         candid: path.resolve(
           __dirname,
@@ -704,7 +705,7 @@ export const NNSLifeline = (
         : initArgsOrFn
     return {
       canisterId: NNSLifelineIds.local,
-      wasm: path.resolve(__dirname, "./nns/nns-lifeline/nns-lifeline.wasm"),
+      wasm: path.resolve(__dirname, "./nns/nns-lifeline/nns-lifeline.wasm.gz"),
       candid: path.resolve(__dirname, "./nns/nns-lifeline/nns-lifeline.did"),
     }
   }).installArgs(async ({ ctx }) => {

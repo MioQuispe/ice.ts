@@ -23,7 +23,7 @@ export const Management = ({ owner }: InitArgs): ExtendedCanisterConfiguration =
   return {
     type: "custom",
     candid: path.resolve(__dirname, "./management/management.did"),
-    wasm: path.resolve(__dirname, "./management/management.wasm"),
+    wasm: path.resolve(__dirname, "./management/management.wasm.gz"),
     build: "",
     remote: {
       id: ManagementIds,

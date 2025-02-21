@@ -30,7 +30,7 @@ export const NFIDIdentityManager = (
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
       canisterId: initArgs?.canisterId ?? Ids.local,
-      wasm: path.resolve(__dirname, `./nfid/${canisterName}/${canisterName}.wasm`),
+      wasm: path.resolve(__dirname, `./nfid/${canisterName}/${canisterName}.wasm.gz`),
       candid: path.resolve(__dirname, `./nfid/${canisterName}/${canisterName}.did`),
     }
   }).installArgs(async ({ ctx, mode }) => {

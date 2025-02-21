@@ -1,1 +1,0 @@
-{"canisters":{"me_v1":{"type":"custom","candid":"me_v1.did","wasm":"me_v1_opt.wasm.gz","build":[]}},"defaults":{"build":{"packtool":""}},"version":1}

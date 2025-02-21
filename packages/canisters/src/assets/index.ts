@@ -27,7 +27,7 @@ export const Assets = ({ owner }: InitArgs): ExtendedCanisterConfiguration => {
   return {
     type: "custom",
     candid: path.resolve(__dirname, "./assets/assets.did"),
-    wasm: path.resolve(__dirname, "./assets/assets.wasm"),
+    wasm: path.resolve(__dirname, "./assets/assets.wasm.gz"),
     build: "",
     // remote: {
     //   id: AssetsIds,

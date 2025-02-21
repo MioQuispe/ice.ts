@@ -50,12 +50,19 @@ export const makeMotokoBindingsTask = () => {
 				`Bindings build guard check passed for ${canisterName}`,
 			)
 
+			const isGzipped = yield* fs.exists(path.join(
+				appDir,
+				iceDirName,
+				"canisters",
+				canisterName,
+				`${canisterName}.wasm.gz`,
+			))
 			const wasmPath = path.join(
 				appDir,
 				iceDirName,
 				"canisters",
 				canisterName,
-				`${canisterName}.wasm`,
+				isGzipped ? `${canisterName}.wasm.gz` : `${canisterName}.wasm`,
 			)
 			const didPath = path.join(
 				appDir,
@@ -102,12 +109,19 @@ const makeMotokoBuildTask = (
 			const { taskPath } = yield* TaskInfo
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
+			const isGzipped = yield* fs.exists(path.join(
+				appDir,
+				iceDirName,
+				"canisters",
+				canisterName,
+				`${canisterName}.wasm.gz`,
+			))
 			const wasmOutputFilePath = path.join(
 				appDir,
 				iceDirName,
 				"canisters",
 				canisterName,
-				`${canisterName}.wasm`,
+				isGzipped ? `${canisterName}.wasm.gz` : `${canisterName}.wasm`,
 			)
 			// Ensure the directory exists
 			yield* fs.makeDirectory(path.dirname(wasmOutputFilePath), {

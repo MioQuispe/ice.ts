@@ -43,7 +43,7 @@ export const CapBucket = (
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
       candid: path.resolve(__dirname, "./cap/cap-bucket/cap-bucket.did"),
-      wasm: path.resolve(__dirname, "./cap/cap-bucket/cap-bucket.wasm"),
+      wasm: path.resolve(__dirname, "./cap/cap-bucket/cap-bucket.wasm.gz"),
       canisterId: CapBucketIds.local,
     }
   }).installArgs(async ({ ctx, mode }) => {
@@ -94,7 +94,7 @@ export const CapRoot = (
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
       candid: path.resolve(__dirname, "./cap/cap-root/cap-root.did"),
-      wasm: path.resolve(__dirname, "./cap/cap-root/cap-root.wasm"),
+      wasm: path.resolve(__dirname, "./cap/cap-root/cap-root.wasm.gz"),
       canisterId: initArgs.canisterId ?? CapRootIds.local,
     }
   })
@@ -133,7 +133,7 @@ type CapRouterInitArgs = {
 // Here we create the shape
 const capRouter = customCanister<[], CAP_ROUTER_SERVICE>({
   candid: path.resolve(__dirname, "./cap/cap-router/cap-router.did"),
-  wasm: path.resolve(__dirname, "./cap/cap-router/cap-router.wasm"),
+  wasm: path.resolve(__dirname, "./cap/cap-router/cap-router.wasm.gz"),
   canisterId: CapRouterIds.local,
 })
 
@@ -146,7 +146,7 @@ export const CapRouter = (
         typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
       return {
         candid: path.resolve(__dirname, "./cap/cap-router/cap-router.did"),
-        wasm: path.resolve(__dirname, "./cap/cap-router/cap-router.wasm"),
+        wasm: path.resolve(__dirname, "./cap/cap-router/cap-router.wasm.gz"),
         canisterId: initArgs.canisterId ?? CapRouterIds.local,
       }
     })
@@ -183,7 +183,7 @@ CapRouter._tag = "canister-constructor"
 //   return {
 //     type: "custom",
 //     candid: path.resolve(__dirname, "./cap/cap-router-test/cap-router-test.did"),
-//     wasm: path.resolve(__dirname, "./cap/cap-router-test/cap-router-test.wasm"),
+//     wasm: path.resolve(__dirname, "./cap/cap-router-test/cap-router-test.wasm.gz"),
 //     build: "",
 //     // remote: {
 //     //   id: CapRouterTestIds,

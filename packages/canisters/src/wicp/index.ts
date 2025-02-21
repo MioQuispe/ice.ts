@@ -32,7 +32,7 @@ export const WICP = ({
   return {
     type: "custom",
     candid: path.resolve(__dirname, "./wicp/wicp.did"),
-    wasm: path.resolve(__dirname, "./wicp/wicp.wasm"),
+    wasm: path.resolve(__dirname, "./wicp/wicp.wasm.gz"),
     build: "",
     // TODO: principal has to be specified
     // remote: {
