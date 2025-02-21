@@ -125,11 +125,8 @@ export function instrumentActor<T extends Record<string, any>>(
 }
 
 const createLogEntry = async (e: Error, result: unknown): Promise<void> => {
-	// TODO: save logs
 	const start = Date.now()
 	let success = true
-	// see the actual stack if needed to debug:
-	// console.log("Stack = ", e.stack)
 	const trace = parseCallSite(e.stack || "")
 
 	const end = Date.now()
@@ -137,30 +134,24 @@ const createLogEntry = async (e: Error, result: unknown): Promise<void> => {
 	const logEntry = {
 		timestamp: start,
 		duration: end - start,
-		file: trace.file, // e.g. /Users/you/project/ice.config.ts
-		line: trace.line, // e.g. 30
+		file: trace.file, 
+		line: trace.line,
 		result: formatResult(result),
 		success,
 	}
 	await writeLogEntry(logEntry)
 }
 
-// TODO: wrap tasks with this
 export async function runWithPatchedConsole<T>(fn: () => Promise<T>): Promise<T> {
   const originalConsoleLog = console.log
   console.log = (...args: unknown[]): void => {
-    // Log the marker message using the original console.log.
-    // Create an error to capture the call site if needed.
     const error = new Error()
     createLogEntry(error, args)
-    // Optionally, process error.stack here to extract call site details.
-    // Then log the original arguments.
     originalConsoleLog(...args)
   }
   try {
     return await fn()
   } finally {
-    // Restore the original console.log once the function is done.
     console.log = originalConsoleLog
   }
 }
