@@ -1,8 +1,8 @@
 import { Effect } from "effect"
-import type { Scope, Plugin, PreTaskTree, ICEContext } from "../types"
+import type { TaskTree, ICEContext } from "../types/types.js"
 
 export const withContext = (
-  root: PreTaskTree | ((ctx: ICEContext) => PreTaskTree),
+  root: TaskTree | ((ctx: ICEContext) => TaskTree),
   // TODO: should we accept custom contexts as the 2nd arg?
   // customCtx?: any,
 ) => {

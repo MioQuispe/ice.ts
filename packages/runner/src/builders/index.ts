@@ -1,4 +1,4 @@
-import type { TaskTree, Scope, ICEConfig } from "src/types/types.js"
+import type { TaskTree, Scope, ICEConfig } from "../types/types.js"
 
 // export * from "./custom.js"
 export * from "./motoko.js"

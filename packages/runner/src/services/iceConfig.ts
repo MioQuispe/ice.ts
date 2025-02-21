@@ -4,11 +4,6 @@ import { Path, FileSystem } from "@effect/platform"
 import { deployTaskPlugin } from "../plugins/deploy.js"
 import { removeBuilders } from "../index.js"
 import { tsImport } from "tsx/esm/api"
-import {
-	formatResult,
-	parseCallSite,
-	writeLogEntry,
-} from "../utils/instrumentActor.js"
 // import { removeBuilders } from "../plugins/remove_builders.js"
 // import { candidUITaskPlugin } from "../plugins/candid-ui.js"
 

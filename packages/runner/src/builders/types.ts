@@ -3,7 +3,7 @@ import type {
   Task,
   CanisterConstructor,
 } from "../types/types.js"
-import type { TaskCtxShape } from "../index.js"
+import type { TaskCtxShape } from "../tasks/lib.js"
 // import type { Effect } from "effect"
 import { Effect, Option } from "effect"
 import { customCanister } from "./custom.js"

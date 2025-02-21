@@ -6,7 +6,9 @@ import type {
   MergeTaskProvide,
   CanisterScope,
 } from "./types.js"
-import { TaskCtx, TaskInfo, DependencyResults } from "../index.js"
+import { TaskCtx } from "../tasks/lib.js"
+import { TaskInfo } from "../tasks/run.js"
+import { DependencyResults } from "../tasks/run.js"
 import { runWithPatchedConsole } from "../utils/instrumentActor.js"
 import { Tags, type TaskCtxShape } from "./types.js"
 

@@ -1,14 +1,12 @@
 import { Effect, Match, Option } from "effect"
 import type {
-  BuilderResult,
-  ICEConfigFile,
   Scope,
   Task,
   TaskTree,
   TaskTreeNode,
 } from "../types/types.js"
-import { TaskCtx, getCanisterInfo, TaskInfo } from "../index.js"
-import { loadCanisterId } from "../builders/custom.js"
+import { TaskCtx } from "../tasks/lib.js"
+import { TaskInfo } from "../tasks/run.js"
 import { Tags, type CanisterScope } from "../builders/types.js"
 
 // /**

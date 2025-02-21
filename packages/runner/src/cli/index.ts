@@ -1,6 +1,4 @@
-import { Effect, Layer, Console, Stream } from "effect"
-import { Command, Options, Args, ValidationError } from "@effect/cli"
-import { CommandMismatch, isCommandMismatch } from "@effect/cli/ValidationError"
+import { Effect, Console, Stream } from "effect"
 import {
   canistersBindingsTask,
   canistersBuildTask,
@@ -8,23 +6,16 @@ import {
   canistersDeployTask,
   canistersInstallTask,
   canistersStatusTask,
-  listCanistersTask,
   listTasksTask,
   runTaskByPath,
-  runtime,
-} from "../index.js"
-import type { ICEConfig, TaskTree } from "../types/types.js"
+} from "../tasks/index.js"
+import { runtime } from "../index.js"
+import { listCanistersTask } from "../tasks/list-canisters.js"
 import { uiTask } from "./ui/index.js"
-import { NodeContext, NodeRuntime } from "@effect/platform-node"
 import { ICEConfigService } from "../services/iceConfig.js"
-import { commandMismatch } from "@effect/cli/ValidationError"
 import * as p from "@clack/prompts"
 import color from "picocolors"
-import { defineCommand, createMain, CommandContext, ArgsDef } from "citty"
-import { spinner } from "@clack/prompts"
-import { cursor, erase } from "sisteransi"
-// TODO: not in npm?
-// import tab from '@bombsh/tab/citty'
+import { defineCommand, createMain, type CommandContext, type ArgsDef } from "citty"
 
 function moduleHashToHexString(moduleHash: [] | [number[]]): string {
   if (moduleHash.length === 0) {

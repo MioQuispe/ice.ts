@@ -1,4 +1,4 @@
-import { Principal } from "@dfinity/principal"
+import type { Principal } from "@dfinity/principal"
 import { Context, Data, Effect, Layer } from "effect"
 import { DfxService } from "./dfx.js"
 const ICError = Data.TaggedError("ICError")<{

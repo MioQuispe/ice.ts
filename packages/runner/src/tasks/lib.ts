@@ -1,0 +1,380 @@
+import { Chunk, ConfigProvider, Context, Data, Deferred, Effect, Match, Option } from "effect"
+import { ICEConfigService } from "../services/iceConfig.js"
+import type { TaskTree } from "../types/types.js"
+import type { Scope } from "../types/types.js"
+import type { TaskTreeNode } from "../types/types.js"
+import type { Task } from "../types/types.js"
+import type { ConfigNetwork } from "../types/schema.js"
+import type { HttpAgent } from "@dfinity/agent"
+import type { SignIdentity } from "@dfinity/agent"
+import type { Principal } from "@dfinity/principal"
+import type { Identity } from "@dfinity/agent"
+import { DependencyResults, runTask, TaskInfo } from "./run.js"
+import { principalToAccountId } from "../utils/utils.js"
+import { DfxService } from "../services/dfx.js"
+import { Layer } from "effect"
+import { Stream } from "effect"
+import { configMap } from "../index.js"
+import { runtime } from "../index.js"
+
+
+export type TaskCtxShape<
+  D extends Record<string, unknown> = Record<string, unknown>,
+> = {
+  readonly network: string
+  networks?: {
+    [k: string]: ConfigNetwork
+  } | null
+  readonly subnet: string
+  readonly agent: HttpAgent
+  readonly identity: SignIdentity
+  readonly users: {
+    [name: string]: {
+      identity: Identity
+      agent: HttpAgent
+      principal: Principal
+      accountId: string
+      // TODO: neurons?
+    }
+  }
+  readonly runTask: typeof runTask
+  readonly dependencies: D
+}
+
+export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {
+  static Live = Layer.effect(
+    TaskCtx,
+    Effect.gen(function* () {
+      const { agent, identity } = yield* DfxService
+      return {
+        // TODO: get from config?
+        network: "local",
+        subnet: "system",
+        agent,
+        identity,
+        runTask,
+        dependencies: {},
+        users: {
+          default: {
+            identity,
+            agent,
+            // TODO: use Account class from connect2ic?
+            principal: identity.getPrincipal(),
+            accountId: principalToAccountId(identity.getPrincipal()),
+          },
+        },
+      }
+    }),
+  )
+}
+
+export class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
+  path: string[]
+  reason: string
+}> {}
+
+// TODO: do we need to get by id? will symbol work?
+export const getTaskPathById = (id: Symbol) =>
+  Effect.gen(function* () {
+    const { taskTree } = yield* ICEConfigService
+    const result = yield* filterTasks(
+      taskTree,
+      (node) => node._tag === "task" && node.id === id,
+    )
+    // TODO: use effect Option?
+    if (result?.[0]) {
+      return result[0].path.join(":")
+    }
+    // return undefined
+    return yield* Effect.fail(
+      new TaskNotFoundError({
+        reason: "Task not found by id",
+        path: [""],
+      }),
+    )
+  })
+
+
+/**
+ * Topologically sorts tasks based on the "provide" field dependencies.
+ * The tasks Map now uses symbols as keys.
+ *
+ * @param tasks A map of tasks keyed by their id (as symbol).
+ * @returns An array of tasks sorted in execution order.
+ * @throws Error if a cycle is detected.
+ */
+export const topologicalSortTasks = <A, E, R, I>(
+  tasks: Map<symbol, Task<A, E, R, I>>,
+): Task<A, E, R, I>[] => {
+  const indegree = new Map<symbol, number>()
+  const adjList = new Map<symbol, symbol[]>()
+
+  // Initialize graph nodes.
+  for (const [id, task] of tasks.entries()) {
+    indegree.set(id, 0)
+    adjList.set(id, [])
+  }
+
+  // Build the graph using the "provide" field.
+  for (const [id, task] of tasks.entries()) {
+    for (const key in task.provide) {
+      const providedTask = task.provide[key]
+      const depId = providedTask.id
+      // Only consider provided dependencies that are in our tasks map.
+      if (tasks.has(depId)) {
+        // Add an edge from the dependency to this task.
+        adjList.get(depId)?.push(id)
+        // Increase the indegree for current task.
+        indegree.set(id, (indegree.get(id) ?? 0) + 1)
+      }
+    }
+  }
+
+  // Collect tasks with zero indegree.
+  const queue: symbol[] = []
+  for (const [id, degree] of indegree.entries()) {
+    if (degree === 0) {
+      queue.push(id)
+    }
+  }
+
+  const sortedTasks: Task<A, E, R, I>[] = []
+  while (queue.length > 0) {
+    const currentId = queue.shift()
+    if (!currentId) {
+      throw new Error("No task to shift from queue")
+    }
+    const currentTask = tasks.get(currentId)
+    if (!currentTask) {
+      throw new Error("No task found in tasks map")
+    }
+    sortedTasks.push(currentTask)
+    const neighbors = adjList.get(currentId) || []
+    for (const neighbor of neighbors) {
+      indegree.set(neighbor, (indegree.get(neighbor) ?? 0) - 1)
+      if (indegree.get(neighbor) === 0) {
+        queue.push(neighbor)
+      }
+    }
+  }
+
+  if (sortedTasks.length !== tasks.size) {
+    throw new Error("Cycle detected in task dependencies via 'provide' field.")
+  }
+
+  return sortedTasks
+}
+
+export type ProgressStatus = "starting" | "completed"
+export type ProgressUpdate<A> = {
+  taskId: symbol
+  taskPath: string
+  status: ProgressStatus
+  result?: A
+  error?: unknown
+}
+
+export const executeSortedTasks = <A, E, R, I>(
+  sortedTasks: Task<A, E, R, I>[],
+) =>
+  Stream.async<ProgressUpdate<A>>((emit) => {
+    // Create a deferred for every task to hold its eventual result.
+    const deferredMap = new Map<symbol, Deferred.Deferred<E | unknown, R>>()
+    Effect.gen(function* () {
+      for (const task of sortedTasks) {
+        const deferred = yield* Deferred.make<E | unknown, R>()
+        deferredMap.set(task.id, deferred)
+      }
+    }).pipe(Effect.runPromise)
+    const results = new Map<symbol, unknown>()
+    const taskEffects = sortedTasks.map((task) =>
+      Effect.gen(function* () {
+
+        const dependencyResults: Record<string, unknown> = {}
+        for (const dependencyName in task.provide) {
+          const providedTask = task.provide[dependencyName]
+          const depDeferred = deferredMap.get(providedTask.id)
+          if (depDeferred) {
+            const depResult = yield* Deferred.await(depDeferred)
+            dependencyResults[dependencyName] = depResult
+          }
+        }
+        const taskPath = yield* getTaskPathById(task.id)
+        emit(
+          Effect.succeed(
+            Chunk.of({ taskId: task.id, taskPath, status: "starting" }),
+          ),
+        )
+
+        const taskLayer = Layer.mergeAll(
+          Layer.succeed(TaskInfo, {
+            taskPath,
+            // TODO: provide more?
+          }),
+          Layer.succeed(DependencyResults, {
+            dependencies: dependencyResults,
+          }),
+          Layer.setConfigProvider(
+            ConfigProvider.fromMap(
+              new Map([...Array.from(configMap.entries())]),
+            ),
+          ),
+        )
+        const result = yield* task.effect.pipe(Effect.provide(taskLayer))
+
+        const currentDeferred = deferredMap.get(task.id)
+        if (currentDeferred) {
+          yield* Deferred.succeed(currentDeferred, result)
+        }
+
+        emit(
+          Effect.succeed(
+            Chunk.of({
+              taskId: task.id,
+              taskPath,
+              status: "completed",
+              result,
+            }),
+          ),
+        )
+        results.set(task.id, result)
+      }),
+    )
+    Effect.all(taskEffects, { concurrency: "unbounded" })
+      .pipe(
+        Effect.tap((results) => {
+          // close the stream
+          emit(Effect.fail(Option.none()))
+        }),
+      )
+      .pipe(
+        // @ts-ignore
+        runtime.runPromise,
+      )
+  })
+
+export const filterTasks = (
+  taskTree: TaskTree,
+  predicate: (task: TaskTreeNode) => boolean,
+  path: string[] = [],
+): Effect.Effect<Array<{ task: TaskTreeNode; path: string[] }>> =>
+  Effect.gen(function* () {
+    const matchingNodes: Array<{ task: TaskTreeNode; path: string[] }> = []
+    for (const key of Object.keys(taskTree)) {
+      const currentNode = taskTree[key]
+      const node = Match.value(currentNode).pipe(
+        Match.tag("task", (task): Task => task),
+        Match.tag("scope", (scope): Scope => scope),
+        Match.option,
+      )
+      if (Option.isSome(node)) {
+        const fullPath = [...path, key]
+        if (predicate(node.value)) {
+          matchingNodes.push({ task: node.value, path: fullPath })
+        }
+        if (node.value._tag === "scope") {
+          const children = Object.keys(node.value.children)
+          const filteredChildren = yield* filterTasks(
+            node.value.children,
+            predicate,
+            fullPath,
+          )
+          matchingNodes.push(...filteredChildren)
+        }
+      }
+    }
+    return matchingNodes
+  })
+
+
+// TODO: more accurate type
+type TaskFullName = string
+// TODO: figure out if multiple tasks are needed
+export const getTaskByPath = (taskPathString: TaskFullName) =>
+  Effect.gen(function* () {
+    const taskPath: string[] = taskPathString.split(":")
+    const { taskTree, config } = yield* ICEConfigService
+    const task = yield* findTaskInTaskTree(taskTree, taskPath)
+    return { task, config }
+  })
+
+// TODO: support defaultTask for scope
+export const findTaskInTaskTree = (
+  obj: TaskTree,
+  keys: Array<string>,
+): Effect.Effect<Task, TaskNotFoundError> => {
+  return Effect.gen(function* () {
+    let node: TaskTreeNode | TaskTree = obj
+    for (const key of keys) {
+      const isLastKey = keys.indexOf(key) === keys.length - 1
+
+      if (!("_tag" in node)) {
+        if (isLastKey) {
+          // TODO: this is all then
+          const taskTree = node as TaskTree
+          node = taskTree[key]
+
+          if (node._tag === "task") {
+            return node as Task
+          } else if (node._tag === "scope") {
+            if (Option.isSome((node as Scope).defaultTask)) {
+              // TODO: fix
+              // @ts-ignore
+              const taskName = node.defaultTask.value
+              return node.children[taskName] as Task
+            }
+          }
+
+          return yield* Effect.fail(
+            new TaskNotFoundError({
+              path: keys,
+              reason: `Invalid node type encountered at key "${key}"`,
+            }),
+          )
+        } else {
+          node = node[key]
+        }
+      } else {
+        if (node._tag === "task") {
+          if (isLastKey) {
+            return node
+          }
+          return yield* Effect.fail(
+            new TaskNotFoundError({
+              path: keys,
+              reason: `Invalid node type encountered at key "${key}"`,
+            }),
+          )
+        } else if (node._tag === "scope") {
+          if (isLastKey) {
+            node = node.children[key]
+
+            if (node._tag === "task") {
+              return node
+            }
+            // yield* Effect.log("Option.isSome", {
+            //   node,
+            if (Option.isSome(node.defaultTask)) {
+              const taskName = node.defaultTask.value
+              // @ts-ignore
+              return node.children[taskName] as Task
+            }
+            return yield* Effect.fail(
+              new TaskNotFoundError({
+                path: keys,
+                reason: "No default task found for scope",
+              }),
+            )
+          }
+        }
+        node = node.children[key] as TaskTreeNode
+      }
+    }
+    return yield* Effect.fail(
+      new TaskNotFoundError({
+        path: keys,
+        reason: "Path traversal completed without finding a task",
+      }),
+    )
+  })
+}

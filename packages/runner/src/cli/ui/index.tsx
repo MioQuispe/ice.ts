@@ -37,7 +37,9 @@ import type {
   TaskTreeNode,
   ICEConfig,
 } from "../../types/types.js"
-import { filterTasks, runTaskByPath, TUILayer } from "../../index.js"
+import { filterTasks } from "../../tasks/lib.js"
+import { runTaskByPath } from "../../tasks/run.js"
+import { TUILayer } from "../../index.js"
 import { TaskList, TaskListItem, type StateOthers } from "./components/Task.js"
 import { FlatScrollableTaskTreeList, ScrollableTaskTreeList } from "./components/scrollable-task-tree-list.js"
 
