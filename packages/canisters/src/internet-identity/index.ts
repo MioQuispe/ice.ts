@@ -2,8 +2,8 @@ import path from "node:path"
 import { Opt } from "../types"
 import * as url from "node:url"
 import type { ActorSubclass } from "@dfinity/agent"
-import { idlFactory } from "./internet_identity.did"
-import type { InternetIdentityInit, _SERVICE } from "./internet_identity.types"
+import { idlFactory } from "./internet_identity.did.js"
+import type { InternetIdentityInit, _SERVICE } from "./internet_identity.types.js"
 import { ICE, customCanister, type TaskCtxShape } from "@ice/runner"
 
 const ice = ICE()

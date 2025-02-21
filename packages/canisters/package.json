@@ -7,8 +7,9 @@
     "dist"
   ],
   "scripts": {
-    "build": "rollup -c",
-    "dev": "rollup -c -w"
+    "build": "tsup && npm run copy-files",
+    "dev": "tsup --watch",
+    "copy-files": "node ./scripts/copy-files.js"
   },
   "dependencies": {
     "@dfinity/agent": "2.3.0",
@@ -24,10 +25,7 @@
   },
   "devDependencies": {
     "@types/node": "^17.0.34",
-    "rollup": "^2.77.2",
-    "rollup-plugin-dts": "^4.2.2",
-    "rollup-plugin-esbuild": "^4.9.1",
-    "rollup-plugin-polyfill-node": "^0.11.0",
+    "tsup": "^8.3.6",
     "typescript": "^5.7.3",
     "vitest": "^0.13.1"
   }
