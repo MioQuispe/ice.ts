@@ -116,7 +116,7 @@ export const CLILayer = Layer.mergeAll(
   DefaultsLayer,
   Logger.pretty,
   // TODO: set with logLevel flag
-  Logger.minimumLogLevel(LogLevel.Info),
+  Logger.minimumLogLevel(LogLevel.Error),
 )
 export const TUILayer = Layer.mergeAll(DefaultsLayer)
 export const runtime = ManagedRuntime.make(CLILayer)
