@@ -26,12 +26,6 @@
     "node": ">=14.0.0"
   },
   "packageManager": "npm@10.9.0",
-  "preconstruct": {
-    "packages": [
-      "packages/core",
-      "packages/react"
-    ]
-  },
   "dependencies": {
     "babel-plugin-file-loader": "^2.0.0",
     "fp-ts": "^2.16.9"

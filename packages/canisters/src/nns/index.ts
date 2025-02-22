@@ -1,6 +1,6 @@
 import * as url from "node:url"
 import path from "node:path"
-import { customCanister, Opt, scope, type TaskCtxShape } from "@ice/runner"
+import { customCanister, Opt, scope, type TaskCtxShape } from "@ice.ts/runner"
 import type { _SERVICE as NNSDappService } from "./nns-ui/nns.did.types.ts"
 import type {
   _SERVICE as NNSSNSWasmService,
@@ -31,7 +31,7 @@ import type {
 } from "./nns-cycles-minting/nns-cycles-minting.types.ts"
 import type { _SERVICE as NNSLifelineService } from "./nns-lifeline/nns-lifeline.types.ts"
 // import type { _SERVICE as NNSICCKBTCMinterService } from "./nns-ic-ckbtc-minter/nns-ic-ckbtc-minter.types"
-import { InternetIdentity, Ledger } from "@ice/canisters"
+import { InternetIdentity, Ledger } from "@ice.ts/canisters"
 import { serializeGtc, type Gtc } from "./nns-genesis-token/encodeArgs.js"
 import { Principal } from "@dfinity/principal"
 

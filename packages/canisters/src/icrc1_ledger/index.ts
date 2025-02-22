@@ -9,7 +9,7 @@ import type {
   FeatureFlags,
   _SERVICE,
 } from "./icrc1_ledger.types"
-import { customCanister, type TaskCtxShape } from "@ice/runner"
+import { customCanister, type TaskCtxShape } from "@ice.ts/runner"
 import { Principal } from "@dfinity/principal"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))

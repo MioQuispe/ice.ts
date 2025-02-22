@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup';
 
 /**
- * tsup configuration for the @ice/canisters package.
+ * tsup configuration for the @ice.ts/canisters package.
  *
  * This config:
  * - Bundles the code starting from src/index.ts
@@ -20,7 +20,7 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   dts: true,
-  external: ['@ice/runner'],
+  external: ['@ice.ts/runner'],
   esbuildOptions(options) {
     options.loader = {
       ...options.loader,

@@ -1,6 +1,6 @@
 import path from "node:path"
-import type { TaskCtxShape } from "@ice/runner"
-import { customCanister } from "@ice/runner"
+import type { TaskCtxShape } from "@ice.ts/runner"
+import { customCanister } from "@ice.ts/runner"
 import type { ICRC1IndexInitArgs } from "./index"
 import type { IndexArg } from "./icrc1_index.types"
 import type { _SERVICE } from "./icrc1_index.did"

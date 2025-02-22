@@ -1,4 +1,4 @@
-import type { ExtendedCanisterConfiguration } from "@ice/runner";
+import type { ExtendedCanisterConfiguration } from "@ice.ts/runner";
 type InitArgs = {
     owner: string;
 };

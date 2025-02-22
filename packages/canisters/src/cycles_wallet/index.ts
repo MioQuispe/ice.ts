@@ -1,6 +1,6 @@
 import path from "node:path"
 import * as url from "node:url"
-import { customCanister, type TaskCtxShape } from "@ice/runner"
+import { customCanister, type TaskCtxShape } from "@ice.ts/runner"
 import type { _SERVICE } from "./cycles_wallet.types"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))

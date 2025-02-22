@@ -1,5 +1,5 @@
 {
-  "name": "@ice/canisters",
+  "name": "@ice.ts/canisters",
   "type": "module",
   "version": "0.0.1",
   "main": "dist/bundle.js",

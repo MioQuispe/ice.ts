@@ -20,12 +20,12 @@ ICE is a powerful command-line tool and SDK that simplifies and automates comple
 
 2. Install the necessary packages:
    ```bash
-   npm install @ice/runner @ice/canisters
+   npm install @ice.ts/runner @ice.ts/canisters
    ```
 
 3. Create a `ice.config.ts` file in your project root:
    ```typescript
-   import { defineConfig } from '@ice/runner';
+   import { defineConfig } from '@ice.ts/runner';
 
    export default defineConfig({
      canisters: {

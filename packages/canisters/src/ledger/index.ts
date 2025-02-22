@@ -4,7 +4,7 @@ import { idlFactory } from "./ledger.private.did.js"
 // import { idlFactory as ledgerPublicIdlFactory } from "./ledger.public.did.js"
 import type { ICPTs, LedgerCanisterInitPayload, _SERVICE } from "./ledger.private.types"
 import * as url from "node:url"
-import { customCanister, type TaskCtxShape } from "@ice/runner"
+import { customCanister, type TaskCtxShape } from "@ice.ts/runner"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 

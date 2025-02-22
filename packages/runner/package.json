@@ -1,5 +1,5 @@
 {
-  "name": "@ice/runner",
+  "name": "@ice.ts/runner",
   "type": "module",
   "version": "0.0.1",
   "main": "dist/index.js",
@@ -58,10 +58,10 @@
     "shelljs": "^0.8.5",
     "sisteransi": "^1.0.5",
     "starkbank-ecdsa": "^1.1.5",
-    "tsx": "^3.12.2"
+    "tsx": "^4.19.3"
   },
   "devDependencies": {
-    "@ice/canisters": "*",
+    "@ice.ts/canisters": "*",
     "@effect/vitest": "^0.17.3",
     "@types/express": "^5.0.0",
     "@types/node": "^22.7.5",

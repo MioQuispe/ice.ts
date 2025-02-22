@@ -1,5 +1,5 @@
 {
-  "name": "@ice/docs",
+  "name": "@ice.ts/docs",
   "version": "0.0.1",
   "description": "Documentation for ICE",
   "scripts": {
