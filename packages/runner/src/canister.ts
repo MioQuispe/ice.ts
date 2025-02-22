@@ -14,7 +14,7 @@ import {
   CommandExecutor,
   Command,
 } from "@effect/platform"
-import * as didc from "didc_js"
+import * as didc from "@ice.ts/didc_js"
 import { iceDirName } from "./builders/custom.js"
 import type {
   log_visibility,
