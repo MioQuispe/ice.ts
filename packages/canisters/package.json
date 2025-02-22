@@ -1,8 +1,9 @@
 {
   "name": "@ice.ts/canisters",
   "type": "module",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "main": "dist/bundle.js",
+  "private": false,
   "files": [
     "dist"
   ],
