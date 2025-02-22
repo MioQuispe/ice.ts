@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { ICEConfigService } from "../services/iceConfig.js"
-import { filterTasks } from "./lib.js"
+import { filterNodes } from "./lib.js"
 import { Tags } from "../builders/types.js"
 import { runTaskByPath } from "./run.js"
 
@@ -8,7 +8,7 @@ export const canistersInstallTask = () =>
   Effect.gen(function* () {
     yield* Effect.logInfo("Running canisters:install")
     const { taskTree } = yield* ICEConfigService
-    const tasksWithPath = yield* filterTasks(
+    const tasksWithPath = yield* filterNodes(
       taskTree,
       (node) =>
         node._tag === "task" &&

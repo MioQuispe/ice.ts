@@ -4,7 +4,7 @@ import { DeploymentError } from "../index.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
 import { DfxService } from "../services/dfx.js"
 import { Principal } from "@dfinity/principal"
-import { filterTasks } from "./lib.js"
+import { filterNodes } from "./lib.js"
 
 export const canistersStatusTask = () =>
   Effect.gen(function* () {

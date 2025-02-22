@@ -50,7 +50,8 @@ const makeDeployTask = (scope: CanisterScope): Task => {
       const [canisterId] = yield* Effect.all(
         [
           Effect.gen(function* () {
-            const canisterId = (yield* runTask(scope.children.create)) as string
+            const taskPath = `${canisterName}:create`
+            const canisterId = (yield* runTask(scope.children.create)) as unknown as string
             return canisterId
           }),
           Effect.gen(function* () {

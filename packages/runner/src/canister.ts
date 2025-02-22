@@ -228,6 +228,7 @@ export const encodeArgs = (args: any[], canisterDID: any) => {
     : new Uint8Array()
   return encodedArgs
 }
+
 export const stopCanister = (canisterId: string) =>
   Effect.gen(function* () {
     const { mgmt } = yield* DfxService

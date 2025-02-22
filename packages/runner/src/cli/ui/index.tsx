@@ -37,7 +37,7 @@ import type {
   TaskTreeNode,
   ICEConfig,
 } from "../../types/types.js"
-import { filterTasks } from "../../tasks/lib.js"
+import { filterNodes } from "../../tasks/lib.js"
 import { runTaskByPath } from "../../tasks/run.js"
 import { TUILayer } from "../../index.js"
 import { TaskList, TaskListItem, type StateOthers } from "./components/Task.js"
@@ -185,7 +185,7 @@ const ICEProvider: React.FC<{
 
   const runTask = async (path: string[]) => {
     // @ts-ignore
-    await runtime.runPromise(runTaskByPath(path.join(":")))
+    await runtime.runPromise(runTask(path.join(":")))
   }
 
   return (
@@ -373,7 +373,7 @@ export const uiTask = ({
     //   yield* Console.log("Coming soon...")
     // TODO: react-ink
     //   render(<App />)
-    const allTasks = yield* filterTasks(
+    const allTasks = yield* filterNodes(
       taskTree,
       (task) => task._tag === "task",
     )
