@@ -34,14 +34,24 @@ export interface RunTaskOptions {
 export const runTaskByPath = <A, E, R, I>(taskPath: string, progressCb?: (update: ProgressUpdate<unknown>) => void) =>
 	Effect.gen(function* () {
 		const { task } = yield* getTaskByPath(taskPath)
-    return (yield* runTask(task)) as A
+    return (yield* runTask(task, progressCb)) as A
 	})
 
-export const runTask = <A = unknown, E = unknown, R = unknown, I = unknown>(task: Task<A, E, R, I>) =>
+export const runTask = <A = unknown, E = unknown, R = unknown, I = unknown>(task: Task<A, E, R, I>, progressCb?: (update: ProgressUpdate<unknown>) => void) =>
 	Effect.gen(function* () {
     // @ts-ignore
 		const collectedTasks = collectDependencies([task])
 		const sortedTasks = topologicalSortTasks(collectedTasks)
-		const results = yield* executeSortedTasks(sortedTasks)
+		const results = yield* executeSortedTasks(sortedTasks, progressCb)
     return results.get(task.id) as A
+  })
+
+export const runTasks = <A = unknown, E = unknown, R = unknown, I = unknown>(tasks: Task<A, E, R, I>[], progressCb?: (update: ProgressUpdate<unknown>) => void) =>
+	Effect.gen(function* () {
+    // @ts-ignore
+		const collectedTasks = collectDependencies(tasks)
+		const sortedTasks = topologicalSortTasks(collectedTasks)
+		const results = yield* executeSortedTasks(sortedTasks, progressCb)
+    yield* Effect.logDebug(`Completed ${sortedTasks.length} tasks`)
+    return results
   })

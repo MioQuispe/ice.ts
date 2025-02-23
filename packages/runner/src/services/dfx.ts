@@ -194,9 +194,9 @@ export class DfxService extends Context.Tag("DfxService")<
         })
       )
       const dfxProcesses = processes.filter((process) => process.name === "dfx")
-      // yield* Effect.logInfo("dfxProcesses", { dfxProcesses })
+      // yield* Effect.logDebug("dfxProcesses", { dfxProcesses })
       if (dfxProcesses.length === 0) {
-        // yield* Effect.logInfo("DFX is not running, start DFX")
+        // yield* Effect.logDebug("DFX is not running, start DFX")
         yield* Effect.fail(new DfxError({ message: "DFX is not running" }))
       //   const command = Command.make(
       //     "dfx",

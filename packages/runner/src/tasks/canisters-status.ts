@@ -73,6 +73,6 @@ export const canistersStatusTask = () =>
     //       )
     //       .join("\n")
 
-    //     yield* Effect.logInfo(statusLog)
+    //     yield* Effect.logDebug(statusLog)
     return canisterStatuses
   })

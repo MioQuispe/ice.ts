@@ -45,7 +45,7 @@ export const installCanister = ({
     const maxSize = 3670016
     const isOverSize = wasm.length > maxSize
     const wasmModuleHash = Array.from(sha256.array(wasm))
-    yield* Effect.logInfo(`Installing code for ${canisterId} at ${wasmPath}`)
+    yield* Effect.logDebug(`Installing code for ${canisterId} at ${wasmPath}`)
     if (isOverSize) {
       // TODO: proper error handling if fails?
       const chunkSize = 1048576
@@ -71,7 +71,7 @@ export const installCanister = ({
               }),
           }).pipe(
             Effect.tap(() =>
-              Effect.logInfo(
+              Effect.logDebug(
                 `Uploading chunk ${i} of ${wasm.length} for ${canisterId}`,
               ),
             ),
@@ -115,7 +115,7 @@ export const installCanister = ({
           }),
       })
     }
-    yield* Effect.logInfo(`Code installed for ${canisterId}`)
+    yield* Effect.logDebug(`Code installed for ${canisterId}`)
   })
 
 export const compileMotokoCanister = (
@@ -126,10 +126,10 @@ export const compileMotokoCanister = (
   Effect.gen(function* () {
     const moc = yield* Moc
     // Create output directories if they don't exist
-    yield* Effect.logInfo(`Compiling ${canisterName} to ${wasmOutputFilePath}`)
+    yield* Effect.logDebug(`Compiling ${canisterName} to ${wasmOutputFilePath}`)
     // TODO: we need to make dirs if they don't exist
     yield* moc.compile(src, wasmOutputFilePath)
-    yield* Effect.logInfo(
+    yield* Effect.logDebug(
       `Successfully compiled ${src} ${canisterName} outputFilePath: ${wasmOutputFilePath}`,
     )
     return wasmOutputFilePath

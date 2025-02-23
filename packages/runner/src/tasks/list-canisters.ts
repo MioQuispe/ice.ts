@@ -21,6 +21,6 @@ export const listCanistersTask = () =>
     //   "\n",
     // )
 
-    // yield* Effect.logInfo(formattedTaskList)
+    // yield* Effect.logDebug(formattedTaskList)
     return canisterList
   })

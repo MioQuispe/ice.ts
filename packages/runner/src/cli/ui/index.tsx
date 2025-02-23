@@ -185,7 +185,7 @@ const ICEProvider: React.FC<{
 
   const runTask = async (path: string[]) => {
     // @ts-ignore
-    await runtime.runPromise(runTask(path.join(":")))
+    await runtime.runPromise(runTaskByPath(path.join(":")))
   }
 
   return (

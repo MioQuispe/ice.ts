@@ -19,6 +19,6 @@ export const listTasksTask = () =>
 
     // const formattedTaskList = ["Available tasks:", ...taskList].join("\n")
 
-    // yield* Effect.logInfo(formattedTaskList)
+    // yield* Effect.logDebug(formattedTaskList)
     return taskList
   })

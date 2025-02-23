@@ -22,6 +22,8 @@ import {
 	type CommandContext,
 	type ArgsDef,
 } from "citty"
+import { isCancel } from "@clack/prompts"
+import { cancel } from "@clack/prompts"
 
 function moduleHashToHexString(moduleHash: [] | [number[]]): string {
 	if (moduleHash.length === 0) {
@@ -36,7 +38,8 @@ function moduleHashToHexString(moduleHash: [] | [number[]]): string {
 const runCommand = defineCommand({
 	meta: {
 		name: "run",
-		description: "Run an ICE task",
+		description:
+			"Run an ICE task by its path, e.g. icrc1:build, nns:governance:install",
 	},
 	args: {
 		taskPath: {
@@ -114,14 +117,24 @@ const deployRun = async ({ args }: CommandContext<ArgsDef>) => {
 
 const canistersCreateCommand = defineCommand({
 	meta: {
-		name: "Canisters create",
+		name: "create",
 		description: "Creates all canisters",
 	},
 	run: async ({ args }) => {
 		await runtime.runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
-				yield* canistersCreateTask()
+				const s = p.spinner()
+				s.start("Creating all canisters")
+				yield* canistersCreateTask((update) => {
+					if (update.status === "starting") {
+						s.message(`Running ${update.taskPath}`)
+					}
+					if (update.status === "completed") {
+						s.message(`Completed ${update.taskPath}`)
+					}
+				})
+				s.stop("Finished creating all canisters")
 			}),
 		)
 	},
@@ -129,14 +142,24 @@ const canistersCreateCommand = defineCommand({
 
 const canistersBuildCommand = defineCommand({
 	meta: {
-		name: "Canisters build",
+		name: "build",
 		description: "Builds all canisters",
 	},
 	run: async ({ args }) => {
 		await runtime.runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
-				yield* canistersBuildTask()
+				const s = p.spinner()
+				s.start("Building all canisters")
+				yield* canistersBuildTask((update) => {
+					if (update.status === "starting") {
+						s.message(`Running ${update.taskPath}`)
+					}
+					if (update.status === "completed") {
+						s.message(`Completed ${update.taskPath}`)
+					}
+				})
+				s.stop("Finished building all canisters")
 			}),
 		)
 	},
@@ -144,14 +167,24 @@ const canistersBuildCommand = defineCommand({
 
 const canistersBindingsCommand = defineCommand({
 	meta: {
-		name: "Canisters bindings",
+		name: "bindings",
 		description: "Generates bindings for all canisters",
 	},
 	run: async ({ args }) => {
 		await runtime.runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
-				yield* canistersBindingsTask()
+				const s = p.spinner()
+				s.start("Generating bindings for all canisters")
+				yield* canistersBindingsTask((update) => {
+					if (update.status === "starting") {
+						s.message(`Running ${update.taskPath}`)
+					}
+					if (update.status === "completed") {
+						s.message(`Completed ${update.taskPath}`)
+					}
+				})
+				s.stop("Finished generating bindings for all canisters")
 			}),
 		)
 	},
@@ -159,14 +192,24 @@ const canistersBindingsCommand = defineCommand({
 
 const canistersInstallCommand = defineCommand({
 	meta: {
-		name: "Canisters install",
+		name: "install",
 		description: "Installs all canisters",
 	},
 	run: async ({ args }) => {
 		await runtime.runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
-				yield* canistersInstallTask()
+				const s = p.spinner()
+				s.start("Installing all canisters")
+				yield* canistersInstallTask((update) => {
+					if (update.status === "starting") {
+						s.message(`Running ${update.taskPath}`)
+					}
+					if (update.status === "completed") {
+						s.message(`Completed ${update.taskPath}`)
+					}
+				})
+				s.stop("Finished installing all canisters")
 			}),
 		)
 	},
@@ -174,14 +217,24 @@ const canistersInstallCommand = defineCommand({
 
 const canistersStopCommand = defineCommand({
 	meta: {
-		name: "Canisters stop",
+		name: "stop",
 		description: "Stops all canisters",
 	},
 	run: async ({ args }) => {
 		await runtime.runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
-				yield* canistersStopTask()
+				const s = p.spinner()
+				s.start("Stopping all canisters")
+				yield* canistersStopTask((update) => {
+					if (update.status === "starting") {
+						s.message(`Running ${update.taskPath}`)
+					}
+					if (update.status === "completed") {
+						s.message(`Completed ${update.taskPath}`)
+					}
+				})
+				s.stop("Finished stopping all canisters")
 			}),
 		)
 	},
@@ -189,8 +242,8 @@ const canistersStopCommand = defineCommand({
 
 const canistersStatusCommand = defineCommand({
 	meta: {
-		name: "Canisters status",
-		description: "Gets the status of all canisters",
+		name: "status",
+		description: "Show the status of all canisters",
 	},
 	run: async ({ args }) => {
 		// TODO: support canister name or ID
@@ -229,7 +282,7 @@ ${color.underline(result.right.canisterName)}
 
 const canistersRemoveCommand = defineCommand({
 	meta: {
-		name: "Canisters remove",
+		name: "remove",
 		description: "Removes all canisters",
 	},
 	run: async ({ args }) => {
@@ -266,7 +319,7 @@ const listCanistersCommand = defineCommand({
 
 const listCommand = defineCommand({
 	meta: {
-		name: "List",
+		name: "list",
 		description: "Lists all tasks",
 	},
 	run: async ({ args }) => {
@@ -288,8 +341,8 @@ const listCommand = defineCommand({
 
 const uiCommand = defineCommand({
 	meta: {
-		name: "UI",
-		description: "Open the experimental ICE Terminal UI",
+		name: "ui",
+		description: "Opens the experimental ICE terminal UI",
 	},
 	run: async ({ args }) => {
 		await runtime.runPromise(
@@ -303,7 +356,7 @@ const uiCommand = defineCommand({
 
 const canistersDeployCommand = defineCommand({
 	meta: {
-		name: "Canisters deploy",
+		name: "deploy",
 		description: "Deploys all canisters",
 	},
 	run: deployRun,
@@ -311,8 +364,9 @@ const canistersDeployCommand = defineCommand({
 
 const canisterCommand = defineCommand({
 	meta: {
-		name: "Canisters deploy",
-		description: "Deploys all canisters",
+		name: "canister",
+		description:
+			"Select a specific canister to run a task on. install, build, deploy, etc.",
 	},
 	run: async ({ args }) => {
 		if (args._.length === 0) {
@@ -329,6 +383,13 @@ const canisterCommand = defineCommand({
 							})),
 						}),
 					)) as string
+					if (isCancel(canister)) {
+						cancel("Operation cancelled.")
+						process.exit(0)
+					}
+					// if (!canister) {
+					//   return
+					// }
 					const action = (yield* Effect.tryPromise(() =>
 						p.select({
 							message: "Select an action",
@@ -343,6 +404,10 @@ const canisterCommand = defineCommand({
 							],
 						}),
 					)) as string
+					if (isCancel(action)) {
+						cancel("Operation cancelled.")
+						process.exit(0)
+					}
 					const s = p.spinner()
 					s.start(`Running ${canister}:${action}`)
 					const result = yield* runTaskByPath(
@@ -375,8 +440,8 @@ const canisterCommand = defineCommand({
 
 const taskCommand = defineCommand({
 	meta: {
-		name: "Task",
-		description: "Run a task",
+		name: "task",
+		description: `Select and run a task from the available tasks`,
 	},
 	run: async ({ args }) => {
 		if (args._.length === 0) {
@@ -393,6 +458,10 @@ const taskCommand = defineCommand({
 							})),
 						}),
 					)) as string
+					if (isCancel(task)) {
+						cancel("Operation cancelled.")
+						process.exit(0)
+					}
 					const s = p.spinner()
 					s.start(`Running ${task}`)
 					const result = yield* runTaskByPath(
@@ -411,21 +480,12 @@ const taskCommand = defineCommand({
 			)
 		}
 	},
-	subCommands: {
-		deploy: canistersDeployCommand,
-		create: canistersCreateCommand,
-		build: canistersBuildCommand,
-		bindings: canistersBindingsCommand,
-		install: canistersInstallCommand,
-		// TODO:
-		// status: canistersStatusCommand,
-		remove: canistersRemoveCommand,
-	},
+	subCommands: {},
 })
 
 const generateCommand = defineCommand({
 	meta: {
-		name: "Generate",
+		name: "generate",
 		description: "Generate canisters",
 	},
 	run: async ({ args }) => {
@@ -456,7 +516,7 @@ const main = defineCommand({
 		// ls: listCommand,
 		task: taskCommand,
 		canister: canisterCommand,
-		init: initCommand,
+		// init: initCommand,
 		// g: generateCommand,
 		status: canistersStatusCommand,
 		ui: uiCommand,

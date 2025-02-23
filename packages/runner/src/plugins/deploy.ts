@@ -80,7 +80,7 @@ const makeDeployTask = (scope: CanisterScope): Task => {
         },
       )
       yield* runTask(scope.children.install)
-      yield* Effect.logInfo("Canister deployed successfully")
+      yield* Effect.logDebug("Canister deployed successfully")
       return canisterId
     }),
     description: "Deploy canister code",

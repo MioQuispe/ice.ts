@@ -9,8 +9,9 @@ import {
 } from "./lib.js"
 import { Tags } from "../builders/types.js"
 import type { Task } from "../types/types.js"
+import { runTasks } from "./run.js"
 
-export const canistersDeployTask = (cb?: (update: ProgressUpdate<unknown>) => void) =>
+export const canistersDeployTask = (progressCb?: (update: ProgressUpdate<unknown>) => void) =>
 	Effect.gen(function* () {
 		const { taskTree } = yield* ICEConfigService
 		const tasksWithPath = (yield* filterNodes(
@@ -21,7 +22,5 @@ export const canistersDeployTask = (cb?: (update: ProgressUpdate<unknown>) => vo
 				node.tags.includes(Tags.DEPLOY),
 		)) as Array<{ node: Task; path: string[] }>
 		const tasks = tasksWithPath.map(({ node }) => node)
-		const collectedTasks = collectDependencies(tasks)
-		const sortedTasks = topologicalSortTasks(collectedTasks)
-		yield* executeSortedTasks(sortedTasks, cb)
+		yield* runTasks(tasks, progressCb)
 	})

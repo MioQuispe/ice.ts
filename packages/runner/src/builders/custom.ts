@@ -49,7 +49,7 @@ export const makeStopTask = () => {
 			// TODO: handle error
 			const canisterId = yield* loadCanisterId(taskPath)
 			yield* stopCanister(canisterId)
-			yield* Effect.logInfo(`Stopped canister ${canisterName}`)
+			yield* Effect.logDebug(`Stopped canister ${canisterName}`)
 		}),
 		description: "some description",
 		// TODO: no tag custom
@@ -77,7 +77,7 @@ export const makeDeleteTask = () => {
 			yield* deleteCanister(canisterId)
 			const canisterIdsService = yield* CanisterIdsService
 			yield* canisterIdsService.removeCanisterId(canisterName)
-			yield* Effect.logInfo(`Deleted canister ${canisterName}`)
+			yield* Effect.logDebug(`Deleted canister ${canisterName}`)
 		}),
 		description: "some description",
 		// TODO: no tag custom
