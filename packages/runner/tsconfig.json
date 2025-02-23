@@ -30,9 +30,6 @@
     "plugins": [
       {
         "name": "@effect/language-service"
-      },
-      {
-        "name": "typescript-plugin-effect"
       }
     ]
   },

@@ -7,7 +7,6 @@ import { customCanister, type TaskCtxShape, scope } from "@ice.ts/runner"
 import type { _SERVICE as CAP_ROUTER_SERVICE } from "./cap-router/types.js"
 import type { _SERVICE as CAP_ROOT_SERVICE } from "./cap-root/types.js"
 import type { _SERVICE as CAP_BUCKET_SERVICE } from "./cap-bucket/types.js"
-import type { Effect } from "effect"
 
 import { Principal } from "@dfinity/principal"
 import * as url from "node:url"
@@ -158,7 +157,6 @@ export const CapRouter = (
 }
 
 
-// CapRouter.provides = {} as Effect.Effect.Success<typeof effect>
 // export type CapRouterBuilder = ReturnType<typeof customCanister<[], CAP_ROUTER_SERVICE>>
 CapRouter.provides = capRouter.done().children.install
 CapRouter._tag = "canister-constructor"

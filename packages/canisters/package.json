@@ -16,18 +16,15 @@
     "@dfinity/agent": "2.3.0",
     "@dfinity/candid": "2.3.0",
     "@dfinity/principal": "^2.3.0",
-    "@effect/platform": "^0.74.0",
-    "@effect/platform-browser": "^0.53.0",
-    "@effect/platform-node": "^0.70.0",
-    "effect": "^3.12.5",
-    "minimist": "^1.2.6",
-    "neverthrow": "^4.4.2",
+    "@ice.ts/runner": "*",
+    "effect": "^3.13.2",
     "protobufjs": "^7.4.0"
   },
   "devDependencies": {
-    "@types/node": "^17.0.34",
+    "@types/node": "^22.13.5",
+    "shelljs": "^0.8.5",
     "tsup": "^8.3.6",
     "typescript": "^5.7.3",
-    "vitest": "^0.13.1"
+    "vitest": "^3.0.6"
   }
 }
