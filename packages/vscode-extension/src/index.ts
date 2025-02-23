@@ -141,7 +141,7 @@ class IceCodeLensProvider implements vscode.CodeLensProvider {
 
     for (let i = 0; i < lines.length; i++) {
       const lineText = lines[i];
-      const match = lineText.match(/export\s+const\s+(\w+)\s*=\s*task\(/);
+      const match = lineText.match(/^(?!(?:\s*\/\/)|(?:\s*\/\*))\s*export\s+const\s+(\w+)\s*=\s*task\(/);
       if (match) {
         const taskName = match[1];
         const range = new vscode.Range(i, 0, i, lineText.length);
