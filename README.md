@@ -1,75 +1,54 @@
 # ICE CLI/SDK
 
-ICE is a powerful command-line tool and SDK that simplifies and automates complex `dfx` tasks for Internet Computer developers. It provides a TypeScript interface for managing canisters, making your development workflow more efficient and type-safe.
+ICE is a powerful command-line tool and SDK that simplifies and automates complex `dfx` tasks for Internet Computer developers. Experience an efficient, type-safe, and integrated workflow when managing canisters and deploying advanced projects.
 
-## 🚀 Key Features
+## Features
 
-- **TypeScript-based Configuration**: Replace `dfx.json` with a more ergonomic `ice.config.ts`
-- **Task Automation**: Create dependency chains with async logic for maximum efficiency
-- **Canister Management**: Install and manage canisters directly via npm
-- **Boilerplate Generation**: Quickly scaffold common patterns like tokens, NFTs, and DAOs
-- **Type Generation**: Automatically generate TypeScript declarations for your canisters
-- **Testing Utilities**: Simplify canister testing, with potential `pocket-ic` integration
+- **TypeScript-based Configuration:** Replace cumbersome `dfx.json` with a more ergonomic `ice.config.ts` for seamless configuration.
+- **Task Automation:** Create dependency chains with async logic for efficient custom task workflows.
+- **Canister Management:** Easily install, update, and maintain canisters directly via npm.
+- **Type Generation:** Automatically generate TypeScript declarations for your canisters for improved type safety.
+- **Integrated VSCode Extension:** Enhance your development experience with inline logs, CodeLens commands, and more through our dedicated VSCode extension.
 
-## 🛠 Quick Start
+## Quick Start
 
-1. Initialize a new project or integrate with an existing one:
+1. Install the necessary packages:
    ```bash
-   npx ice init
+   npm i -S @ice.ts/runner @ice.ts/canisters
    ```
 
-2. Install the necessary packages:
-   ```bash
-   npm install @ice.ts/runner @ice.ts/canisters
-   ```
-
-3. Create a `ice.config.ts` file in your project root:
+2. Create an `ice.config.ts` file in your project root:
    ```typescript
-   import { defineConfig } from '@ice.ts/runner';
+   import { motokoCanister } from '@ice.ts/runner';
 
-   export default defineConfig({
-     canisters: {
-       // Define your canisters here
-     },
-     tasks: {
-       // Define your custom tasks here
-     }
-   });
+   export const my_canister = motokoCanister({
+     src: 'canisters/my_canister/main.mo',
+   })
    ```
 
-4. Build your canisters:
+3. Build your canisters:
    ```bash
-   npx ice c
+   npx ice
    ```
 
-5. Run custom tasks:
+4. Run custom tasks:
    ```bash
    npx ice run <task-name>
    ```
 
 ## 📚 Documentation
 
-For comprehensive documentation, visit our [official docs](https://docs.ice-ic.dev).
+Coming soon
 
-## 🤝 Community & Support
+## 🔌 VSCode Extension
 
-- [GitHub Issues](https://github.com/MioQuispe/ice/issues)
+Install from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=antfu.ext-name).
+
+
+- **Inline CodeLens:** Quickly execute tasks directly from your source code.
+- **Actor Call Results:** results are displayed inline in your code. No more console logs.
+
+## Community & Support
+
 - [Community Forum](https://forum.dfinity.org/t/introducing-ice-cli-sdk)
 - [Twitter](https://twitter.com/antimaximal)
-<!-- - [Telegram](https://t.me/ice_ic_dev) -->
-
-## 🌟 Why ICE?
-
-- **Type Safety**: Catch configuration errors at compile-time
-- **Improved Developer Experience**: Intuitive TypeScript-based configuration
-- **Efficiency**: Automate complex workflows and reduce boilerplate
-- **Flexibility**: Easily extensible for custom project needs
-- **Community-Driven**: Built by developers, for developers
-
-## 📣 Feedback
-
-We're constantly improving ICE based on your feedback. Don't hesitate to open an issue or contribute to the project!
-
-## 📄 License
-
-ICE is open-source software licensed under the MIT license.
