@@ -31,7 +31,6 @@ export const DIP721 = (
     }
   }).installArgs(async ({ ctx, mode }) => {
       // TODO: optional cap canister?
-      // dependencies: [...providers],
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     // TODO: proper types

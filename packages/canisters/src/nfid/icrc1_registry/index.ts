@@ -43,14 +43,14 @@ export const NFIDIcrc1Registry = (
     }
   })
     .dependsOn({ NFIDIdentityManager })
-    .installArgs(async ({ ctx, mode }) => {
+    .installArgs(async ({ ctx, mode, deps }) => {
       // TODO: Add installation logic if needed.
       const initArgs =
         typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
       return [
         {
           im_canister: Opt<string>(
-            ctx.dependencies.NFIDIdentityManager.canisterId,
+            deps.NFIDIdentityManager.canisterId,
           ),
         },
       ]

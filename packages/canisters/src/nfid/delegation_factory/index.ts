@@ -44,7 +44,7 @@ export const NFIDDelegationFactory = (
     .dependsOn({
       NFIDIdentityManager,
     })
-    .installArgs(async ({ ctx, mode }) => {
+    .installArgs(async ({ ctx, mode, deps }) => {
       // TODO: optional cap canister?
       // dependencies: [...providers],
       const initArgs =
@@ -55,7 +55,7 @@ export const NFIDDelegationFactory = (
         // {}
         Opt<InitArgs>({
           im_canister: Principal.fromText(
-            ctx.dependencies.NFIDIdentityManager.canisterId,
+            deps.NFIDIdentityManager.canisterId,
           ),
         }),
       ]

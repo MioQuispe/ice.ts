@@ -43,12 +43,12 @@ export const NFIDIcrc1Oracle = (
     }
   })
     .dependsOn({ NFIDIdentityManager })
-    .installArgs(async ({ ctx, mode }) => {
+    .installArgs(async ({ ctx, mode, deps }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
       // TODO: Add installation logic if needed.
       const imCanister = Principal.fromText(
-        ctx.dependencies.NFIDIdentityManager.canisterId,
+        deps.NFIDIdentityManager.canisterId,
       )
       return [
         Opt({

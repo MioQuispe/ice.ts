@@ -89,10 +89,10 @@ export const makeMotokoBindingsTask = () => {
 // const plugins = <T extends TaskTreeNode>(taskTree: T) =>
 //   deployTaskPlugin(taskTree)
 
-const makeMotokoBuildTask = (
+const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 	canisterConfigOrFn:
-		| ((args: { ctx: TaskCtxShape }) => Promise<MotokoCanisterConfig>)
-		| ((args: { ctx: TaskCtxShape }) => MotokoCanisterConfig)
+		| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<MotokoCanisterConfig>)
+		| ((args: { ctx: TaskCtxShape; deps: P }) => MotokoCanisterConfig)
 		| MotokoCanisterConfig,
 ) => {
 	return {
@@ -321,11 +321,11 @@ export const makeMotokoBuilder = <
 	}
 }
 
-export const motokoCanister = <I = unknown, _SERVICE = unknown>(
+export const motokoCanister = <I = unknown, _SERVICE = unknown, P extends Record<string, unknown> = Record<string, unknown>>(
 	canisterConfigOrFn:
 		| MotokoCanisterConfig
-		| ((args: { ctx: TaskCtxShape }) => MotokoCanisterConfig)
-		| ((args: { ctx: TaskCtxShape }) => Promise<MotokoCanisterConfig>),
+		| ((args: { ctx: TaskCtxShape; deps: P }) => MotokoCanisterConfig)
+		| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<MotokoCanisterConfig>),
 ) => {
 	// TODO: maybe just the return value of install? like a cleanup
 	// delete: {
@@ -386,7 +386,9 @@ const testTask2 = {
 const providedTask = {
 	_tag: "task",
 	id: Symbol("test"),
-	effect: Effect.gen(function* () {}),
+	effect: Effect.gen(function* () {
+		return "some value"
+	}),
 	description: "",
 	tags: [],
 	computeCacheKey: Option.none(),
@@ -499,10 +501,13 @@ const providedTestScope = {
 // // t.children.install.dependencies
 
 // const testMotokoCanister = motokoCanister(async () => ({ src: "src/motoko/canister.mo" }))
-// .deps({
+// .dependsOn({
 //   providedTask: providedTask,
 // })
-// .provide({
-//   providedTask: providedTask,
+// .deps({
+//   providedTask2: providedTask,
+// })
+// .installArgs(async ({ ctx, mode, deps }) => {
+//   deps.providedTask
 // })
 // .done()

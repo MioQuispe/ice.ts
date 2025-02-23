@@ -33,14 +33,14 @@ export const NFIDSwapTrsStorage = (
     }
   })
     .dependsOn({ NFIDIdentityManager })
-    .installArgs(async ({ ctx, mode }) => {
+    .installArgs(async ({ ctx, mode, deps }) => {
       // TODO: Add installation logic if needed.
       const initArgs =
         typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
       return [
         Opt<InitArgs>({
           im_canister: Principal.fromText(
-            ctx.dependencies.NFIDIdentityManager.canisterId,
+            deps.NFIDIdentityManager.canisterId,
           ),
         }),
       ]

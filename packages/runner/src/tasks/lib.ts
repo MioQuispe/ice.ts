@@ -26,9 +26,7 @@ import { Stream } from "effect"
 import { configMap } from "../index.js"
 import { runtime } from "../index.js"
 
-export type TaskCtxShape<
-	D extends Record<string, unknown> = Record<string, unknown>,
-> = {
+export type TaskCtxShape = {
 	readonly network: string
 	networks?: {
 		[k: string]: ConfigNetwork
@@ -46,7 +44,6 @@ export type TaskCtxShape<
 		}
 	}
 	readonly runTask: typeof runTask
-	readonly dependencies: D
 }
 
 export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {
@@ -61,7 +58,6 @@ export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {
 				agent,
 				identity,
 				runTask,
-				dependencies: {},
 				users: {
 					default: {
 						identity,

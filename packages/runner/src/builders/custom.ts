@@ -122,8 +122,9 @@ export const makeCustomBindingsTask = (
 
 export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 	installArgsFn?: (args: {
-		ctx: TaskCtxShape<P>
+		ctx: TaskCtxShape
 		mode: string
+		deps: P
 	}) => Promise<I> | I,
 ) => {
 	return {
@@ -171,22 +172,20 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 			yield* Effect.logDebug("Loaded canisterDID", { canisterDID })
 
 			let installArgs = [] as unknown as I
-			const finalCtx = {
-				...taskCtx,
-				dependencies,
-			} as TaskCtxShape<P>
 			if (installArgsFn) {
 				yield* Effect.logDebug("Executing install args function")
 
 				const installFn = installArgsFn as (args: {
-					ctx: TaskCtxShape<P>
+					ctx: TaskCtxShape
 					mode: string
+					deps: P
 				}) => Promise<I> | I
 				// TODO: should it catch errors?
 				// TODO: handle different modes
 				const installResult = installFn({
 					mode: "install",
-					ctx: finalCtx,
+					ctx: taskCtx,
+					deps: dependencies as P,
 				})
 				if (installResult instanceof Promise) {
 					installArgs = yield* Effect.tryPromise({
@@ -250,10 +249,10 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 	} satisfies Task
 }
 
-const makeBuildTask = (
+const makeBuildTask = <P extends Record<string, unknown>>(
 	canisterConfigOrFn:
-		| ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)
-		| ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)
+		| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<CustomCanisterConfig>)
+		| ((args: { ctx: TaskCtxShape; deps: P }) => CustomCanisterConfig)
 		| CustomCanisterConfig,
 ) => {
 	return {
@@ -308,10 +307,10 @@ const makeBuildTask = (
 	} satisfies Task
 }
 
-export const resolveConfig = <T>(
+export const resolveConfig = <T, P extends Record<string, unknown>>(
 	configOrFn:
-		| ((args: { ctx: TaskCtxShape }) => Promise<T>)
-		| ((args: { ctx: TaskCtxShape }) => T)
+		| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<T>)
+		| ((args: { ctx: TaskCtxShape; deps: P }) => T)
 		| T,
 ) =>
 	Effect.gen(function* () {
@@ -339,10 +338,10 @@ export const resolveConfig = <T>(
 type CreateConfig = {
 	canisterId?: string
 }
-export const makeCreateTask = (
+export const makeCreateTask = <P extends Record<string, unknown>>(
 	canisterConfigOrFn:
-		| ((args: { ctx: TaskCtxShape }) => Promise<CreateConfig>)
-		| ((args: { ctx: TaskCtxShape }) => CreateConfig)
+		| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<CreateConfig>)
+		| ((args: { ctx: TaskCtxShape; deps: P }) => CreateConfig)
 		| CreateConfig,
 	tags: string[] = [],
 ) => {
@@ -397,7 +396,7 @@ const makeCustomCanisterBuilder = <
 				...scope,
 				children: {
 					...scope.children,
-					create: makeCreateTask(canisterConfigOrFn, [Tags.CUSTOM]),
+					create: makeCreateTask<P>(canisterConfigOrFn, [Tags.CUSTOM]),
 				},
 			} satisfies CanisterScope
 			return makeCustomCanisterBuilder<
@@ -446,7 +445,7 @@ const makeCustomCanisterBuilder = <
 				...scope,
 				children: {
 					...scope.children,
-					build: makeBuildTask(canisterConfigOrFn),
+					build: makeBuildTask<P>(canisterConfigOrFn),
 				},
 			} satisfies CanisterScope
 			return makeCustomCanisterBuilder<
@@ -825,12 +824,13 @@ const t = test
 		// asd2: test._scope.children.install,
 	})
 	// ._scope.children
-	.installArgs(async ({ ctx, mode }) => {
+	.installArgs(async ({ ctx, mode, deps }) => {
 		// TODO: allow chaining builders with ice.customCanister()
 		// to pass in context?
 		// ctx.users.default
 		// TODO: type the actors
-		ctx.dependencies.asd.actor
+		// ctx.dependencies.asd.actor
+		deps.asd.actor
 	})
 	.done()
 // t.children.install.computeCacheKey
