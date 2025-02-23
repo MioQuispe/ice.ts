@@ -27,7 +27,7 @@ type InitArgs = {
   assignedUserNumberRange: [bigint, bigint]
 }
 export const InternetIdentity = (
-  initArgsOrFn: InitArgs | ((args: { ctx: TaskCtxShape }) => InitArgs),
+  initArgsOrFn?: InitArgs | ((args: { ctx: TaskCtxShape }) => InitArgs),
 ) => {
   return customCanister<CanisterInitArgs, _SERVICE>({
       canisterId: InternetIdentityIds.local,

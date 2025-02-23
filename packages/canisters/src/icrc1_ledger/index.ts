@@ -52,7 +52,7 @@ export type ICRC1LedgerInitArgs = {
 }
 
 export const ICRC1Ledger = (
-  initArgsOrFn:
+  initArgsOrFn?:
     | ICRC1LedgerInitArgs
     | ((args: { ctx: TaskCtxShape }) => ICRC1LedgerInitArgs),
 ) => {

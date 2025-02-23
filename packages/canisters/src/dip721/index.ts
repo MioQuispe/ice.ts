@@ -19,7 +19,7 @@ type DIP721InitArgs = {
 const canisterName = "dip721"
 
 export const DIP721 = (
-  initArgsOrFn: DIP721InitArgs | ((args: { ctx: TaskCtxShape }) => DIP721InitArgs),
+  initArgsOrFn?: DIP721InitArgs | ((args: { ctx: TaskCtxShape }) => DIP721InitArgs),
 ) => {
   return customCanister<[Opt<InitArgs>], _SERVICE>(({ ctx }) => {
     const initArgs =

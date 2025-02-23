@@ -21,7 +21,7 @@ const LedgerIds = {
 
 const canisterName = "ledger"
 export const Ledger = (
-  initArgsOrFn: InitArgs | ((args: { ctx: TaskCtxShape }) => InitArgs),
+  initArgsOrFn?: InitArgs | ((args: { ctx: TaskCtxShape }) => InitArgs),
 ) => {
   // initial_values: [
   //   [

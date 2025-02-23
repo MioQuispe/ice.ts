@@ -15,7 +15,7 @@ export { NFIDStorage } from "./nfid_storage/index.js"
 export { NFIDSignerIc } from "./signer_ic/index.js"
 export { NFIDSwapTrsStorage } from "./swap_trs_storage/index.js"
 
-export const NFIDScope = () => {
+export const NFID = () => {
   const identityManager = NFIDIdentityManager().done()
   // TODO: feed in IdentityManager to all others
   const delegationFactory = NFIDDelegationFactory().deps({

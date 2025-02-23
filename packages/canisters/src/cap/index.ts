@@ -31,7 +31,7 @@ type CapBucketInitArgs = {
 }
 
 export const CapBucket = (
-  initArgsOrFn: CapBucketInitArgs | ((args: { ctx: TaskCtxShape }) => CapBucketInitArgs),
+  initArgsOrFn?: CapBucketInitArgs | ((args: { ctx: TaskCtxShape }) => CapBucketInitArgs),
 ) => {
   // const {
   //   contract,  // Id   // Principal probably?
@@ -83,7 +83,7 @@ type CapRootInitArgs = {
 }
 
 export const CapRoot = (
-  initArgsOrFn: CapRootInitArgs | ((args: { ctx: TaskCtxShape }) => CapRootInitArgs),
+  initArgsOrFn?: CapRootInitArgs | ((args: { ctx: TaskCtxShape }) => CapRootInitArgs),
 ) => {
   // const {
   //   contract,
@@ -95,7 +95,7 @@ export const CapRoot = (
     return {
       candid: path.resolve(__dirname, "./cap/cap-root/cap-root.did"),
       wasm: path.resolve(__dirname, "./cap/cap-root/cap-root.wasm.gz"),
-      canisterId: initArgs.canisterId ?? CapRootIds.local,
+      canisterId: initArgs?.canisterId ?? CapRootIds.local,
     }
   })
   // .installArgs(async ({ ctx, mode }) => {
@@ -138,7 +138,7 @@ const capRouter = customCanister<[], CAP_ROUTER_SERVICE>({
 })
 
 export const CapRouter = (
-  initArgsOrFn: CapRouterInitArgs | ((args: { ctx: TaskCtxShape }) => CapRouterInitArgs),
+  initArgsOrFn?: CapRouterInitArgs | ((args: { ctx: TaskCtxShape }) => CapRouterInitArgs),
 ) => {
   return capRouter
     .create(({ ctx }) => {
@@ -147,7 +147,7 @@ export const CapRouter = (
       return {
         candid: path.resolve(__dirname, "./cap/cap-router/cap-router.did"),
         wasm: path.resolve(__dirname, "./cap/cap-router/cap-router.wasm.gz"),
-        canisterId: initArgs.canisterId ?? CapRouterIds.local,
+        canisterId: initArgs?.canisterId ?? CapRouterIds.local,
       }
     })
     // .installArgs(async ({ ctx, mode }) => {
@@ -204,7 +204,7 @@ CapRouter._tag = "canister-constructor"
 // export type CapRouterTestActor = import("@dfinity/agent").ActorSubclass<import("./cap-router-test/types")._SERVICE>
 
 export const Cap = scope("Cap", {
-  // bucket: CapBucket({}),
-  // root: CapRoot({}),
-  router: CapRouter({}),
+  // bucket: CapBucket(),
+  // root: CapRoot(),
+  router: CapRouter(),
 })

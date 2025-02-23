@@ -26,13 +26,13 @@ type WrapperInitArgs = {
 
 // TODO: implement this
 export const ICRC7NFT = (
-  initArgsOrFn: WrapperInitArgs | ((args: { ctx: TaskCtxShape }) => WrapperInitArgs),
+  initArgsOrFn?: WrapperInitArgs | ((args: { ctx: TaskCtxShape }) => WrapperInitArgs),
 ) => {
   return customCanister<[ICRC7NFTInitArgs], _SERVICE>(({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
-      canisterId: initArgs.canisterId,
+      canisterId: initArgs?.canisterId,
       wasm: path.resolve(__dirname, `./${canisterName}/${canisterName}.wasm.gz`),
       candid: path.resolve(__dirname, `./${canisterName}/${canisterName}.did`),
     }

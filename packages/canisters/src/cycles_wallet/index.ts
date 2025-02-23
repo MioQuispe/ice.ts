@@ -16,7 +16,7 @@ const CyclesWalletIds = {
 }
 
 export const CyclesWallet = (
-  initArgsOrFn: WrapperInitArgs | ((args: { ctx: TaskCtxShape }) => WrapperInitArgs),
+  initArgsOrFn?: WrapperInitArgs | ((args: { ctx: TaskCtxShape }) => WrapperInitArgs),
 ) => {
   // TODO: init args
   return customCanister<InitArgs, _SERVICE>(({ ctx }) => {

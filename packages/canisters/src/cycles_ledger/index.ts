@@ -17,7 +17,7 @@ const CyclesLedgerIds = {
 }
 
 export const CyclesLedger = (
-  initArgsOrFn: WrapperInitArgs | ((args: { ctx: TaskCtxShape }) => WrapperInitArgs),
+  initArgsOrFn?: WrapperInitArgs | ((args: { ctx: TaskCtxShape }) => WrapperInitArgs),
 ) => {
   // TODO: init args
   return customCanister<[LedgerArgs], _SERVICE>(({ ctx }) => {

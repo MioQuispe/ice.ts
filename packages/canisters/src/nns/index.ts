@@ -56,7 +56,7 @@ const NNSDappIds = {
 type NNSDappInitArgs = []
 
 export const NNSDapp = (
-  initArgsOrFn:
+  initArgsOrFn?:
     | NNSDappInitArgs
     | ((args: { ctx: TaskCtxShape }) => NNSDappInitArgs)
     | ((args: { ctx: TaskCtxShape }) => Promise<NNSDappInitArgs>),
@@ -181,7 +181,7 @@ const NNSRootIds = {
 type NNSRootInitArgs = []
 
 export const NNSRoot = (
-  initArgsOrFn:
+  initArgsOrFn?:
     | NNSRootInitArgs
     | ((args: { ctx: TaskCtxShape }) => NNSRootInitArgs)
     | ((args: { ctx: TaskCtxShape }) => Promise<NNSRootInitArgs>),
@@ -278,7 +278,7 @@ export interface RegistryCanisterInitPayload {
 type NNSRegistryInitArgs = []
 
 export const NNSRegistry = (
-  initArgsOrFn:
+  initArgsOrFn?:
     | NNSRegistryInitArgs
     | ((args: { ctx: TaskCtxShape }) => NNSRegistryInitArgs)
     | ((args: { ctx: TaskCtxShape }) => Promise<NNSRegistryInitArgs>),
@@ -352,7 +352,7 @@ const NNSGovernanceIds = {
 type NNSGovernanceInitArgs = []
 
 export const NNSGovernance = (
-  initArgsOrFn:
+  initArgsOrFn?:
     | NNSGovernanceInitArgs
     | ((args: { ctx: TaskCtxShape }) => NNSGovernanceInitArgs)
     | ((args: { ctx: TaskCtxShape }) => Promise<NNSGovernanceInitArgs>),
@@ -513,7 +513,7 @@ const NNSLedgerIds = {
 // type NNSLedgerInitArgs = []
 
 export const NNSLedger = (
-  initArgsOrFn:
+  initArgsOrFn?:
     | LedgerInitArgs
     | ((args: { ctx: TaskCtxShape }) => LedgerInitArgs)
     | ((args: { ctx: TaskCtxShape }) => Promise<LedgerInitArgs>),
@@ -550,7 +550,7 @@ const NNSGenesisTokenIds = {
 type NNSGenesisTokenInitArgs = []
 
 export const NNSGenesisToken = (
-  initArgsOrFn:
+  initArgsOrFn?:
     | NNSGenesisTokenInitArgs
     | ((args: { ctx: TaskCtxShape }) => NNSGenesisTokenInitArgs)
     | ((args: { ctx: TaskCtxShape }) => Promise<NNSGenesisTokenInitArgs>),
@@ -607,7 +607,7 @@ const NNSCyclesMintingIds = {
 type NNSCyclesMintingInitArgs = []
 
 export const NNSCyclesMinting = (
-  initArgsOrFn:
+  initArgsOrFn?:
     | NNSCyclesMintingInitArgs
     | ((args: { ctx: TaskCtxShape }) => NNSCyclesMintingInitArgs)
     | ((args: { ctx: TaskCtxShape }) => Promise<NNSCyclesMintingInitArgs>),
@@ -693,7 +693,7 @@ const NNSLifelineIds = {
 type NNSLifelineInitArgs = []
 
 export const NNSLifeline = (
-  initArgsOrFn:
+  initArgsOrFn?:
     | NNSLifelineInitArgs
     | ((args: { ctx: TaskCtxShape }) => NNSLifelineInitArgs)
     | ((args: { ctx: TaskCtxShape }) => Promise<NNSLifelineInitArgs>),
@@ -721,16 +721,16 @@ NNSLifeline.id = NNSLifelineIds
 
 // TODO: init args
 // Define an overall scope that groups these NNS tasks
-export const NNSScope = () => scope("NNS tasks", {
-  NNSDapp: NNSDapp([]).done(),
+export const NNS = () => scope("NNS tasks", {
+  NNSDapp: NNSDapp().done(),
   NNSSNSWasm: NNSSNSWasm().done(),
-  NNSRoot: NNSRoot([]).done(),
-  NNSRegistry: NNSRegistry([]).done(),
-  NNSGovernance: NNSGovernance([]).done(),
-  // NNSLedger: NNSLedger([]),
-  NNSGenesisToken: NNSGenesisToken([]).done(),
-  NNSCyclesMinting: NNSCyclesMinting([]).done(),
-  NNSLifeline: NNSLifeline([]).done(),
+  NNSRoot: NNSRoot().done(),
+  NNSRegistry: NNSRegistry().done(),
+  NNSGovernance: NNSGovernance().done(),
+  // NNSLedger: NNSLedger(),
+  NNSGenesisToken: NNSGenesisToken().done(),
+  NNSCyclesMinting: NNSCyclesMinting().done(),
+  NNSLifeline: NNSLifeline().done(),
 })
 
 // nns-registry          rwlgt-iiaaa-aaaaa-aaaaa-cai

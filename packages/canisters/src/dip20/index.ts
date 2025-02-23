@@ -40,7 +40,7 @@ const canisterName = "dip20"
 
 // type DIP20Builder = ReturnType<typeof customCanister<CanisterInitArgs, _SERVICE>>
 export const DIP20 = (
-  initArgsOrFn:
+  initArgsOrFn?:
     | InitArgs
     | ((args: { ctx: TaskCtxShape }) => InitArgs)
     | ((args: { ctx: TaskCtxShape }) => Promise<InitArgs>),
