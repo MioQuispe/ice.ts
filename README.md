@@ -42,8 +42,10 @@ ICE is a powerful task runner and CLI tool for the Internet Computer (similar to
 
 ## Dependencies
 
+Canisters and tasks can depend on each other.
+
 ```typescript
-import { motokoCanister, task } from "@ice.ts/runner";
+import { motokoCanister } from "@ice.ts/runner";
 
 // Create a canister that depends on another one
 export const my_other_canister = motokoCanister({
@@ -52,7 +54,64 @@ export const my_other_canister = motokoCanister({
   .deps({ my_canister })
 ```
 
+We may also declare requirements that are later provided.
+
+```typescript
+export const MyCanister = () => motokoCanister({
+  src: "canisters/my_canister/main.mo",
+})
+   .dependsOn({ my_other_canister })
+```
+Later, we can provide the requirements.
+
+```typescript
+import { my_canister } from "./src/my_canister"
+
+export const my_other_canister = motokoCanister({
+  src: "canisters/my_other_canister/main.mo",
+})
+
+export const my_canister = MyCanister().deps({ my_other_canister })
+```
+And we get type-level warnings when the requirements are not met.
+
+## Tasks
+
+Tasks are the main building block of ICE. They are composable, type-safe and can depend on other tasks.
+
+```typescript
+import { task } from "@ice.ts/runner";
+
+export const mint_tokens = task("mint tokens")
+  .deps({
+    icrc1_ledger,
+  })
+  .run(async ({ deps: { icrc1_ledger } }) => {
+    await icrc1_ledger.actor.icrc1_transfer({
+      to: testUser,
+      fee: [],
+      memo: [],
+      from_subaccount: [],
+      created_at_time: [],
+      amount: 1000000000n,
+    })
+
+    const balance = await icrc1_ledger.actor.icrc1_balance_of(testUser)
+    const symbol = await icrc1_ledger.actor.icrc1_symbol()
+
+    console.log(`balance: ${balance} ${symbol}`)
+  })
+```
+
+Run it from the CLI:
+
+```bash
+npx ice run mint_tokens
+```
+
 ## Install args
+
+Fully typed install args. We get type-level warnings on invalid arguments. No need to manually write candid strings.
 
 ```typescript
 import { motokoCanister, task } from "@ice.ts/runner";
@@ -72,6 +131,8 @@ export const my_other_canister = motokoCanister({
 ```
 
 ## Pre-built canisters
+
+ICE comes with a set of pre-built canisters that you can use in your project and enable with 1 line of code. Complex setups have been abstracted away.
 
 ```typescript
 import {
@@ -97,10 +158,6 @@ export const nfid = NFID()
 ...
 ```
 It's that easy.
-
-## 📚 Documentation
-
-Coming soon
 
 ## 🔌 VSCode Extension
 
