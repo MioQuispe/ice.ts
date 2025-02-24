@@ -42,7 +42,7 @@ Coming soon
 
 ## 🔌 VSCode Extension
 
-Install from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=antfu.ext-name).
+Install from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=MioQuispe.vscode-ice-extension).
 
 
 - **Inline CodeLens:** Quickly execute tasks directly from your source code.
@@ -50,5 +50,7 @@ Install from the [Visual Studio Marketplace](https://marketplace.visualstudio.co
 
 ## Community & Support
 
-- [Community Forum](https://forum.dfinity.org/t/introducing-ice-cli-sdk)
+Feel free to open an issue, PR or join the Discord and message me there.
+
+- [Discord](https://discord.gg/SdeC8PF69M)
 - [Twitter](https://twitter.com/antimaximal)
