@@ -2,7 +2,8 @@
 	"name": "vscode-ice-extension",
 	"displayName": "ICE Extension",
 	"description": "Helper extension for ICE task runner",
-	"publisher": "ice-extension",
+	"publisher": "Mio Quispe",
+	"repository": "https://github.com/MioQuispe/ICE",
 	"version": "0.0.1",
 	"categories": ["Other"],
 	"activationEvents": [
@@ -21,7 +22,7 @@
 	"license": "MIT",
 	"main": "./dist/index.js",
 	"icon": "res/icon.png",
-	"files": ["LICENSE.md", "dist/*", "res/*"],
+	"files": ["dist/*", "res/*"],
 	"engines": {
 		"vscode": "^1.96.0"
 	},
