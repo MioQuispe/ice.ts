@@ -137,6 +137,28 @@ export const example_task = task("example task")
   })
 ```
 
+## Scope
+
+Tasks can also be grouped into scopes for better organization.
+
+```typescript
+import { scope } from "@ice.ts/runner";
+import { NNSDapp, NNSGovernance } from "@ice.ts/canisters";
+
+export const my_custom_nns = scope("NNS canisters", {
+   nns_dapp: NNSDapp(),
+   nns_governance: NNSGovernance(),
+   // ...etc.
+})
+```
+
+These can now be accessed in the following way:
+
+```bash
+npx ice run my_custom_nns:nns_dapp
+npx ice run my_custom_nns:nns_governance:install
+```
+
 ## Pre-built canisters
 
 Use popular canisters with a single line of code. ICE provides ready-to-use setups for many common canisters.
