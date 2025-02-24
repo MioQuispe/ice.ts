@@ -189,6 +189,9 @@ Install from the [Visual Studio Marketplace](https://marketplace.visualstudio.co
 - **Inline CodeLens:** Quickly execute tasks directly from your source code.
 - **Actor Call Results:** results are displayed inline in your code. No more console logs.
 
+![Kapture 2025-02-23 at 22 16 11](https://github.com/user-attachments/assets/66bfbea1-ca18-4b1e-8b91-a16bf37d7aea)
+
+
 ## Community & Support
 
 Feel free to open an issue, PR or join the Discord and message me there.
