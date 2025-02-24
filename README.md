@@ -22,7 +22,7 @@ ICE is a powerful task runner and CLI tool for the Internet Computer (similar to
 
 2. Create an `ice.config.ts` file in your project root:
    ```typescript
-   import { motokoCanister } from '@ice.ts/runner';
+   import { motokoCanister } from '@ice.ts/runner'
 
    export const my_canister = motokoCanister({
      src: 'canisters/my_canister/main.mo',
@@ -49,26 +49,15 @@ ICE is a powerful task runner and CLI tool for the Internet Computer (similar to
 Tasks are the main building block of ICE. They are composable, type-safe and can depend on other tasks.
 
 ```typescript
-import { task } from "@ice.ts/runner";
+import { task } from "@ice.ts/runner"
 
 export const mint_tokens = task("mint tokens")
   .deps({
     icrc1_ledger,
   })
   .run(async ({ deps: { icrc1_ledger } }) => {
-    await icrc1_ledger.actor.icrc1_transfer({
-      to: testUser,
-      fee: [],
-      memo: [],
-      from_subaccount: [],
-      created_at_time: [],
-      amount: 1000000000n,
-    })
-
-    const balance = await icrc1_ledger.actor.icrc1_balance_of(testUser)
     const symbol = await icrc1_ledger.actor.icrc1_symbol()
-
-    console.log(`balance: ${balance} ${symbol}`)
+    console.log(symbol)
   })
 ```
 
@@ -83,7 +72,7 @@ npx ice run mint_tokens
 Define inter-canister or task dependencies easily.
 
 ```typescript
-import { motokoCanister } from "@ice.ts/runner";
+import { motokoCanister } from "@ice.ts/runner"
 
 // Create a canister that depends on another one
 export const my_other_canister = motokoCanister({
@@ -100,17 +89,7 @@ export const MyCanister = () => motokoCanister({
 })
    .dependsOn({ my_other_canister })
 ```
-Later, we can provide the requirements.
-
-```typescript
-import { my_canister } from "./src/my_canister"
-
-export const my_other_canister = motokoCanister({
-  src: "canisters/my_other_canister/main.mo",
-})
-
-export const my_canister = MyCanister().deps({ my_other_canister })
-```
+Later, we can provide it through .deps().
 You’ll get type-level warnings if dependencies aren’t met:
 
 <img src="https://github.com/user-attachments/assets/eca864f2-69ce-4d15-b82b-67b1b5f9224f" height="100">
@@ -121,19 +100,15 @@ You’ll get type-level warnings if dependencies aren’t met:
 Pass fully typed install arguments instead of manual candid strings.
 
 ```typescript
-import { motokoCanister, task } from "@ice.ts/runner";
+import { motokoCanister, task } from "@ice.ts/runner"
 
-// Create a canister that depends on another one
 export const my_other_canister = motokoCanister({
   src: "canisters/my_other_canister/main.mo",
 })
   .deps({ my_canister })
   .installArgs(async ({ deps }) => {
-    // We have access to the actor & 
-    const someVal = await deps.my_canister.actor.someMethod();
-    // installArgs can do whatever complex setup steps they wish
-    const installArgs = [deps.my_canister.canisterId, someVal]
-    return installArgs;
+    const someVal = await deps.my_canister.actor.someMethod()
+    return [deps.my_canister.canisterId, someVal]
   })
 ```
 
