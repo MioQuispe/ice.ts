@@ -1,3 +1,6 @@
+![image](https://github.com/user-attachments/assets/90c9aaeb-8421-4595-bd29-89b046636dda)
+
+
 # ICE
 
 ICE is a powerful task runner and CLI tool for the Internet Computer (similar to hardhat). With ICE, you can create composable workflows, simplify complex setups, and manage canister deployments using TypeScript instead of bash, taking the development experience of the Internet Computer to the next level.
