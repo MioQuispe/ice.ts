@@ -79,6 +79,9 @@ export const my_canister = MyCanister().deps({ my_other_canister })
 ```
 And we get type-level warnings when the requirements are not met.
 
+<img src="https://github.com/user-attachments/assets/eca864f2-69ce-4d15-b82b-67b1b5f9224f" height="100">
+
+
 ## Tasks
 
 Tasks are the main building block of ICE. They are composable, type-safe and can depend on other tasks.
