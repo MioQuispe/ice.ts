@@ -45,11 +45,6 @@ ICE is a powerful task runner and CLI tool for the Internet Computer (similar to
 ```typescript
 import { motokoCanister, task } from "@ice.ts/runner";
 
-// Define your canister
-export const my_canister = motokoCanister({
-  src: "canisters/my_canister/main.mo",
-});
-
 // Create a canister that depends on another one
 export const my_other_canister = motokoCanister({
   src: "canisters/my_other_canister/main.mo",
@@ -61,11 +56,6 @@ export const my_other_canister = motokoCanister({
 
 ```typescript
 import { motokoCanister, task } from "@ice.ts/runner";
-
-// Define your canister
-export const my_canister = motokoCanister({
-  src: "canisters/my_canister/main.mo",
-});
 
 // Create a canister that depends on another one
 export const my_other_canister = motokoCanister({
