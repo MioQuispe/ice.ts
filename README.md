@@ -48,6 +48,8 @@ ICE is a powerful task runner and CLI tool for the Internet Computer (similar to
 
 Tasks are the main building block of ICE. They are composable, type-safe and can depend on other tasks.
 
+In this example ICE will make sure the icrc1_ledger is deployed and and its actor created, prior to running the task.
+
 ```typescript
 import { task } from "@ice.ts/runner"
 
