@@ -29,15 +29,84 @@ ICE is a powerful task runner and CLI tool for the Internet Computer (similar to
    })
    ```
 
-3. Build your canisters:
+3. Now its available under the exported name:
+   ```bash
+   npx ice run my_canister
+   ```
+
+4. Or deploy all canisters:
    ```bash
    npx ice
    ```
 
-4. Run custom tasks:
-   ```bash
-   npx ice run <task-name>
-   ```
+
+## Dependencies
+
+```typescript
+import { motokoCanister, task } from "@ice.ts/runner";
+
+// Define your canister
+export const my_canister = motokoCanister({
+  src: "canisters/my_canister/main.mo",
+});
+
+// Create a canister that depends on another one
+export const my_other_canister = motokoCanister({
+  src: "canisters/my_other_canister/main.mo",
+})
+  .deps({ my_canister })
+```
+
+## Install args
+
+```typescript
+import { motokoCanister, task } from "@ice.ts/runner";
+
+// Define your canister
+export const my_canister = motokoCanister({
+  src: "canisters/my_canister/main.mo",
+});
+
+// Create a canister that depends on another one
+export const my_other_canister = motokoCanister({
+  src: "canisters/my_other_canister/main.mo",
+})
+  .deps({ my_canister })
+  .installArgs(async ({ deps }) => {
+    // We have access to the actor & 
+    const someVal = await deps.my_canister.actor.someMethod();
+    // installArgs can do whatever complex setup steps they wish
+    const installArgs = [deps.my_canister.canisterId, someVal]
+    return installArgs;
+  })
+```
+
+## Pre-built canisters
+
+```typescript
+import {
+  InternetIdentity,
+  ICRC1Ledger,
+  DIP721,
+  Ledger,
+  DIP20,
+  CapRouter,
+  NNS,
+  CandidUI,
+  ICRC7NFT,
+  CyclesWallet,
+  CyclesLedger,
+  NFID,
+} from "@ice.ts/canisters"
+
+export const nns = NNS()
+
+export const icrc7_nft = ICRC7NFT()
+
+export const nfid = NFID()
+...
+```
+It's that easy.
 
 ## 📚 Documentation
 
