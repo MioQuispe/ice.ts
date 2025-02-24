@@ -40,6 +40,10 @@ ICE is a powerful task runner and CLI tool for the Internet Computer (similar to
    ```
 
 
+   ![Kapture 2025-02-24 at 16 28 03](https://github.com/user-attachments/assets/877aa26e-c8f6-4120-8cd5-df6276f1121d)
+
+
+
 ## Dependencies
 
 Canisters and tasks can depend on each other.
