@@ -130,6 +130,24 @@ export const my_other_canister = motokoCanister({
   })
 ```
 
+## Context
+
+The context object is available in all tasks and canisters. It contains environment variables, users, and other useful information.
+
+```typescript
+
+import { task } from "@ice.ts/runner";
+
+export const example_task = task("example task")
+  .run(async ({ ctx }) => {
+    console.log(ctx.users.default.principal)
+    console.log(ctx.users.default.accountId)
+
+    // Run another task dynamically
+    const result = await ctx.runTask(my_other_task)
+  })
+```
+
 ## Pre-built canisters
 
 ICE comes with a set of pre-built canisters that you can use in your project and enable with 1 line of code. Complex setups have been abstracted away.
