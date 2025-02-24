@@ -7,11 +7,11 @@ ICE is a powerful task runner and CLI tool for the Internet Computer (similar to
 
 ## Features
 
-- **Composable:** Built with composability in mind. Complex workflows & setups can easily be abstracted away.
-- **Type-Safe Configuration**: Get immediate feedback on invalid canister arguments and dependencies. Leverage the full power of TypeScript.
-- **Npm install canisters:** Easily install & integrate common canisters (e.g. ICRC1, Ledger, NFID, Internet Identity) from NPM with zero setup.
-- **Smart context:** Access environment variables, user Principals, or custom config from a single “context object” in the deployment scripts
-- **VSCode Extension:** Run tasks from inside your editor. Actor call results displayed inline in your editor, no console logs needed
+- **Composable**: Easily build complex workflows.
+- **Type-Safe**: Get instant feedback on configuration errors.
+- **NPM Canisters**: Install popular canisters (ICRC1, Ledger, NFID, Internet Identity) with zero setup.
+- **Smart Context & dependencies**: Automatic setup of actors, users, and other env variables from inside your scripts
+- **VSCode Extension**: Run tasks directly in your editor with inline results.
 
 ## Quick Start
 
@@ -42,45 +42,7 @@ ICE is a powerful task runner and CLI tool for the Internet Computer (similar to
 
    ![Kapture 2025-02-24 at 16 28 03](https://github.com/user-attachments/assets/877aa26e-c8f6-4120-8cd5-df6276f1121d)
 
-
-
-## Dependencies
-
-Canisters and tasks can depend on each other.
-
-```typescript
-import { motokoCanister } from "@ice.ts/runner";
-
-// Create a canister that depends on another one
-export const my_other_canister = motokoCanister({
-  src: "canisters/my_other_canister/main.mo",
-})
-  .deps({ my_canister })
-```
-
-We may also declare requirements that are later provided.
-
-```typescript
-export const MyCanister = () => motokoCanister({
-  src: "canisters/my_canister/main.mo",
-})
-   .dependsOn({ my_other_canister })
-```
-Later, we can provide the requirements.
-
-```typescript
-import { my_canister } from "./src/my_canister"
-
-export const my_other_canister = motokoCanister({
-  src: "canisters/my_other_canister/main.mo",
-})
-
-export const my_canister = MyCanister().deps({ my_other_canister })
-```
-And we get type-level warnings when the requirements are not met.
-
-<img src="https://github.com/user-attachments/assets/eca864f2-69ce-4d15-b82b-67b1b5f9224f" height="100">
-
+# Core concepts
 
 ## Tasks
 
@@ -110,15 +72,53 @@ export const mint_tokens = task("mint tokens")
   })
 ```
 
-Run it from the CLI:
+Run the task:
 
 ```bash
 npx ice run mint_tokens
 ```
 
+## Dependencies
+
+Define inter-canister or task dependencies easily.
+
+```typescript
+import { motokoCanister } from "@ice.ts/runner";
+
+// Create a canister that depends on another one
+export const my_other_canister = motokoCanister({
+  src: "canisters/my_other_canister/main.mo",
+})
+  .deps({ my_canister })
+```
+
+You can also declare requirements and provide them later:
+
+```typescript
+export const MyCanister = () => motokoCanister({
+  src: "canisters/my_canister/main.mo",
+})
+   .dependsOn({ my_other_canister })
+```
+Later, we can provide the requirements.
+
+```typescript
+import { my_canister } from "./src/my_canister"
+
+export const my_other_canister = motokoCanister({
+  src: "canisters/my_other_canister/main.mo",
+})
+
+export const my_canister = MyCanister().deps({ my_other_canister })
+```
+You’ll get type-level warnings if dependencies aren’t met:
+
+<img src="https://github.com/user-attachments/assets/eca864f2-69ce-4d15-b82b-67b1b5f9224f" height="100">
+
+
 ## Install args
 
-Fully typed install args. We get type-level warnings on invalid arguments. No need to manually write candid strings.
+Pass fully typed install arguments instead of manual candid strings.
 
 ```typescript
 import { motokoCanister, task } from "@ice.ts/runner";
@@ -137,9 +137,14 @@ export const my_other_canister = motokoCanister({
   })
 ```
 
+We get type-level warnings for invalid args
+
+<img src="https://github.com/user-attachments/assets/ce5b11db-810e-4a6b-b1b0-60421445cddf" height="120">
+
+
 ## Context
 
-The context object is available in all tasks and canisters. It contains environment variables, users, and other useful information.
+Every task and canister gets a shared context with env variables, user info, and more.
 
 ```typescript
 
@@ -157,7 +162,7 @@ export const example_task = task("example task")
 
 ## Pre-built canisters
 
-ICE comes with a set of pre-built canisters that you can use in your project and enable with 1 line of code. Complex setups have been abstracted away.
+Use popular canisters with a single line of code. ICE provides ready-to-use setups for many common canisters.
 
 ```typescript
 import {
@@ -176,11 +181,9 @@ import {
 } from "@ice.ts/canisters"
 
 export const nns = NNS()
-
 export const icrc7_nft = ICRC7NFT()
-
 export const nfid = NFID()
-...
+// And more...
 ```
 It's that easy.
 
