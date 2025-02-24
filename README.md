@@ -1,14 +1,14 @@
-# ICE CLI/SDK
+# ICE
 
-ICE is a powerful command-line tool and SDK that simplifies and automates complex `dfx` tasks for Internet Computer developers. Experience an efficient, type-safe, and integrated workflow when managing canisters and deploying advanced projects.
+ICE is a powerful task runner and CLI tool for the Internet Computer (similar to hardhat). With ICE, you can create composable workflows, simplify complex setups, and manage canister deployments using TypeScript instead of bash, taking the development experience of the Internet Computer to the next level.
 
 ## Features
 
-- **TypeScript-based Configuration:** Replace cumbersome `dfx.json` with a more ergonomic `ice.config.ts` for seamless configuration.
-- **Task Automation:** Create dependency chains with async logic for efficient custom task workflows.
-- **Canister Management:** Easily install, update, and maintain canisters directly via npm.
-- **Type Generation:** Automatically generate TypeScript declarations for your canisters for improved type safety.
-- **Integrated VSCode Extension:** Enhance your development experience with inline logs, CodeLens commands, and more through our dedicated VSCode extension.
+- **Composable:** Built with composability in mind. Complex workflows & setups can easily be abstracted away.
+- **Type-Safe Configuration**: Get immediate feedback on invalid canister arguments and dependencies. Leverage the full power of TypeScript.
+- **Npm install canisters:** Easily install & integrate common canisters (e.g. ICRC1, Ledger, NFID, Internet Identity) from NPM with zero setup.
+- **Smart context:** Access environment variables, user Principals, or custom config from a single “context object” in the deployment scripts
+- **VSCode Extension:** Run tasks from inside your editor. Actor call results displayed inline in your editor, no console logs needed
 
 ## Quick Start
 
