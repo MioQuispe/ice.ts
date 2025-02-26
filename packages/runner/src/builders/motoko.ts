@@ -26,6 +26,7 @@ import type {
   TaskCtxShape,
 } from "./types.js"
 import { Tags } from "./types.js"
+import { makeDeployTask } from "./lib.js"
 
 type MotokoCanisterConfig = {
 	src: string
@@ -346,6 +347,7 @@ export const motokoCanister = <I = unknown, _SERVICE = unknown, P extends Record
 			stop: makeStopTask(),
 			// delete: createDeleteTask(),
 			install: makeInstallTask<I, Record<string, unknown>, _SERVICE>(),
+			deploy: makeDeployTask([Tags.MOTOKO]),
 		},
 	} satisfies CanisterScope
 

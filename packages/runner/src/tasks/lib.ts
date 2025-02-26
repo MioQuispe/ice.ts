@@ -232,7 +232,7 @@ export const executeSortedTasks = <A, E, R, I>(
 						),
 					),
 				)
-        // TODO: updates from the task effect? pass in cb?
+				// TODO: updates from the task effect? pass in cb?
 				const result = yield* task.effect.pipe(Effect.provide(taskLayer))
 
 				const currentDeferred = deferredMap.get(task.id)
@@ -295,6 +295,54 @@ export const getTaskByPath = (taskPathString: TaskFullName) =>
 		const { taskTree, config } = yield* ICEConfigService
 		const task = yield* findTaskInTaskTree(taskTree, taskPath)
 		return { task, config }
+	})
+
+export const getNodeByPath = (taskPathString: TaskFullName) =>
+	Effect.gen(function* () {
+		const taskPath: string[] = taskPathString.split(":")
+		const { taskTree } = yield* ICEConfigService
+		const node = yield* findNodeInTree(taskTree, taskPath)
+		return node
+	})
+
+export const findNodeInTree = (tree: TaskTree, path: string[]) =>
+	Effect.gen(function* () {
+		// If the path is empty, return the entire tree.
+		if (path.length === 0) {
+			return tree
+		}
+		let current: TaskTree | TaskTreeNode = tree
+		for (const segment of path) {
+			if (!("_tag" in current)) {
+				if (!(segment in current)) {
+					yield* Effect.fail(
+						new TaskNotFoundError({
+							path,
+							reason: `Segment "${segment}" not found in tree.`,
+						}),
+					)
+				}
+				current = current[segment]
+			} else if (current._tag === "scope") {
+				if (!(segment in current.children)) {
+					yield* Effect.fail(
+						new TaskNotFoundError({
+							path,
+							reason: `Segment "${segment}" not found in scope children.`,
+						}),
+					)
+				}
+				current = current.children[segment] as TaskTreeNode
+			} else {
+				yield* Effect.fail(
+					new TaskNotFoundError({
+						path,
+						reason: `Cannot traverse into node with tag "${current._tag}" at segment "${segment}".`,
+					}),
+				)
+			}
+		}
+		return current
 	})
 
 // TODO: support defaultTask for scope

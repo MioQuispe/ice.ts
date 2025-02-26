@@ -19,6 +19,7 @@ import { TaskInfo } from "../tasks/run.js"
 import { TaskCtx } from "../tasks/lib.js"
 import { DependencyResults } from "../tasks/run.js"
 import { createActor, createCanister, deleteCanister, generateDIDJS, installCanister, stopCanister, encodeArgs } from "../canister.js"
+import { makeDeployTask } from "./lib.js"
 
 // TODO: later
 // candidUITaskPlugin()
@@ -603,6 +604,7 @@ export const customCanister = <I = unknown, _SERVICE = unknown>(
 			install: makeInstallTask<I, Record<string, unknown>, _SERVICE>(),
 			stop: makeStopTask(),
 			delete: makeDeleteTask(),
+			deploy: makeDeployTask([Tags.CUSTOM]),
 		},
 	} satisfies CanisterScope
 

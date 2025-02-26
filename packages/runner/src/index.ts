@@ -39,34 +39,6 @@ export class ConfigError extends Data.TaggedError("ConfigError")<{
 	message: string
 }> {}
 
-export const removeBuilders = (
-	taskTree: TaskTree | TaskTreeNode,
-): TaskTree | TaskTreeNode => {
-	if ("_tag" in taskTree && taskTree._tag === "builder") {
-		return removeBuilders(taskTree.done())
-	}
-	if ("_tag" in taskTree && taskTree._tag === "scope") {
-		return {
-			...taskTree,
-			children: Object.fromEntries(
-				Object.entries(taskTree.children).map(([key, value]) => [
-					key,
-					removeBuilders(value),
-				]),
-			) as Record<string, TaskTreeNode>,
-		}
-	}
-	if ("_tag" in taskTree && taskTree._tag === "task") {
-		return taskTree
-	}
-	return Object.fromEntries(
-		Object.entries(taskTree).map(([key, value]) => [
-			key,
-			removeBuilders(value),
-		]),
-	) as TaskTree
-}
-
 // TODO: layer memoization should work? do we need this?
 const DfxLayer = DfxService.Live.pipe(
 	Layer.provide(NodeContext.layer),
