@@ -14,12 +14,12 @@ import type {
 } from "./types.js"
 import { Tags } from "./types.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
-import { instrumentActor } from "../utils/instrumentActor.js"
+import { proxyActor } from "../utils/extension.js"
 import { TaskInfo } from "../tasks/run.js"
 import { TaskCtx } from "../tasks/lib.js"
 import { DependencyResults } from "../tasks/run.js"
 import { createActor, createCanister, deleteCanister, generateDIDJS, installCanister, stopCanister, encodeArgs } from "../canister.js"
-import { makeDeployTask } from "./lib.js"
+import { makeCanisterStatusTask, makeDeployTask } from "./lib.js"
 
 // TODO: later
 // candidUITaskPlugin()
@@ -242,7 +242,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 			return {
 				canisterId,
 				canisterName,
-				actor: instrumentActor(canisterName, actor),
+				actor: proxyActor(canisterName, actor),
 			}
 		}),
 		description: "Install canister code",
@@ -605,6 +605,7 @@ export const customCanister = <I = unknown, _SERVICE = unknown>(
 			stop: makeStopTask(),
 			delete: makeDeleteTask(),
 			deploy: makeDeployTask([Tags.CUSTOM]),
+			status: makeCanisterStatusTask([Tags.CUSTOM]),
 		},
 	} satisfies CanisterScope
 

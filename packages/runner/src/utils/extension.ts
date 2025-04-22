@@ -71,7 +71,7 @@ export function parseCallSite(errStack: string): { file?: string; line?: number 
  * - args & result
  * - timestamps
  */
-export function instrumentActor<T extends Record<string, any>>(
+export function proxyActor<T extends Record<string, any>>(
   actorName: string,
   actor: T,
 ): T {
@@ -142,7 +142,7 @@ const createLogEntry = async (e: Error, result: unknown): Promise<void> => {
 	await writeLogEntry(logEntry)
 }
 
-export async function runWithPatchedConsole<T>(fn: () => Promise<T>): Promise<T> {
+export async function patchGlobals<T>(fn: () => Promise<T>): Promise<T> {
   const originalConsoleLog = console.log
   console.log = (...args: unknown[]): void => {
     const error = new Error()
@@ -155,3 +155,12 @@ export async function runWithPatchedConsole<T>(fn: () => Promise<T>): Promise<T>
     console.log = originalConsoleLog
   }
 }
+
+// export async function patchFn<T>(fn: T): T {
+//   return (...args: any[]) => {
+//     // TODO: log etc.
+//     const error = new Error()
+//     createLogEntry(error, args)
+//     return fn(...args)
+//   }
+// }

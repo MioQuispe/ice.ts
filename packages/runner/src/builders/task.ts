@@ -9,7 +9,7 @@ import type {
 import { TaskCtx } from "../tasks/lib.js"
 import { TaskInfo } from "../tasks/run.js"
 import { DependencyResults } from "../tasks/run.js"
-import { runWithPatchedConsole } from "../utils/instrumentActor.js"
+import { patchGlobals } from "../utils/extension.js"
 import { Tags, type TaskCtxShape } from "./types.js"
 
 function normalizeDep(dep: Task | CanisterScope | CanisterConstructor): Task {
@@ -235,7 +235,7 @@ function runTask<
 			const { dependencies } = yield* DependencyResults
 			const result = yield* Effect.tryPromise({
 				try: () =>
-					runWithPatchedConsole(() =>
+					patchGlobals(() =>
 						fn({
 							ctx: taskCtx,
 							deps: dependencies as ExtractTaskEffectSuccess<P> &

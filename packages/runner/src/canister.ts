@@ -9,8 +9,16 @@ import { Path, FileSystem, CommandExecutor, Command } from "@effect/platform"
 import * as didc from "@ice.ts/didc_js"
 import { iceDirName } from "./builders/custom.js"
 import type { log_visibility } from "./canisters/management_latest/management.types.js"
-import { Actor } from "@dfinity/agent"
+import { Actor, HttpAgent, MANAGEMENT_CANISTER_ID } from "@dfinity/agent"
 import type * as ActorTypes from "./types/actor.js"
+import {
+	decodeCreateCanisterResponse,
+	encodeCreateCanisterRequest,
+} from "./canisters/pic_management/index.js"
+import { PocketIc } from "@dfinity/pic"
+import { PocketICService } from "./services/pic.js"
+import { TaskCtx } from "./tasks/lib.js"
+// const pic = PocketIc.create()
 
 // TODO: just one place to define this
 export type Opt<T> = [T] | []
@@ -19,6 +27,39 @@ export const Opt = <T>(value?: T): Opt<T> => {
 }
 
 export const installCanister = ({
+	encodedArgs,
+	canisterId,
+	wasmPath,
+}: {
+	encodedArgs: Uint8Array
+	canisterId: string
+	wasmPath: string
+}) =>
+	Effect.gen(function* () {
+		// TODO: we should get an agent and identity perhaps?
+		// const { mgmt } = yield* DfxService
+		
+		// TODO: this should be given by the task context or environment?
+		const pic = yield* PocketICService
+		const { users } = yield* TaskCtx
+		const fs = yield* FileSystem.FileSystem
+		const wasmContent = yield* fs.readFile(wasmPath)
+		const wasm = new Uint8Array(wasmContent)
+		const maxSize = 3670016
+		const isOverSize = wasm.length > maxSize
+		const wasmModuleHash = Array.from(sha256.array(wasm))
+		// const identity =
+		yield* Effect.logDebug(`Installing code for ${canisterId} at ${wasmPath}`)
+		yield* pic.installCode({
+			canisterId,
+			wasm,
+			encodedArgs,
+			identity: users.default.identity,
+		})
+		yield* Effect.logDebug(`Code installed for ${canisterId}`)
+	})
+
+export const installCanister_old = ({
 	encodedArgs,
 	canisterId,
 	wasmPath,
@@ -79,7 +120,7 @@ export const installCanister = ({
 						target_canister: Principal.fromText(canisterId),
 						sender_canister_version: Opt<bigint>(),
 						mode: { reinstall: null },
-            // TODO: upgrade mode / upgrade args
+						// TODO: upgrade mode / upgrade args
 						// mode: { upgrade: [] },
 						// export type canister_install_mode = { 'reinstall' : null } |
 						//   {
@@ -113,8 +154,8 @@ export const installCanister = ({
 						sender_canister_version: Opt<bigint>(),
 						wasm_module: Array.from(wasm),
 						mode: { reinstall: null },
-            // TODO: upgrade mode / upgrade args
-            // arg: Array.from(Uint8Array.from([])),
+						// TODO: upgrade mode / upgrade args
+						// arg: Array.from(Uint8Array.from([])),
 						// export type canister_install_mode = { 'reinstall' : null } |
 						//   {
 						//     'upgrade' : [] | [
@@ -155,7 +196,39 @@ export const compileMotokoCanister = (
 		return wasmOutputFilePath
 	})
 
+/**
+ * Parameters for creating a canister using the provisional_create_canister_with_cycles method.
+ */
+export interface PicCreateCanisterParams {
+	controllers?: Principal[]
+	computeAllocation?: bigint
+	memoryAllocation?: bigint
+	freezingThreshold?: bigint
+	reservedCyclesLimit?: bigint
+	cycles?: bigint
+	targetCanisterId?: Principal
+	targetSubnetId?: Principal
+}
+
+/**
+ * Creates a canister using the provisional_create_canister_with_cycles method via the management canister.
+ * This function uses the agent provided by DfxService.
+ *
+ * @param canisterId - The optional canister ID.
+ * @returns An Effect that resolves to the Principal of the created canister or fails with a DeploymentError.
+ */
 export const createCanister = (canisterId?: string) =>
+	Effect.gen(function* () {
+		const { users } = yield* TaskCtx
+		const pic = yield* PocketICService
+		const createdCanisterId = yield* pic.createCanister({
+			identity: users.default.identity,
+			...(canisterId ? { canisterId } : {}),
+		})
+		return createdCanisterId
+	})
+
+export const old_createCanister = (canisterId?: string) =>
 	Effect.gen(function* () {
 		const { mgmt, identity } = yield* DfxService
 		if (canisterId) {
@@ -241,7 +314,18 @@ export const generateDIDJS = (canisterName: string, didPath: string) =>
 		return canisterDID
 	})
 
-export const encodeArgs = (args: any[], canisterDID: any) => {
+/**
+ * Represents the expected structure of a dynamically imported DID module.
+ */
+export interface CanisterDidModule {
+	idlFactory: IDL.InterfaceFactory
+	init: (args: { IDL: typeof IDL }) => IDL.Type[]
+}
+
+export const encodeArgs = (
+	args: unknown[],
+	canisterDID: CanisterDidModule,
+): Uint8Array => {
 	const encodedArgs = args
 		? new Uint8Array(IDL.encode(canisterDID.init({ IDL }), args))
 		: new Uint8Array()
@@ -277,7 +361,7 @@ export const createActor = <T>({
 	canisterDID: any
 }) =>
 	Effect.gen(function* () {
-		const { agent } = yield* DfxService
+		const { users } = yield* TaskCtx
 		const commandExecutor = yield* CommandExecutor.CommandExecutor
 		// TODO: should be agnostic of dfx
 		const getControllers = () => Promise.resolve()
@@ -321,7 +405,8 @@ export const createActor = <T>({
 			})
 
 		return Actor.createActor<T>(canisterDID.idlFactory, {
-			agent,
+			// TODO: users.deployer?
+			agent: users.default.agent,
 			canisterId,
 		}) as ActorTypes.ActorSubclass<T>
 		// TODO: ...?
@@ -335,6 +420,7 @@ export const createActor = <T>({
 export const getCanisterInfo = (canisterId: string) =>
 	Effect.gen(function* () {
 		const { mgmt } = yield* DfxService
+		// TODO: canisterStatus implement it in dfx & pic services instead
 		// TODO: get from environment
 		const canisterInfo = yield* Effect.tryPromise({
 			try: async () => {

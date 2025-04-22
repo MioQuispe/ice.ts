@@ -47,7 +47,7 @@ export class CanisterIdsService extends Context.Tag("CanisterIdsService")<
     /**
      * Removes the canister ID for the given canister name.
      */
-    removeCanisterId: (canisterName: string) => Effect.Effect<void>
+    removeCanisterId: (canisterName: string) => Effect.Effect<void, unknown, unknown>
     /**
      * Flushes the in-memory canister IDs to the canister_ids.json file.
      */
@@ -70,7 +70,7 @@ export class CanisterIdsService extends Context.Tag("CanisterIdsService")<
         const fs = yield* FileSystem.FileSystem
         const path = yield* Path.Path
         const appDir = yield* Config.string("APP_DIR")
-        const canisterIdsPath = path.join(appDir, "canister_ids.json")
+        const canisterIdsPath = path.join(appDir, ".ice", "canister_ids.json")
         const currentIds = yield* Ref.get(ref)
         // const lastFlushedIds = yield* Ref.get(lastFlushedIdsRef)
 
@@ -109,11 +109,16 @@ export class CanisterIdsService extends Context.Tag("CanisterIdsService")<
             yield* flush
           }),
         removeCanisterId: (canisterName: string) =>
-          Ref.update(ref, (ids) => {
-            const newIds = Object.fromEntries(
-              Object.entries(ids).filter(([name]) => name !== canisterName),
-            )
-            return newIds
+          Effect.gen(function* () {
+            yield* Ref.update(ref, (ids) => {
+              const newIds = Object.fromEntries(
+                Object.entries(ids).filter(
+                  ([name]) => name !== canisterName,
+                ),
+              )
+              return newIds
+            })
+            yield* flush
           }),
         flush: () => flush,
       }
@@ -133,7 +138,7 @@ const readInitialCanisterIds = Effect.gen(function* readInitialCanisterIds() {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const appDir = yield* Config.string("APP_DIR")
-  const canisterIdsPath = path.join(appDir, "canister_ids.json")
+  const canisterIdsPath = path.join(appDir, ".ice", "canister_ids.json")
   const exists = yield* fs.exists(canisterIdsPath)
   if (!exists) return {}
   const content = yield* fs.readFileString(canisterIdsPath)

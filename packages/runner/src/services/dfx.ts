@@ -1,6 +1,6 @@
 import { Effect, Layer, Context, Data, Config } from "effect"
 import { Command, CommandExecutor, Path, FileSystem } from "@effect/platform"
-import type { Principal } from "@dfinity/principal"
+import { Principal } from "@dfinity/principal"
 import { Actor, HttpAgent, type SignIdentity } from "@dfinity/agent"
 import { IDL } from "@dfinity/candid"
 import find from "find-process"
@@ -170,8 +170,8 @@ export class DfxService extends Context.Tag("DfxService")<
       DfxError | PlatformError
     >
     readonly network: string
-    readonly identity: SignIdentity
-    readonly agent: HttpAgent
+    // readonly identity: SignIdentity
+    // readonly agent: HttpAgent
     readonly mgmt: ManagementActor
     // readonly createManagementActor: () => Effect.Effect<
     //   ManagementActor,
@@ -188,24 +188,24 @@ export class DfxService extends Context.Tag("DfxService")<
       const dfxPort = yield* Config.string("DFX_PORT")
       const host = yield* Config.string("DFX_HOST")
 
-      const processes = yield* Effect.tryPromise(() =>
-        psList({
-          all: true,
-        })
-      )
-      const dfxProcesses = processes.filter((process) => process.name === "dfx")
-      // yield* Effect.logDebug("dfxProcesses", { dfxProcesses })
-      if (dfxProcesses.length === 0) {
-        // yield* Effect.logDebug("DFX is not running, start DFX")
-        yield* Effect.fail(new DfxError({ message: "DFX is not running" }))
-      //   const command = Command.make(
-      //     "dfx",
-      //     "start",
-      //     "--background",
-      //     "--clean",
-      //   )
-      //   yield* commandExecutor.start(command).pipe(Effect.scoped)
-      }
+      // const processes = yield* Effect.tryPromise(() =>
+      //   psList({
+      //     all: true,
+      //   })
+      // )
+      // const dfxProcesses = processes.filter((process) => process.name === "dfx")
+      // // yield* Effect.logDebug("dfxProcesses", { dfxProcesses })
+      // if (dfxProcesses.length === 0) {
+      //   // yield* Effect.logDebug("DFX is not running, start DFX")
+      //   yield* Effect.fail(new DfxError({ message: "DFX is not running" }))
+      // //   const command = Command.make(
+      // //     "dfx",
+      // //     "start",
+      // //     "--background",
+      // //     "--clean",
+      // //   )
+      // //   yield* commandExecutor.start(command).pipe(Effect.scoped)
+      // }
 
       const getCurrentIdentity = () =>
         Effect.gen(function* () {
@@ -229,26 +229,28 @@ export class DfxService extends Context.Tag("DfxService")<
         })
 
       const { identity } = yield* getIdentity()
-      const agent = yield* Effect.tryPromise(() => HttpAgent.create({
-        host: `${host}:${dfxPort}`,
-        identity,
-      }))
-      yield* Effect.tryPromise({
-        try: () => agent.fetchRootKey(),
-        catch: (err) =>
-          // TODO: the CLI should not fail because of this
-          new ConfigError({
-            message: `Unable to fetch root key: ${err instanceof Error ? err.message : String(err)}`,
-          }),
-      })
+      // const agent = yield* Effect.tryPromise(() => HttpAgent.create({
+      //   host: `${host}:${dfxPort}`,
+      //   identity,
+      // }))
+      // yield* Effect.tryPromise({
+      //   try: () => agent.fetchRootKey(),
+      //   catch: (err) =>
+      //     // TODO: the CLI should not fail because of this
+      //     new ConfigError({
+      //       message: `Unable to fetch root key: ${err instanceof Error ? err.message : String(err)}`,
+      //     }),
+      // })
 
       return DfxService.of({
         network: "local",
-        identity,
-        agent,
+        // identity,
+        // agent,
+        // TODO: agent should have default user as identity? get from context?
         mgmt: Actor.createActor<ManagementActor>(idlFactory, {
           canisterId: "aaaaa-aa",
-          agent,
+          effectiveCanisterId: Principal.fromText("aaaaa-aa"),
+          // agent,
         }),
         start: () =>
           Effect.gen(function* () {
@@ -367,3 +369,22 @@ export class DfxService extends Context.Tag("DfxService")<
     }),
   )
 }
+
+
+// TODO:
+export class DfxUsers extends Context.Tag("DfxUsers")<DfxUsers, {
+  readonly default: {
+    identity: SignIdentity
+    agent: HttpAgent
+  }
+}>() {
+  static Live = Layer.effect(
+    DfxUsers,
+    Effect.gen(function* () {
+      const { getIdentity } = yield* DfxService
+      const identity = yield* getIdentity()
+      return DfxUsers.of({
+        default: { identity, agent },
+      })
+    })
+  })

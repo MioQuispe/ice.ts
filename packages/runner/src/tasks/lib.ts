@@ -26,24 +26,28 @@ import { Stream } from "effect"
 import { configMap } from "../index.js"
 import { runtime } from "../index.js"
 
+const asyncRunTask = async <A>(task: Task): Promise<A> => {
+	// @ts-ignore
+	const result = runtime.runPromise(runTask(task))
+	return result as A
+}
+
 export type TaskCtxShape = {
 	readonly network: string
 	networks?: {
 		[k: string]: ConfigNetwork
 	} | null
 	readonly subnet: string
-	readonly agent: HttpAgent
-	readonly identity: SignIdentity
 	readonly users: {
 		[name: string]: {
-			identity: Identity
+			identity: SignIdentity
 			agent: HttpAgent
 			principal: Principal
 			accountId: string
 			// TODO: neurons?
 		}
 	}
-	readonly runTask: typeof runTask
+	readonly runTask: typeof asyncRunTask
 }
 
 export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {
@@ -52,12 +56,11 @@ export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {
 		Effect.gen(function* () {
 			const { agent, identity } = yield* DfxService
 			return {
-				// TODO: get from config?
+				// TODO: get from config
 				network: "local",
 				subnet: "system",
-				agent,
-				identity,
-				runTask,
+				// TODO: wrap with proxy?
+				runTask: asyncRunTask,
 				users: {
 					default: {
 						identity,

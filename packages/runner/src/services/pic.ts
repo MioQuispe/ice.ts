@@ -1,6 +1,6 @@
-import { Effect, Layer, Context, Data, Config } from "effect"
+import { Effect, Layer, Context, Data, Config, Ref } from "effect"
 import { Command, CommandExecutor, Path, FileSystem } from "@effect/platform"
-import type { Principal } from "@dfinity/principal"
+import { Principal } from "@dfinity/principal"
 import { Actor, HttpAgent, type SignIdentity } from "@dfinity/agent"
 import { IDL } from "@dfinity/candid"
 import find from "find-process"
@@ -12,344 +12,121 @@ import type { ManagementActor } from "../types/types.js"
 import type { PlatformError } from "@effect/platform/Error"
 import os from "node:os"
 import psList from "ps-list"
-import { PocketIc, PocketIcServer } from '@hadronous/pic'
-
-/**
- * Parses a PEM encoded ED25519 private key and returns a SignIdentity.
- *
- * The DER structure we receive from a DFX identity PEM file embeds both the private and public key parts.
- * Since the upgraded @dfinity/identity now expects only a 32-byte private key, we slice the first 32 bytes.
- *
- * @param pem The PEM string
- * @returns The ED25519 identity extracted from the PEM
- */
-const parseEd25519PrivateKey = (pem: string) => {
-  const cleanedPem = pem
-    .replace("-----BEGIN PRIVATE KEY-----", "")
-    .replace("-----END PRIVATE KEY-----", "")
-    .replace(/\n/g, "")
-    .trim();
-  // Obtain the DER hex string by base64-decoding the cleaned PEM.
-  const derHex = Buffer.from(cleanedPem, "base64").toString("hex");
-  // Remove the DER header information.
-  // (This static removal works if the key structure is as expected.)
-  const rawHex = derHex
-    .replace("3053020101300506032b657004220420", "")
-    .replace("a123032100", "");
-  const keyBytes = new Uint8Array(Buffer.from(rawHex, "hex"));
-  // Ensure we only pass the 32-byte secret to the identity.
-  const secretKey = keyBytes.slice(0, 32);
-  return Ed25519KeyIdentity.fromSecretKey(secretKey.buffer);
-}
-
-
-export const getAccountId = (principal: string) =>
-  // TODO: get straight from ledger canister?
-  Effect.gen(function* (_) {
-    const command = Command.make(
-      "dfx",
-      "ledger",
-      "account-id",
-      "--of-principal",
-      principal,
-    )
-    const result = yield* Command.string(command)
-    return result.trim()
-  })
-
-
-export const getCurrentIdentity = Effect.gen(function* () {
-  const command = Command.make("dfx", "identity", "whoami")
-  const result = yield* Command.string(command)
-  return result.trim()
-})
-
-// TODO: this is dfx specific
-export const getIdentity = (selection?: string) =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const identityName = selection ?? (yield* getCurrentIdentity)
-    // TODO: can we use effect/platform?
-    const identityPath = path.join(
-      os.homedir(),
-      ".config/dfx/identity",
-      identityName,
-      "identity.pem",
-    )
-
-    const exists = yield* fs.exists(identityPath)
-    if (!exists) {
-      return yield* Effect.fail(
-        new ConfigError({ message: "Identity does not exist" }),
-      )
-    }
-
-    const pem = yield* fs.readFileString(identityPath, "utf8")
-    const cleanedPem = pem
-      .replace("-----BEGIN PRIVATE KEY-----", "")
-      .replace("-----END PRIVATE KEY-----", "")
-      .replace("\n", "")
-      .trim()
-
-    // TODO: support more key types?
-    const identity = parseEd25519PrivateKey(pem);
-    const principal = identity.getPrincipal().toText()
-    const accountId = yield* getAccountId(principal)
-
-    return {
-      identity,
-      pem: cleanedPem,
-      name: identityName,
-      principal,
-      accountId,
-    }
-  })
-
-// TODO: not just dfx?
-export const dfxDefaults: DfxJson = {
-  defaults: {
-    build: {
-      packtool: "",
-      args: "--force-gc",
-    },
-    replica: {
-      subnet_type: "system",
-    },
-  },
-  networks: {
-    local: {
-      bind: "127.0.0.1:8080",
-      type: "ephemeral",
-    },
-    staging: {
-      providers: ["https://ic0.app"],
-      type: "persistent",
-    },
-    ic: {
-      providers: ["https://ic0.app"],
-      type: "persistent",
-    },
-  },
-  version: 1,
-}
+import { PocketIc, PocketIcServer } from "@dfinity/pic"
+import { SubnetType } from "@dfinity/pic/dist/pocket-ic-client-types.js"
 
 // Error types
-export class DfxError extends Data.TaggedError("DfxError")<{
-  readonly message: string
+export class PocketICError extends Data.TaggedError("PocketICError")<{
+	readonly message: string
 }> {}
 
-export class DfxService extends Context.Tag("DfxService")<
-  DfxService,
-  {
-    readonly start: () => Effect.Effect<void, PlatformError>
-    readonly stop: () => Effect.Effect<void, DfxError>
-    // readonly deployCanister: (params: {
-    //   canisterName: string
-    //   wasm: Uint8Array
-    //   candid: any
-    //   args?: any[]
-    //   controllers?: Principal[]
-    // }) => Effect.Effect<string, DfxError>
-    // readonly createCanister: (params: {
-    //   canisterName: string
-    //   args?: any[]
-    // }) => Effect.Effect<string, DfxError>
-    // readonly installCanister: (params: {
-    //   canisterName: string
-    //   args?: any[]
-    // }) => Effect.Effect<string, DfxError>
-    readonly getWebserverPort: () => Effect.Effect<number, DfxError>
-    readonly getIdentity: (selection?: string) => Effect.Effect<
-      {
-        identity: SignIdentity
-        pem: string
-        name: string
-        principal: string
-        accountId: string
-      },
-      DfxError | PlatformError
-    >
-    readonly network: string
-    readonly identity: SignIdentity
-    readonly agent: HttpAgent
-    readonly mgmt: ManagementActor
-    // readonly createManagementActor: () => Effect.Effect<
-    //   ManagementActor,
-    //   DfxError
-    // >
-  }
+export class PocketICService extends Context.Tag("PocketICService")<
+	PocketICService,
+	{
+		// readonly start: () => Effect.Effect<void, PlatformError>
+		// readonly stop: () => Effect.Effect<void, PocketICError>
+		readonly getUrl: () => Effect.Effect<string, PocketICError>
+		readonly network: string
+		readonly createCanister: (args: {
+			canisterId?: string
+			identity: SignIdentity
+		}) => Effect.Effect<string, PocketICError>
+		readonly installCode: (args: {
+			canisterId: string
+			wasm: Uint8Array
+			encodedArgs: Uint8Array
+			identity: SignIdentity
+		}) => Effect.Effect<void, PocketICError>
+	}
 >() {
-  static Live = Layer.effect(
-    DfxService,
-    Effect.gen(function* () {
-      const commandExecutor = yield* CommandExecutor.CommandExecutor
-      const fs = yield* FileSystem.FileSystem
-      const path = yield* Path.Path
-      const dfxPort = yield* Config.string("DFX_PORT")
-      const host = yield* Config.string("DFX_HOST")
+	static Live = Layer.effect(
+		PocketICService,
+		Effect.gen(function* () {
+			const commandExecutor = yield* CommandExecutor.CommandExecutor
+			const fs = yield* FileSystem.FileSystem
+			const path = yield* Path.Path
+			const dfxPort = yield* Config.string("DFX_PORT")
+			const host = yield* Config.string("DFX_HOST")
 
-      const pic = yield* Effect.tryPromise(() => PocketIcServer.start());
-      const url = pic.getUrl();
+			const picServer = yield* Effect.tryPromise(() => PocketIcServer.start())
+			const url = picServer.getUrl()
+			const pic = yield* Effect.tryPromise(() => PocketIc.create(url))
+			const NNS_SUBNET_ID =
+				"nt6ha-vabpm-j6nog-bkr62-vbgbt-swwzc-u54zn-odtoy-igwlu-ab7uj-4qe"
 
-      // TODO: remove
-      const getCurrentIdentity = () =>
-        Effect.gen(function* () {
-          const command = Command.make("dfx", "identity", "whoami")
-          const result = yield* commandExecutor.string(command)
-          return result.trim()
-        })
+			const command = Command.make("./pocket-ic", "--port", dfxPort)
+			yield* Effect.log(`Starting pocket-ic: ${command.toString()}`)
+			const pocketIcProcess = yield* commandExecutor
+				.start(command)
+				.pipe(Effect.scoped)
 
-      const getAccountId = (principal: string) =>
-        // TODO: get straight from ledger canister?
-        Effect.gen(function* (_) {
-          const command = Command.make(
-            "dfx",
-            "ledger",
-            "account-id",
-            "--of-principal",
-            principal,
-          )
-          const result = yield* commandExecutor.string(command)
-          return result.trim()
-        })
+			yield* Effect.log(`Pocket-ic started: ${pocketIcProcess.pid}`)
 
-      const { identity } = yield* getIdentity()
-      const agent = new HttpAgent({
-        host: `${host}:${dfxPort}`,
-        identity,
-      })
-      yield* Effect.tryPromise({
-        try: () => agent.fetchRootKey(),
-        catch: (err) =>
-          // TODO: the CLI should not fail because of this
-          new ConfigError({
-            message: `Unable to fetch root key: ${err instanceof Error ? err.message : String(err)}`,
-          }),
-      })
-
-      return DfxService.of({
-        network: "local",
-        identity,
-        agent,
-        mgmt: Actor.createActor<ManagementActor>(idlFactory, {
-          canisterId: "aaaaa-aa",
-          agent,
-        }),
-        start: () =>
-          Effect.gen(function* () {
-            const command = Command.make(
-              "dfx",
-              "start",
-              "--background",
-              "--clean",
-            )
-            yield* commandExecutor.start(command).pipe(Effect.scoped)
-            // yield* Effect.tryMap({
-            //   try: () => commandExecutor.start(command),
-            //   catch: (error) =>
-            //     new DfxError({
-            //       message: `Failed to start DFX: ${error instanceof Error ? error.message : String(error)}`,
-            //     }),
-            //   onSuccess: () => undefined,
-            // })
-          }),
-        stop: () =>
-          Effect.tryPromise({
-            try: async () => {
-              const processes = await Promise.all([
-                find("name", "dfx", true),
-                find("name", "replica", true),
-                find("name", "icx-proxy", true),
-              ])
-              for (const proc of processes.flat()) {
-                process.kill(proc.pid)
-              }
-            },
-            catch: (error) =>
-              new DfxError({
-                message: `Failed to kill DFX processes: ${error instanceof Error ? error.message : String(error)}`,
-              }),
-          }),
-        getWebserverPort: () =>
-          Effect.gen(function* () {
-            const command = Command.make("dfx", "info", "webserver-port")
-            const output = yield* commandExecutor.string(command).pipe(
-              Effect.mapError(
-                (err) =>
-                  new DfxError({
-                    message: `Failed to get webserver port: ${err.message}`,
-                  }),
-              ),
-            )
-            const port = Number.parseInt(output.trim(), 10)
-
-            if (Number.isNaN(port)) {
-              return yield* Effect.fail(
-                new DfxError({ message: "Failed to parse DFX webserver port" }),
-              )
-            }
-            return port
-          }),
-        getIdentity: (selection?: string) =>
-          Effect.gen(function* () {
-            const identityName = selection ?? (yield* getCurrentIdentity())
-            const identityPath = path.join(
-              // TODO: platform agnostic
-              // os.homedir(),
-              "~",
-              ".config/dfx/identity",
-              identityName,
-              "identity.pem",
-            )
-
-            const exists = yield* fs.exists(identityPath).pipe(
-              Effect.mapError(
-                (err) =>
-                  new DfxError({
-                    message: `Failed to check identity path: ${err.message}`,
-                  }),
-              ),
-            )
-            if (!exists) {
-              return yield* Effect.fail(
-                new DfxError({ message: "Identity does not exist" }),
-              )
-            }
-
-            const pem = yield* fs.readFileString(identityPath, "utf8").pipe(
-              Effect.mapError(
-                (err) =>
-                  new DfxError({
-                    message: `Failed to read identity file: ${err.message}`,
-                  }),
-              ),
-            )
-            const cleanedPem = pem
-              .replace("-----BEGIN PRIVATE KEY-----", "")
-              .replace("-----END PRIVATE KEY-----", "")
-              .replace("\n", "")
-              .trim()
-
-            const raw = Buffer.from(cleanedPem, "base64")
-              .toString("hex")
-              .replace("3053020101300506032b657004220420", "")
-              .replace("a123032100", "")
-            const key = new Uint8Array(Buffer.from(raw, "hex"))
-            // TODO: this is not working
-            const identity = Ed25519KeyIdentity.fromSecretKey(key.buffer)
-            const principal = identity.getPrincipal().toText()
-            const accountId = yield* getAccountId(principal)
-
-            return {
-              identity: identity as SignIdentity,
-              pem: cleanedPem,
-              name: identityName,
-              principal,
-              accountId,
-            }
-          }),
-      })
-    }),
-  )
+			return PocketICService.of({
+				network: "local",
+				createCanister: ({ canisterId, identity }) =>
+					Effect.gen(function* () {
+						const createdCanisterId = yield* Effect.tryPromise({
+							try: () =>
+								pic.createCanister({
+									sender: identity.getPrincipal(),
+									...(canisterId
+										? {
+												targetCanisterId: Principal.fromText(canisterId),
+												// targetSubnetId: Principal.fromText(NNS_SUBNET_ID),
+											}
+										: {}),
+								}),
+							catch: (error) =>
+								new PocketICError({
+									message: `Failed to create canister: ${error instanceof Error ? error.message : String(error)}`,
+								}),
+						})
+						return createdCanisterId.toText()
+					}),
+				installCode: ({ canisterId, wasm, encodedArgs, identity }) =>
+					Effect.gen(function* () {
+						yield* Effect.tryPromise({
+							try: () =>
+								// TODO: mode: install / reinstall etc.
+								pic.reinstallCode({
+									arg: encodedArgs.buffer,
+									sender: identity.getPrincipal(),
+									canisterId: Principal.fromText(canisterId),
+									wasm: wasm.buffer,
+									// targetSubnetId: Principal.fromText(NNS_SUBNET_ID),
+								}),
+							catch: (error) =>
+								new PocketICError({
+									message: `Failed to install code: ${error instanceof Error ? error.message : String(error)}`,
+								}),
+						})
+					}),
+				// start: () =>
+				// 	Effect.gen(function* () {
+				// 		const command = Command.make("./pocket-ic", "--port", dfxPort)
+				// 		pocketIcProcess = yield* commandExecutor
+				// 			.start(command)
+				// 			.pipe(Effect.scoped)
+				// 	}),
+				// stop: () =>
+				// 	Effect.tryPromise({
+				// 		try: async () => {
+				// 			await picServer.stop()
+				// 			// const processes = await Promise.all([
+				// 			// 	find("name", "pocket-ic", true),
+				// 			// ])
+				// 			// for (const proc of processes.flat()) {
+				// 			// 	process.kill(proc.pid)
+				// 			// }
+				// 		},
+				// 		catch: (error) =>
+				// 			new PocketICError({
+				// 				message: `Failed to kill DFX processes: ${error instanceof Error ? error.message : String(error)}`,
+				// 			}),
+				// 	}),
+				getUrl: () => Effect.succeed(url),
+			})
+		}),
+	)
 }

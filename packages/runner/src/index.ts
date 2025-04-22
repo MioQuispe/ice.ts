@@ -13,6 +13,7 @@ import type { TaskTree, TaskTreeNode } from "./types/types.js"
 import { Moc } from "./services/moc.js"
 import { TaskRegistry } from "./services/taskRegistry.js"
 import { ICEConfigService } from "./services/iceConfig.js"
+import { PocketICService } from "./services/pic.js"
 import { CanisterIdsService } from "./services/canisterIds.js"
 import { TaskCtx } from "./tasks/lib.js"
 export * from "./builders/index.js"
@@ -50,6 +51,10 @@ export const DefaultsLayer = Layer.mergeAll(
 	DfxLayer,
 	TaskRegistry.Live,
 	TaskCtx.Live.pipe(Layer.provide(DfxLayer), Layer.provide(NodeContext.layer)),
+	PocketICService.Live.pipe(
+		Layer.provide(NodeContext.layer),
+		Layer.provide(configLayer),
+	),
 	Moc.Live.pipe(Layer.provide(NodeContext.layer)),
 	configLayer,
 	ICEConfigService.Live.pipe(Layer.provide(NodeContext.layer)),
@@ -63,7 +68,7 @@ export const CLILayer = Layer.mergeAll(
 	DefaultsLayer,
 	Logger.pretty,
 	// TODO: set with logLevel flag
-	Logger.minimumLogLevel(LogLevel.Info),
+	Logger.minimumLogLevel(LogLevel.Debug),
 )
 
 export const TUILayer = Layer.mergeAll(

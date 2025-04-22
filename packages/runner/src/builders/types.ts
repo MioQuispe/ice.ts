@@ -279,6 +279,7 @@ export const Tags = {
 	KYBRA: "$$ice/canister/kybra",
 
 	CREATE: "$$ice/create",
+	STATUS: "$$ice/status",
 	BUILD: "$$ice/build",
 	INSTALL: "$$ice/install",
 	BINDINGS: "$$ice/bindings",

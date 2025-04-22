@@ -6,7 +6,7 @@ import type {
   TaskTreeNode,
 } from "../types/types.js"
 import { TaskCtx } from "../tasks/lib.js"
-import { TaskInfo } from "../tasks/run.js"
+import { TaskInfo, runTask } from "../tasks/run.js"
 import { Tags, type CanisterScope } from "../builders/types.js"
 
 // /**
@@ -44,7 +44,6 @@ const makeDeployTask = (scope: CanisterScope): Task => {
     // TODO: type Task
     provide: {},
     effect: Effect.gen(function* () {
-      const { runTask } = yield* TaskCtx
       const { taskPath } = yield* TaskInfo
       const canisterName = taskPath.split(":").slice(0, -1).join(":")
       const [canisterId] = yield* Effect.all(
