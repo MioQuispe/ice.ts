@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import { ICEConfigService } from "../services/iceConfig.js"
 import {
 	collectDependencies,
-	executeSortedTasks,
+	executeTasks,
 	filterNodes,
 	type ProgressUpdate,
 	topologicalSortTasks,

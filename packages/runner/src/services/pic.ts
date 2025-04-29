@@ -45,8 +45,8 @@ export class PocketICService extends Context.Tag("PocketICService")<
 			const commandExecutor = yield* CommandExecutor.CommandExecutor
 			const fs = yield* FileSystem.FileSystem
 			const path = yield* Path.Path
-			const dfxPort = yield* Config.string("DFX_PORT")
-			const host = yield* Config.string("DFX_HOST")
+			const dfxPort = "8080"
+			const host = "http://0.0.0.0"
 
 			const picServer = yield* Effect.tryPromise(() => PocketIcServer.start())
 			const url = picServer.getUrl()

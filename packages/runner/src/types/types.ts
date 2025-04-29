@@ -1,6 +1,7 @@
 import type { Effect, Option } from "effect"
-import type { ActorSubclass, Agent, Identity } from "@dfinity/agent"
+import type { ActorSubclass, Agent, Identity, SignIdentity } from "@dfinity/agent"
 import type { Principal } from "@dfinity/principal"
+import type { ReplicaService } from "../services/replica.js"
 
 export type CanisterActor = {
   actor: ActorSubclass<unknown>
@@ -14,8 +15,15 @@ export type ManagementActor = import("@dfinity/agent").ActorSubclass<
   import("../canisters/management_latest/management.types.js")._SERVICE
 >
 
+export type ReplicaConfig = {
+  subnet: "system" | "application" | "verified_application"
+  // type?: "ephemeral" | "persistent"
+  bitcoin?: boolean
+  canister_http?: boolean
+  type: "pocketic" | "dfx"
+}
 // TODO: create service? dependencies?
-export type ICEContext = {
+export type ICEConfig = {
   // dfxConfig: DfxConfig
   // currentUser: {
   //   identity: Identity
@@ -25,19 +33,16 @@ export type ICEContext = {
   // }
   users: {
     [key: string]: {
-      identity: Identity
-      principal: Principal
+      identity: SignIdentity
+      principal: string
       accountId: string
-      agent: Agent
+      // agent: Agent
     }
   }
-  // TODO: networks / envs
-  networks: {
-    [key: string]: {
-      agent: Agent
-      identity: Identity
-    }
+  roles: {
+    [key: string]: string
   }
+  replica: ReplicaService
 }
 
 export interface Task<
@@ -97,10 +102,13 @@ export type TaskTree = Record<string, TaskTreeNode>
 //   children: PreTaskTree | ((args: any) => PreTaskTree)
 // }
 
+// TODO: come up with a better name
+export type ICECtx = {
+	network: string
+}
 // TODO: fix
-export type ICEConfig = ICEContext
 export type ICEConfigFile = {
-  default: ICEContext
+  default: ICEConfig | ((ctx: ICECtx) => Promise<ICEConfig> | ICEConfig)
 } & {
   [key: string]: TaskTreeNode
 }

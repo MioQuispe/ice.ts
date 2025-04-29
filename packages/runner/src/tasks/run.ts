@@ -8,7 +8,7 @@ import {
 	getTaskByPath,
 	getTaskPathById,
 	topologicalSortTasks,
-	executeSortedTasks,
+	executeTasks,
   collectDependencies,
   type ProgressUpdate,
 } from "./lib.js"
@@ -42,7 +42,7 @@ export const runTask = <A = unknown, E = unknown, R = unknown, I = unknown>(task
     // @ts-ignore
 		const collectedTasks = collectDependencies([task])
 		const sortedTasks = topologicalSortTasks(collectedTasks)
-		const results = yield* executeSortedTasks(sortedTasks, progressCb)
+		const results = yield* executeTasks(sortedTasks, progressCb)
     return results.get(task.id) as A
   })
 
@@ -51,7 +51,7 @@ export const runTasks = <A = unknown, E = unknown, R = unknown, I = unknown>(tas
     // @ts-ignore
 		const collectedTasks = collectDependencies(tasks)
 		const sortedTasks = topologicalSortTasks(collectedTasks)
-		const results = yield* executeSortedTasks(sortedTasks, progressCb)
+		const results = yield* executeTasks(sortedTasks, progressCb)
     yield* Effect.logDebug(`Completed ${sortedTasks.length} tasks`)
     return results
   })

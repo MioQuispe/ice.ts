@@ -8,24 +8,44 @@ import {
 	LogLevel,
 } from "effect"
 import { NodeContext } from "@effect/platform-node"
-import { DfxService } from "./services/dfx.js"
-import type { TaskTree, TaskTreeNode } from "./types/types.js"
+import { DfxDefaultReplica } from "./services/dfx.js"
+import type { ICECtx, TaskTree, TaskTreeNode } from "./types/types.js"
 import { Moc } from "./services/moc.js"
 import { TaskRegistry } from "./services/taskRegistry.js"
 import { ICEConfigService } from "./services/iceConfig.js"
 import { PocketICService } from "./services/pic.js"
 import { CanisterIdsService } from "./services/canisterIds.js"
 import { TaskCtx } from "./tasks/lib.js"
+import type { ICEConfig } from "./types/types.js"
+import { Ids } from "./ids.js"
 export * from "./builders/index.js"
+export * from "./ids.js"
+
+
+
+// const defaultICEConfig: ICEConfig = {
+//       // TODO: dfx defaults etc.
+// 	  type: "system",
+// 	  replica: DfxReplica,
+// 	  users: {
+// 		default: Ids.fromDfx("default"),
+// 	  },
+// 	  roles: {
+// 		deployer: 
+// 	  }
+//     }
+
+// is this where we construct the runtime / default environment?
+// TODO: can we make this async as well?
+export const ICE = (configOrFn: ICEConfig | ((ctx: ICECtx) => Promise<ICEConfig>)) => {
+	return configOrFn
+}
+
 
 export const configMap = new Map([
 	["APP_DIR", fs.realpathSync(process.cwd())],
 	["DFX_CONFIG_FILENAME", "ice.config.ts"],
 	["CANISTER_IDS_FILENAME", "canister_ids.json"],
-	// TODO: IC_PORT / IC_HOST
-	["DFX_PORT", "8080"],
-	["DFX_HOST", "http://0.0.0.0"],
-	["REPLICA_PORT", "8080"],
 ])
 
 export const configLayer = Layer.setConfigProvider(
@@ -40,18 +60,16 @@ export class ConfigError extends Data.TaggedError("ConfigError")<{
 	message: string
 }> {}
 
-// TODO: layer memoization should work? do we need this?
-const DfxLayer = DfxService.Live.pipe(
-	Layer.provide(NodeContext.layer),
-	Layer.provide(configLayer),
-)
 // TODO: construct later? or this is just defaults
 export const DefaultsLayer = Layer.mergeAll(
 	NodeContext.layer,
-	DfxLayer,
 	TaskRegistry.Live,
-	TaskCtx.Live.pipe(Layer.provide(DfxLayer), Layer.provide(NodeContext.layer)),
-	PocketICService.Live.pipe(
+	// PocketICService.Live.pipe(
+	// 	Layer.provide(NodeContext.layer),
+	// 	Layer.provide(configLayer),
+	// ),
+	// TODO: use pocket-ic
+	DfxDefaultReplica.pipe(
 		Layer.provide(NodeContext.layer),
 		Layer.provide(configLayer),
 	),

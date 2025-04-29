@@ -9,22 +9,25 @@ import {
 	Option,
 } from "effect"
 import { ICEConfigService } from "../services/iceConfig.js"
-import type { TaskTree } from "../types/types.js"
+import type { ICEConfig, TaskTree } from "../types/types.js"
 import type { Scope } from "../types/types.js"
 import type { TaskTreeNode } from "../types/types.js"
 import type { Task } from "../types/types.js"
 import type { ConfigNetwork } from "../types/schema.js"
-import type { HttpAgent } from "@dfinity/agent"
+import { HttpAgent } from "@dfinity/agent"
 import type { SignIdentity } from "@dfinity/agent"
 import type { Principal } from "@dfinity/principal"
 import type { Identity } from "@dfinity/agent"
 import { DependencyResults, runTaskByPath, runTask, TaskInfo } from "./run.js"
 import { principalToAccountId } from "../utils/utils.js"
-import { DfxService } from "../services/dfx.js"
 import { Layer } from "effect"
 import { Stream } from "effect"
-import { configMap } from "../index.js"
+import { configMap, Ids } from "../index.js"
 import { runtime } from "../index.js"
+import { NodeContext } from "@effect/platform-node"
+import { DefaultReplica, type ReplicaService } from "../services/replica.js"
+import { PocketICService } from "src/services/pic.js"
+import { DfxReplica } from "src/services/dfx.js"
 
 const asyncRunTask = async <A>(task: Task): Promise<A> => {
 	// @ts-ignore
@@ -33,47 +36,33 @@ const asyncRunTask = async <A>(task: Task): Promise<A> => {
 }
 
 export type TaskCtxShape = {
-	readonly network: string
-	networks?: {
-		[k: string]: ConfigNetwork
-	} | null
-	readonly subnet: string
+	// readonly network: string
+	// networks?: {
+	// 	[k: string]: ConfigNetwork
+	// } | null
+	// readonly subnet: string
 	readonly users: {
 		[name: string]: {
 			identity: SignIdentity
-			agent: HttpAgent
-			principal: Principal
+			// agent: HttpAgent
+			principal: string
 			accountId: string
 			// TODO: neurons?
 		}
 	}
+	readonly roles: {
+		[name: string]: {
+			identity: SignIdentity
+			principal: string
+			accountId: string
+			agent: HttpAgent
+		}
+	}
+	readonly replica: ReplicaService
 	readonly runTask: typeof asyncRunTask
 }
 
-export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {
-	static Live = Layer.effect(
-		TaskCtx,
-		Effect.gen(function* () {
-			const { agent, identity } = yield* DfxService
-			return {
-				// TODO: get from config
-				network: "local",
-				subnet: "system",
-				// TODO: wrap with proxy?
-				runTask: asyncRunTask,
-				users: {
-					default: {
-						identity,
-						agent,
-						// TODO: use Account class from connect2ic?
-						principal: identity.getPrincipal(),
-						accountId: principalToAccountId(identity.getPrincipal()),
-					},
-				},
-			}
-		}),
-	)
-}
+export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {}
 
 export class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
 	path: string[]
@@ -195,19 +184,34 @@ export type ProgressUpdate<A> = {
 	error?: unknown
 }
 
-export const executeSortedTasks = <A, E, R, I>(
-	sortedTasks: Task<A, E, R, I>[],
+export const executeTasks = <A, E, R, I>(
+	tasks: Task<A, E, R, I>[],
 	progressCb: (update: ProgressUpdate<A>) => void = () => {},
 ) =>
 	Effect.gen(function* () {
+		const defaultReplica = yield* DefaultReplica
+		// TODO: yield* DefaultConfig?
+		const defaultUser = yield* Effect.tryPromise(() => Ids.fromDfx("default"))
+		const defaultConfig: ICEConfig = {
+			replica: defaultReplica,
+			users: {
+				default: defaultUser,
+			},
+			roles: {
+				deployer: "default",
+				minter: "default",
+				controller: "default",
+				treasury: "default",
+			},
+		}
 		// Create a deferred for every task to hold its eventual result.
 		const deferredMap = new Map<symbol, Deferred.Deferred<E | unknown, R>>()
-		for (const task of sortedTasks) {
+		for (const task of tasks) {
 			const deferred = yield* Deferred.make<E | unknown, R>()
 			deferredMap.set(task.id, deferred)
 		}
 		const results = new Map<symbol, unknown>()
-		const taskEffects = sortedTasks.map((task) =>
+		const taskEffects = tasks.map((task) =>
 			Effect.gen(function* () {
 				const dependencyResults: Record<string, unknown> = {}
 				for (const dependencyName in task.provide) {
@@ -220,11 +224,56 @@ export const executeSortedTasks = <A, E, R, I>(
 				}
 				const taskPath = yield* getTaskPathById(task.id)
 				progressCb({ taskId: task.id, taskPath, status: "starting" })
+				const { config } = yield* ICEConfigService
+				const currentReplica = config?.replica ?? defaultReplica
+				const currentRoles = config?.roles ?? defaultConfig.roles
+				const currentUsers = config?.users ?? defaultConfig.users
+				// TODO: pre-initialize agents? this is repeated for each task now
+				const rolesResult = yield* Effect.all(
+					// TODO: default roles?
+					Object.entries(currentRoles).map(([name, role]) =>
+						Effect.gen(function* () {
+							const agent = yield* Effect.tryPromise(() =>
+								HttpAgent.create({
+									identity: currentUsers[role].identity,
+									host: `${currentReplica.host}:${currentReplica.port}`,
+								}),
+							)
+							yield* Effect.tryPromise(() => agent.fetchRootKey())
+							return {
+								[name]: {
+									identity: currentUsers[role].identity,
+									principal: currentUsers[role].principal,
+									accountId: currentUsers[role].accountId,
+									agent,
+								},
+							}
+						}),
+					),
+					{
+						concurrency: "unbounded",
+					},
+				)
+
+				const roles = rolesResult.reduce((acc, role) => {
+					return Object.assign(acc, role)
+				}, {})
 
 				const taskLayer = Layer.mergeAll(
 					Layer.succeed(TaskInfo, {
 						taskPath,
 						// TODO: provide more?
+					}),
+					Layer.succeed(TaskCtx, {
+						...defaultConfig,
+						// TODO: wrap with proxy?
+						runTask: asyncRunTask,
+						replica: currentReplica,
+						users: {
+							default: defaultUser,
+							...currentUsers,
+						},
+						roles,
 					}),
 					Layer.succeed(DependencyResults, {
 						dependencies: dependencyResults,

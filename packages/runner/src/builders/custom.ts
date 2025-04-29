@@ -1,5 +1,5 @@
 import { Effect, Context, Data, Config, Match, Option } from "effect"
-import type { ICEContext, Scope, Task, TaskTree } from "../types/types.js"
+import type { Scope, Task, TaskTree } from "../types/types.js"
 // import mo from "motoko"
 import { Path, FileSystem } from "@effect/platform"
 import type {
@@ -269,6 +269,7 @@ const makeBuildTask = <P extends Record<string, unknown>>(
 			// TODO: could be a promise
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
 			const { taskPath } = yield* TaskInfo
+			// TODO: pass in as arg instead?
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			const isGzipped = yield* fs.exists(path.join(appDir, iceDirName, "canisters", canisterName, `${canisterName}.wasm.gz`))
 			const outWasmPath = path.join(
@@ -670,10 +671,6 @@ export const canisterBuildGuard = Effect.gen(function* () {
 	}
 	return true
 })
-
-type ICEConfig = ICEContext & {
-	setup?: () => Promise<ICEContext>
-}
 
 // TODO: Do more here?
 const scope = <T extends TaskTree>(description: string, children: T) => {

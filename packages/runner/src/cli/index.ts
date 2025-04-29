@@ -1,4 +1,4 @@
-import { Effect, Console, Stream } from "effect"
+import { Effect, Console, Stream, Either } from "effect"
 import {
 	canistersBindingsTask,
 	canistersBuildTask,
@@ -250,21 +250,39 @@ const canistersStatusCommand = defineCommand({
 		if (args._.length === 0) {
 			await runtime.runPromise(
 				Effect.gen(function* () {
+					// TODO: this needs to run as a task
 					const statuses = yield* canistersStatusTask()
 					const statusLog = statuses
 						.map((result) =>
-							result._tag === "Right"
-								? `
-${color.underline(result.right.canisterName)}
-  ID: ${result.right.canisterId}
-  Status: ${color.green(Object.keys(result.right.status.status)[0])}
-  Memory Size: ${result.right.status.memory_size.toLocaleString("en-US").replace(/,/g, "_")}
-  Cycles: ${result.right.status.cycles.toLocaleString("en-US").replace(/,/g, "_")}
-  Idle Cycles Burned Per Day: ${result.right.status.idle_cycles_burned_per_day.toLocaleString("en-US").replace(/,/g, "_")}
-  Module Hash: ${moduleHashToHexString(result.right.status.module_hash)}`
-								: `Error for canister: ${result.left.message}`,
+							Either.match(result, {
+								onLeft: (left) => `Error for canister: ${left}`,
+								onRight: (right) =>
+									right.status.status !== "not_installed"
+										? `
+${color.underline(right.canisterName)}
+  ID: ${right.canisterId}
+  Status: ${color.green(Object.keys(right.status.status)[0])}
+  Memory Size: ${right.status.memory_size.toLocaleString("en-US").replace(/,/g, "_")}
+  Cycles: ${right.status.cycles.toLocaleString("en-US").replace(/,/g, "_")}
+  Idle Cycles Burned Per Day: ${right.status.idle_cycles_burned_per_day.toLocaleString("en-US").replace(/,/g, "_")}
+  Module Hash: ${moduleHashToHexString(right.status.module_hash)}`
+										: // TODO: fix?
+											`Error for canister: ${result._tag}`,
+							}),
 						)
 						.join("\n")
+					// 							result._tag === "Right" && result.right.status.status !== "not_installed"
+					// 								? `
+					// ${color.underline(result.right.canisterName)}
+					//   ID: ${result.right.canisterId}
+					//   Status: ${color.green(Object.keys(result.right.status.status)[0])}
+					//   Memory Size: ${result.right.status.memory_size.toLocaleString("en-US").replace(/,/g, "_")}
+					//   Cycles: ${result.right.status.cycles.toLocaleString("en-US").replace(/,/g, "_")}
+					//   Idle Cycles Burned Per Day: ${result.right.status.idle_cycles_burned_per_day.toLocaleString("en-US").replace(/,/g, "_")}
+					//   Module Hash: ${moduleHashToHexString(result.right.status.module_hash)}`
+					// 								: `Error for canister: ${result._tag}`,
+					// 						)
+					// 						.join("\n")
 
 					console.log(statusLog)
 				}),

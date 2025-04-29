@@ -1,5 +1,10 @@
 import { Data, Effect, Context, Layer } from "effect"
-import type { ICEConfig, ICEConfigFile, TaskTree, TaskTreeNode } from "../types/types.js"
+import type {
+	ICEConfig,
+	ICEConfigFile,
+	TaskTree,
+	TaskTreeNode,
+} from "../types/types.js"
 import { Path, FileSystem } from "@effect/platform"
 import { deployTaskPlugin } from "../plugins/deploy.js"
 import { tsImport } from "tsx/esm/api"
@@ -49,8 +54,6 @@ export class ConfigError extends Data.TaggedError("ConfigError")<{
 	message: string
 }> {}
 
-
-
 /**
  * Service to load and process the ICE configuration.
  */
@@ -75,7 +78,7 @@ export class ICEConfigService extends Context.Tag("ICEConfigService")<
 			})
 
 			// Wrap tsImport in a console.log monkey patch.
-			const config = yield* Effect.tryPromise({
+			const mod = yield* Effect.tryPromise({
 				try: () =>
 					tsImport(
 						path.resolve(appDirectory, configPath),
@@ -90,12 +93,29 @@ export class ICEConfigService extends Context.Tag("ICEConfigService")<
 			})
 
 			const taskTree = Object.fromEntries(
-				Object.entries(config).filter(([key]) => key !== "default"),
+				Object.entries(mod).filter(([key]) => key !== "default"),
 			) as TaskTree
 			const transformedTaskTree = yield* applyPlugins(taskTree)
+			// TODO: get from cli args
+			const iceCtx = { network: "local" }
+			// TODO: could be function
+			// const defaultConfig = typeof config.default === "function" ? config.default(iceCtx) : config.default
+			let config: ICEConfig
+			const d = mod.default
+			if (typeof d === "function") {
+				// TODO: both sync and async in type signature
+				const callResult = d(iceCtx)
+				if (callResult instanceof Promise) {
+					config = yield* Effect.tryPromise(() => callResult)
+				} else {
+					config = callResult
+				}
+			} else {
+				config = d
+			}
 			return {
 				taskTree: transformedTaskTree,
-				config: config.default,
+				config,
 			}
 		}),
 	)
