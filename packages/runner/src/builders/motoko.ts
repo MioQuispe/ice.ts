@@ -139,19 +139,19 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 	} satisfies Task
 }
 
-const makeMotokoDeleteTask = (): Task => {
+const makeMotokoRemoveTask = (): Task => {
 	return {
 		_tag: "task",
-		id: Symbol("motokoCanister/delete"),
+		id: Symbol("motokoCanister/remove"),
 		dependencies: {},
 		provide: {},
 		input: Option.none(),
 		computeCacheKey: Option.none(),
 		effect: Effect.gen(function* () {
-			// yield* deleteCanister(canisterId)
+			// yield* removeCanister(canisterId)
 		}),
 		description: "some description",
-		tags: [Tags.CANISTER, Tags.MOTOKO, Tags.DELETE],
+		tags: [Tags.CANISTER, Tags.MOTOKO, Tags.REMOVE],
 	}
 }
 
@@ -303,15 +303,6 @@ export const makeMotokoBuilder = <
 			>(updatedScope)
 		},
 
-		//   delete: (task) => {
-		//     return {
-		//       ...scope,
-		//       tasks: {
-		//         ...scope.tasks,
-		//         delete: task,
-		//       },
-		//     }
-		//   },
 
 		done: () => {
 			return scope as unknown as UniformScopeCheck<S>
@@ -328,13 +319,6 @@ export const motokoCanister = <I = unknown, _SERVICE = unknown, P extends Record
 		| ((args: { ctx: TaskCtxShape; deps: P }) => MotokoCanisterConfig)
 		| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<MotokoCanisterConfig>),
 ) => {
-	// TODO: maybe just the return value of install? like a cleanup
-	// delete: {
-	//   task: deleteCanister(config),
-	//   description: "some description",
-	//   tags: [],
-	//   ctx: ctx,
-	// },
 	const initialScope = {
 		_tag: "scope",
 		tags: [Tags.CANISTER, Tags.MOTOKO],
@@ -345,7 +329,7 @@ export const motokoCanister = <I = unknown, _SERVICE = unknown, P extends Record
 			build: makeMotokoBuildTask(canisterConfigOrFn),
 			bindings: makeMotokoBindingsTask(),
 			stop: makeStopTask(),
-			// delete: createDeleteTask(),
+			// remove: makeRemoveTask(),
 			install: makeInstallTask<I, Record<string, unknown>, _SERVICE>(),
 			deploy: makeDeployTask([Tags.MOTOKO]),
 			status: makeCanisterStatusTask([Tags.MOTOKO]),

@@ -285,7 +285,7 @@ export const Tags = {
 	BINDINGS: "$$ice/bindings",
 	DEPLOY: "$$ice/deploy",
 	STOP: "$$ice/stop",
-	DELETE: "$$ice/delete",
+	REMOVE: "$$ice/remove",
 	UI: "$$ice/ui",
 	// TODO: hmm do we need this?
 	SCRIPT: "$$ice/script",

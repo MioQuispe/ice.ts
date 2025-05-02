@@ -60,7 +60,7 @@ export class ConfigError extends Data.TaggedError("ConfigError")<{
 export class ICEConfigService extends Context.Tag("ICEConfigService")<
 	ICEConfigService,
 	{
-		readonly config: ICEConfig
+		readonly config: Partial<ICEConfig>
 		readonly taskTree: TaskTree
 	}
 >() {
@@ -98,18 +98,25 @@ export class ICEConfigService extends Context.Tag("ICEConfigService")<
 			const transformedTaskTree = yield* applyPlugins(taskTree)
 			// TODO: get from cli args
 			const iceCtx = { network: "local" }
-			// TODO: could be function
-			// const defaultConfig = typeof config.default === "function" ? config.default(iceCtx) : config.default
-			let config: ICEConfig
+			let config: Partial<ICEConfig>
 			const d = mod.default
 			if (typeof d === "function") {
 				// TODO: both sync and async in type signature
-				const callResult = d(iceCtx)
-				if (callResult instanceof Promise) {
-					config = yield* Effect.tryPromise(() => callResult)
-				} else {
-					config = callResult
-				}
+				config = yield* Effect.tryPromise({
+					try: () => {
+						const callResult = d(iceCtx)
+						if (callResult instanceof Promise) {
+							return callResult
+						} else {
+							return Promise.resolve(callResult)
+						}
+					},
+					catch: (error) => {
+						return new ConfigError({
+							message: `Failed to get ICE config: ${error instanceof Error ? error.message : String(error)}`,
+						})
+					}
+				})
 			} else {
 				config = d
 			}

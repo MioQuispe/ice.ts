@@ -10,7 +10,7 @@ import type {
 	MergeScopeProvide,
 	ExtractTaskEffectSuccess,
 	ExtractProvidedDeps,
-  TaskCtxShape,
+	TaskCtxShape,
 } from "./types.js"
 import { Tags } from "./types.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
@@ -18,7 +18,16 @@ import { proxyActor } from "../utils/extension.js"
 import { TaskInfo } from "../tasks/run.js"
 import { TaskCtx } from "../tasks/lib.js"
 import { DependencyResults } from "../tasks/run.js"
-import { createActor, createCanister, deleteCanister, generateDIDJS, installCanister, stopCanister, encodeArgs } from "../canister.js"
+import {
+	createActor,
+	createCanister,
+	removeCanister,
+	generateDIDJS,
+	installCanister,
+	stopCanister,
+	encodeArgs,
+	getCanisterInfo,
+} from "../canister.js"
 import { makeCanisterStatusTask, makeDeployTask } from "./lib.js"
 
 // TODO: later
@@ -60,10 +69,10 @@ export const makeStopTask = () => {
 	} satisfies Task
 }
 
-export const makeDeleteTask = () => {
+export const makeRemoveTask = () => {
 	return {
 		_tag: "task",
-		id: Symbol("customCanister/delete"),
+		id: Symbol("customCanister/remove"),
 		dependencies: {},
 		provide: {},
 		// TODO: do we allow a fn as args here?
@@ -75,14 +84,14 @@ export const makeDeleteTask = () => {
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			// TODO: handle error
 			const canisterId = yield* loadCanisterId(taskPath)
-			yield* deleteCanister(canisterId)
+			yield* removeCanister(canisterId)
 			const canisterIdsService = yield* CanisterIdsService
 			yield* canisterIdsService.removeCanisterId(canisterName)
-			yield* Effect.logDebug(`Deleted canister ${canisterName}`)
+			yield* Effect.logDebug(`Removed canister ${canisterName}`)
 		}),
 		description: "some description",
 		// TODO: no tag custom
-		tags: [Tags.CANISTER, Tags.DELETE],
+		tags: [Tags.CANISTER, Tags.REMOVE],
 		computeCacheKey: Option.none(),
 		input: Option.none(),
 	} satisfies Task
@@ -221,7 +230,15 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 					})
 			yield* Effect.logDebug("Args encoded successfully")
 
-      const isGzipped = yield* fs.exists(path.join(appDir, iceDirName, "canisters", canisterName, `${canisterName}.wasm.gz`))
+			const isGzipped = yield* fs.exists(
+				path.join(
+					appDir,
+					iceDirName,
+					"canisters",
+					canisterName,
+					`${canisterName}.wasm.gz`,
+				),
+			)
 			const wasmPath = path.join(
 				appDir,
 				iceDirName,
@@ -271,7 +288,15 @@ const makeBuildTask = <P extends Record<string, unknown>>(
 			const { taskPath } = yield* TaskInfo
 			// TODO: pass in as arg instead?
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
-			const isGzipped = yield* fs.exists(path.join(appDir, iceDirName, "canisters", canisterName, `${canisterName}.wasm.gz`))
+			const isGzipped = yield* fs.exists(
+				path.join(
+					appDir,
+					iceDirName,
+					"canisters",
+					canisterName,
+					`${canisterName}.wasm.gz`,
+				),
+			)
 			const outWasmPath = path.join(
 				appDir,
 				iceDirName,
@@ -358,15 +383,23 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 			const fs = yield* FileSystem.FileSystem
 			const taskCtx = yield* TaskCtx
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
-			const canisterId = yield* createCanister(canisterConfig?.canisterId)
+
+			const configCanisterId = canisterConfig?.canisterId
+			// TODO: do we need to optimize this?
+			const isAlreadyInstalled =
+				configCanisterId &&
+				(yield* getCanisterInfo(configCanisterId)).status !== "not_installed"
+			const canisterId = isAlreadyInstalled
+				? configCanisterId
+				: yield* createCanister(configCanisterId)
+
 			const canisterIdsService = yield* CanisterIdsService
 			const appDir = yield* Config.string("APP_DIR")
 			const { taskPath } = yield* TaskInfo
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
-			// TODO: network settings
 			yield* canisterIdsService.setCanisterId({
 				canisterName,
-				network: "local",
+				network: taskCtx.currentNetwork,
 				canisterId,
 			})
 			const outDir = path.join(appDir, iceDirName, "canisters", canisterName)
@@ -593,18 +626,10 @@ export const customCanister = <I = unknown, _SERVICE = unknown>(
 			create: makeCreateTask(canisterConfigOrFn, [Tags.CUSTOM]),
 			bindings: makeCustomBindingsTask(canisterConfigOrFn),
 
-			// TODO: maybe just the return value of install? like a cleanup
-			// delete: {
-			//   task: deleteCanister(config),
-			//   description: "some description",
-			//   tags: [],
-			//   ctx: ctx,
-			// },
 			build: makeBuildTask(canisterConfigOrFn),
-			// install: makeInstallTask<I>(),
 			install: makeInstallTask<I, Record<string, unknown>, _SERVICE>(),
 			stop: makeStopTask(),
-			delete: makeDeleteTask(),
+			remove: makeRemoveTask(),
 			deploy: makeDeployTask([Tags.CUSTOM]),
 			status: makeCanisterStatusTask([Tags.CUSTOM]),
 		},
@@ -647,7 +672,15 @@ export const canisterBuildGuard = Effect.gen(function* () {
 		canisterName,
 		`${canisterName}.did`,
 	)
-	const isGzipped = yield* fs.exists(path.join(appDir, iceDirName, "canisters", canisterName, `${canisterName}.wasm.gz`))
+	const isGzipped = yield* fs.exists(
+		path.join(
+			appDir,
+			iceDirName,
+			"canisters",
+			canisterName,
+			`${canisterName}.wasm.gz`,
+		),
+	)
 	const wasmPath = path.join(
 		appDir,
 		iceDirName,

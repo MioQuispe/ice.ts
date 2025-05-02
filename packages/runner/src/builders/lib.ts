@@ -3,8 +3,6 @@ import { Effect, Option } from "effect"
 import { getTaskByPath, getNodeByPath, TaskCtx } from "../tasks/lib.js"
 import { runTask, TaskInfo } from "../tasks/run.js"
 import { Tags } from "./types.js"
-// import { DfxService } from "../services/dfx.js"
-import { Replica } from "../services/replica.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
 import { Principal } from "@dfinity/principal"
 
@@ -22,6 +20,7 @@ export const makeCanisterStatusTask = (tags: string[]) => {
 		// TODO: type Task
 		provide: {},
 		effect: Effect.gen(function* () {
+			// TODO:
 			const network = "local"
 			const { replica } = yield* TaskCtx
 			const { taskPath } = yield* TaskInfo

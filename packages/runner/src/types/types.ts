@@ -42,7 +42,13 @@ export type ICEConfig = {
   roles: {
     [key: string]: string
   }
-  replica: ReplicaService
+  networks: {
+    [key: string]: {
+      replica: ReplicaService
+      host: string
+      port: number
+    }
+  }
 }
 
 export interface Task<
@@ -108,7 +114,7 @@ export type ICECtx = {
 }
 // TODO: fix
 export type ICEConfigFile = {
-  default: ICEConfig | ((ctx: ICECtx) => Promise<ICEConfig> | ICEConfig)
+  default: Partial<ICEConfig> | ((ctx: ICECtx) => Promise<Partial<ICEConfig>> | Partial<ICEConfig>)
 } & {
   [key: string]: TaskTreeNode
 }

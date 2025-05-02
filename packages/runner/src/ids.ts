@@ -1,5 +1,6 @@
-import { Effect, Layer, Context, Data, Config } from "effect"
+import { Effect, Layer, Context, Data, Config, ManagedRuntime } from "effect"
 import { Command, CommandExecutor, Path, FileSystem } from "@effect/platform"
+import { NodeContext } from "@effect/platform-node"
 import type { Principal } from "@dfinity/principal"
 import { Actor, HttpAgent, type SignIdentity } from "@dfinity/agent"
 import { IDL } from "@dfinity/candid"
@@ -7,116 +8,112 @@ import find from "find-process"
 import { idlFactory } from "./canisters/management_latest/management.did.js"
 import { Ed25519KeyIdentity } from "@dfinity/identity"
 import type { DfxJson } from "./types/schema.js"
-import { ConfigError, runtime } from "./index.js"
+import { ConfigError } from "./index.js"
 import type { ManagementActor } from "./types/types.js"
 import type { PlatformError } from "@effect/platform/Error"
 import os from "node:os"
 import psList from "ps-list"
 
 type User = {
-    accountId: string
-    principal: Principal
-    identity: SignIdentity
+	accountId: string
+	principal: Principal
+	identity: SignIdentity
 }
 
 const parseEd25519PrivateKey = (pem: string) => {
-  const cleanedPem = pem
-    .replace("-----BEGIN PRIVATE KEY-----", "")
-    .replace("-----END PRIVATE KEY-----", "")
-    .replace(/\n/g, "")
-    .trim();
-  // Obtain the DER hex string by base64-decoding the cleaned PEM.
-  const derHex = Buffer.from(cleanedPem, "base64").toString("hex");
-  // Remove the DER header information.
-  // (This static removal works if the key structure is as expected.)
-  const rawHex = derHex
-    .replace("3053020101300506032b657004220420", "")
-    .replace("a123032100", "");
-  const keyBytes = new Uint8Array(Buffer.from(rawHex, "hex"));
-  // Ensure we only pass the 32-byte secret to the identity.
-  const secretKey = keyBytes.slice(0, 32);
-  return Ed25519KeyIdentity.fromSecretKey(secretKey.buffer);
+	const cleanedPem = pem
+		.replace("-----BEGIN PRIVATE KEY-----", "")
+		.replace("-----END PRIVATE KEY-----", "")
+		.replace(/\n/g, "")
+		.trim()
+	// Obtain the DER hex string by base64-decoding the cleaned PEM.
+	const derHex = Buffer.from(cleanedPem, "base64").toString("hex")
+	// Remove the DER header information.
+	// (This static removal works if the key structure is as expected.)
+	const rawHex = derHex
+		.replace("3053020101300506032b657004220420", "")
+		.replace("a123032100", "")
+	const keyBytes = new Uint8Array(Buffer.from(rawHex, "hex"))
+	// Ensure we only pass the 32-byte secret to the identity.
+	const secretKey = keyBytes.slice(0, 32)
+	return Ed25519KeyIdentity.fromSecretKey(secretKey.buffer)
 }
 
-
 const getAccountId = (principal: string) =>
-  // TODO: get straight from ledger canister?
-  Effect.gen(function* () {
-    const command = Command.make(
-      "dfx",
-      "ledger",
-      "account-id",
-      "--of-principal",
-      principal,
-    )
-    const result = yield* Command.string(command)
-    return result.trim()
-  })
-
+	// TODO: get straight from ledger canister?
+	Effect.gen(function* () {
+		const command = Command.make(
+			"dfx",
+			"ledger",
+			"account-id",
+			"--of-principal",
+			principal,
+		)
+		const result = yield* Command.string(command)
+		return result.trim()
+	})
 
 const getCurrentIdentity = Effect.gen(function* () {
-  const command = Command.make("dfx", "identity", "whoami")
-  const result = yield* Command.string(command)
-  return result.trim()
+	const command = Command.make("dfx", "identity", "whoami")
+	const result = yield* Command.string(command)
+	return result.trim()
 })
 
 const getIdentity = (selection?: string) =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem
-      const path = yield* Path.Path
-      const identityName = selection ?? (yield* getCurrentIdentity)
-      // TODO: can we use effect/platform?
-      const identityPath = path.join(
-        os.homedir(),
-        ".config/dfx/identity",
-        identityName,
-        "identity.pem",
-      )
-  
-      const exists = yield* fs.exists(identityPath)
-      if (!exists) {
-        return yield* Effect.fail(
-          new ConfigError({ message: "Identity does not exist" }),
-        )
-      }
-  
-      const pem = yield* fs.readFileString(identityPath, "utf8")
-      const cleanedPem = pem
-        .replace("-----BEGIN PRIVATE KEY-----", "")
-        .replace("-----END PRIVATE KEY-----", "")
-        .replace("\n", "")
-        .trim()
-  
-      // TODO: support more key types?
-      const identity = parseEd25519PrivateKey(pem);
-      const principal = identity.getPrincipal().toText()
-      const accountId = yield* getAccountId(principal)
-  
-      return {
-        identity,
-        principal,
-        accountId,
-      }
-    })
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem
+		const path = yield* Path.Path
+		const identityName = selection ?? (yield* getCurrentIdentity)
+		// TODO: can we use effect/platform?
+		const identityPath = path.join(
+			os.homedir(),
+			".config/dfx/identity",
+			identityName,
+			"identity.pem",
+		)
+		const exists = yield* fs.exists(identityPath)
+		if (!exists) {
+			return yield* Effect.fail(
+				new ConfigError({ message: "Identity does not exist" }),
+			)
+		}
+
+		const pem = yield* fs.readFileString(identityPath, "utf8")
+		const cleanedPem = pem
+			.replace("-----BEGIN PRIVATE KEY-----", "")
+			.replace("-----END PRIVATE KEY-----", "")
+			.replace("\n", "")
+			.trim()
+		// TODO: support more key types?
+		const identity = parseEd25519PrivateKey(pem)
+		const principal = identity.getPrincipal().toText()
+		const accountId = yield* getAccountId(principal)
+		return {
+			identity,
+			principal,
+			accountId,
+		}
+	})
+
+const runtime = ManagedRuntime.make(Layer.mergeAll(NodeContext.layer))
 
 export const Ids = {
-    fromDfx: async (name: string) => {
-        // TODO: layers / runtime
-        const user = await runtime.runPromise(getIdentity(name))
-        return user
-    },
-    // createLocal: async () => {
-    // }
-    // fromSeed: async (seed: string) => {
-    // }
-    // fromPem: async (pem: string) => {
-    //     const identity = parseEd25519PrivateKey(pem);
-    //     const principal = identity.getPrincipal().toText()
-    //     const accountId = await runtime.runPromise(getAccountId(principal))
-    //     return {
-    //         identity,
-    //         principal,
-    //         accountId,
-    //     }
-    // }
+	fromDfx: async (name: string) => {
+		const user = await runtime.runPromise(getIdentity(name))
+		return user
+	},
+	// createLocal: async () => {
+	// }
+	// fromSeed: async (seed: string) => {
+	// }
+	// fromPem: async (pem: string) => {
+	//     const identity = parseEd25519PrivateKey(pem);
+	//     const principal = identity.getPrincipal().toText()
+	//     const accountId = await runtime.runPromise(getAccountId(principal))
+	//     return {
+	//         identity,
+	//         principal,
+	//         accountId,
+	//     }
+	// }
 }

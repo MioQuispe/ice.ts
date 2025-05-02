@@ -17,7 +17,8 @@ export const canistersStatusTask = () =>
 		const replica = yield* DefaultReplica
 		// TODO: ??
 		const agent = yield* Effect.tryPromise(() => HttpAgent.create({
-			host: replica.host,
+			host: `${replica.host}:${replica.port}`,
+			// TODO: identity
 		}))
 		const canisterStatusesEffects = Object.keys(canisterIdsMap).map(
 			(canisterName) =>

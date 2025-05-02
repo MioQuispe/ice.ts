@@ -405,9 +405,9 @@ const canisterCommand = defineCommand({
 						cancel("Operation cancelled.")
 						process.exit(0)
 					}
-					// if (!canister) {
-					//   return
-					// }
+					if (!canister) {
+						return
+					}
 					const action = (yield* Effect.tryPromise(() =>
 						p.select({
 							message: "Select an action",
@@ -418,6 +418,7 @@ const canisterCommand = defineCommand({
 								{ value: "bindings", label: "Bindings" },
 								{ value: "install", label: "Install" },
 								{ value: "status", label: "Status" },
+								{ value: "stop", label: "Stop" },
 								{ value: "remove", label: "Remove" },
 							],
 						}),

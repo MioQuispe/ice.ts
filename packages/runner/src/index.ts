@@ -6,6 +6,7 @@ import {
 	Logger,
 	ConfigProvider,
 	LogLevel,
+	Effect,
 } from "effect"
 import { NodeContext } from "@effect/platform-node"
 import { DfxDefaultReplica } from "./services/dfx.js"
@@ -21,8 +22,6 @@ import { Ids } from "./ids.js"
 export * from "./builders/index.js"
 export * from "./ids.js"
 
-
-
 // const defaultICEConfig: ICEConfig = {
 //       // TODO: dfx defaults etc.
 // 	  type: "system",
@@ -31,16 +30,19 @@ export * from "./ids.js"
 // 		default: Ids.fromDfx("default"),
 // 	  },
 // 	  roles: {
-// 		deployer: 
+// 		deployer:
 // 	  }
 //     }
 
 // is this where we construct the runtime / default environment?
 // TODO: can we make this async as well?
-export const ICE = (configOrFn: ICEConfig | ((ctx: ICECtx) => Promise<ICEConfig>)) => {
+export const Ice = (
+	configOrFn:
+		| Partial<ICEConfig>
+		| ((ctx: ICECtx) => Promise<Partial<ICEConfig>>),
+) => {
 	return configOrFn
 }
-
 
 export const configMap = new Map([
 	["APP_DIR", fs.realpathSync(process.cwd())],

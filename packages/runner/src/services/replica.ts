@@ -4,6 +4,7 @@ import type { canister_status_result } from "src/canisters/management_latest/man
 
 export type CanisterStatus = "not_installed" | "stopped" | "running"
 
+// TODO: clean this up
 export type CanisterInfo = canister_status_result | { status: "not_installed" }
 
 export class CanisterStatusError extends Data.TaggedError("CanisterStatusError")<{
@@ -58,7 +59,7 @@ export type ReplicaService = {
 		canisterId: string
 		agent: HttpAgent
 	}) => Effect.Effect<void, CanisterStopError>
-	deleteCanister: (params: {
+	removeCanister: (params: {
 		canisterId: string
 		agent: HttpAgent
 	}) => Effect.Effect<void, CanisterDeleteError>

@@ -347,11 +347,11 @@ export const stopCanister = (canisterId: string) =>
 		})
 	})
 
-export const deleteCanister = (canisterId: string) =>
+export const removeCanister = (canisterId: string) =>
 	Effect.gen(function* () {
 		const { roles: { deployer: { agent } }, replica } = yield* TaskCtx
 		// TODO: delete from canister_ids.json
-		yield* replica.deleteCanister({
+		yield* replica.removeCanister({
 			canisterId,
 			agent,
 		})
@@ -432,29 +432,10 @@ export const createActor = <T>({
 export const getCanisterInfo = (canisterId: string) =>
 	Effect.gen(function* () {
 		const { roles: { deployer: { agent } }, replica } = yield* TaskCtx
-		// TODO: canisterStatus implement it in dfx & pic services instead
-		// TODO: get from environment
 		const canisterInfo = yield* replica.getCanisterInfo({
 			canisterId,
 			agent,
 		})
-		// const canisterInfo = yield* Effect.tryPromise({
-		// 	try: async () => {
-		// 		// TODO: this might not be defined. where do we get it from?
-		// 		if (!canisterId) {
-		// 			return { status: "not_installed" }
-		// 		}
-		// 		try {
-		// 			return await 
-		// 		} catch (error) {
-		// 			return { status: "not_installed" }
-		// 		}
-		// 	},
-		// 	catch: (error) => {
-		// 		return error
-		// 	},
-		// })
-
 		// if (result.module_hash.length > 0) {
 		//   console.log(
 		//     `Canister ${canisterName} is already installed. Skipping deployment.`,

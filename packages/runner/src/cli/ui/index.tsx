@@ -298,7 +298,7 @@ const Logs = () => {
   )
 }
 
-const UI = ({ config, taskTree }: { config: ICEConfig; taskTree: TaskTree }) => {
+const UI = ({ config, taskTree }: { config: Partial<ICEConfig>; taskTree: TaskTree }) => {
   const { logs } = useICE();
   // Determine the available height for the logs panel.
   // For example, if you want the logs panel to be 10 rows high:
@@ -326,7 +326,7 @@ const CliApp = ({
   config,
   taskTree,
 }: {
-  config: ICEConfig
+  config: Partial<ICEConfig>
   taskTree: TaskTree
 }) => {
   const focusManager = useFocusManager()
@@ -366,7 +366,7 @@ export const uiTask = ({
   config,
   taskTree,
 }: {
-  config: ICEConfig
+  config: Partial<ICEConfig>
   taskTree: TaskTree
 }) =>
   Effect.gen(function* () {

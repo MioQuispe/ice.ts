@@ -377,7 +377,7 @@ const dfxReplicaImpl = Effect.gen(function* () {
 						}),
 				})
 			}),
-		deleteCanister: ({ canisterId, agent }) =>
+		removeCanister: ({ canisterId, agent }) =>
 			Effect.gen(function* () {
 				const mgmt = Actor.createActor<ManagementActor>(idlFactory, {
 					canisterId: "aaaaa-aa",

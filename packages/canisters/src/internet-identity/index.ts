@@ -4,9 +4,7 @@ import * as url from "node:url"
 import type { ActorSubclass } from "@dfinity/agent"
 import { idlFactory } from "./internet_identity.did.js"
 import type { InternetIdentityInit, _SERVICE } from "./internet_identity.types.js"
-import { ICE, customCanister, type TaskCtxShape } from "@ice.ts/runner"
-
-const ice = ICE()
+import { customCanister, type TaskCtxShape } from "@ice.ts/runner"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 

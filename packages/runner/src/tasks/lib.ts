@@ -35,7 +35,7 @@ const asyncRunTask = async <A>(task: Task): Promise<A> => {
 	return result as A
 }
 
-export type TaskCtxShape = {
+export interface TaskCtxShape {
 	// readonly network: string
 	// networks?: {
 	// 	[k: string]: ConfigNetwork
@@ -60,8 +60,15 @@ export type TaskCtxShape = {
 	}
 	readonly replica: ReplicaService
 	readonly runTask: typeof asyncRunTask
+	readonly currentNetwork: string
+	readonly networks: {
+		[key: string]: {
+			replica: ReplicaService
+			host: string
+			port: number
+		}
+	}
 }
-
 export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {}
 
 export class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
@@ -191,9 +198,30 @@ export const executeTasks = <A, E, R, I>(
 	Effect.gen(function* () {
 		const defaultReplica = yield* DefaultReplica
 		// TODO: yield* DefaultConfig?
-		const defaultUser = yield* Effect.tryPromise(() => Ids.fromDfx("default"))
+		const defaultUser = yield* Effect.tryPromise({
+			try: () => Ids.fromDfx("default"),
+			// TODO: tagged error
+			catch: () => new Error("Failed to get default user"),
+		})
+		const defaultNetworks = {
+			local: {
+				replica: defaultReplica,
+				host: "https://0.0.0.0",
+				port: 8080,
+			},
+			staging: {
+				replica: defaultReplica,
+				host: "https://staging.ic0.app",
+				port: 80,
+			},
+			ic: {
+				replica: defaultReplica,
+				host: "https://ic0.app",
+				port: 80,
+			},
+		}
 		const defaultConfig: ICEConfig = {
-			replica: defaultReplica,
+			// replica: defaultReplica,
 			users: {
 				default: defaultUser,
 			},
@@ -202,6 +230,9 @@ export const executeTasks = <A, E, R, I>(
 				minter: "default",
 				controller: "default",
 				treasury: "default",
+			},
+			networks: {
+				...defaultNetworks,
 			},
 		}
 		// Create a deferred for every task to hold its eventual result.
@@ -225,9 +256,14 @@ export const executeTasks = <A, E, R, I>(
 				const taskPath = yield* getTaskPathById(task.id)
 				progressCb({ taskId: task.id, taskPath, status: "starting" })
 				const { config } = yield* ICEConfigService
-				const currentReplica = config?.replica ?? defaultReplica
+				// TODO: get from cli args
+				const currentNetwork = "local"
+				const currentNetworkConfig =
+					config?.networks?.[currentNetwork] ?? defaultNetworks[currentNetwork]
+				const currentReplica = currentNetworkConfig.replica
 				const currentRoles = config?.roles ?? defaultConfig.roles
 				const currentUsers = config?.users ?? defaultConfig.users
+				const networks = config?.networks ?? defaultConfig.networks
 				// TODO: pre-initialize agents? this is repeated for each task now
 				const rolesResult = yield* Effect.all(
 					// TODO: default roles?
@@ -269,6 +305,8 @@ export const executeTasks = <A, E, R, I>(
 						// TODO: wrap with proxy?
 						runTask: asyncRunTask,
 						replica: currentReplica,
+						currentNetwork,
+						networks,
 						users: {
 							default: defaultUser,
 							...currentUsers,
