@@ -26,8 +26,6 @@ import { configMap, Ids } from "../index.js"
 import { runtime } from "../index.js"
 import { NodeContext } from "@effect/platform-node"
 import { DefaultReplica, type ReplicaService } from "../services/replica.js"
-import { PocketICService } from "src/services/pic.js"
-import { DfxReplica } from "src/services/dfx.js"
 
 const asyncRunTask = async <A>(task: Task): Promise<A> => {
 	// @ts-ignore
@@ -265,6 +263,7 @@ export const executeTasks = <A, E, R, I>(
 				const currentUsers = config?.users ?? defaultConfig.users
 				const networks = config?.networks ?? defaultConfig.networks
 				// TODO: pre-initialize agents? this is repeated for each task now
+				// save it in the replica?
 				const rolesResult = yield* Effect.all(
 					// TODO: default roles?
 					Object.entries(currentRoles).map(([name, role]) =>

@@ -625,7 +625,6 @@ export const customCanister = <I = unknown, _SERVICE = unknown>(
 		children: {
 			create: makeCreateTask(canisterConfigOrFn, [Tags.CUSTOM]),
 			bindings: makeCustomBindingsTask(canisterConfigOrFn),
-
 			build: makeBuildTask(canisterConfigOrFn),
 			install: makeInstallTask<I, Record<string, unknown>, _SERVICE>(),
 			stop: makeStopTask(),

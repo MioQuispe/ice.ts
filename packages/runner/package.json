@@ -13,8 +13,9 @@
     "ice": "./bin/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run copy-files",
     "dev": "tsc -w",
+    "copy-files": "node ./scripts/copy-files.js",
     "test": "vitest"
   },
   "dependencies": {

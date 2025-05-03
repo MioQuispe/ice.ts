@@ -1,6 +1,6 @@
 import { DfxReplica } from "./services/dfx.js"
 import { Moc } from "./services/moc.js"
-import { Principal } from "@dfinity/principal"
+import type { Principal } from "@dfinity/principal"
 import { sha256 } from "js-sha256"
 import { DeploymentError } from "./index.js"
 import { IDL } from "@dfinity/candid"
@@ -15,8 +15,6 @@ import {
 	decodeCreateCanisterResponse,
 	encodeCreateCanisterRequest,
 } from "./canisters/pic_management/index.js"
-import { PocketIc } from "@dfinity/pic"
-import { PocketICService } from "./services/pic.js"
 import { TaskCtx } from "./tasks/lib.js"
 import { Replica } from "./services/replica.js"
 // const pic = PocketIc.create()

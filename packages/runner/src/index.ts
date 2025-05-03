@@ -14,11 +14,12 @@ import type { ICECtx, TaskTree, TaskTreeNode } from "./types/types.js"
 import { Moc } from "./services/moc.js"
 import { TaskRegistry } from "./services/taskRegistry.js"
 import { ICEConfigService } from "./services/iceConfig.js"
-import { PocketICService } from "./services/pic.js"
+import { picReplicaImpl } from "./services/pic.js"
 import { CanisterIdsService } from "./services/canisterIds.js"
 import { TaskCtx } from "./tasks/lib.js"
 import type { ICEConfig } from "./types/types.js"
 import { Ids } from "./ids.js"
+import { DefaultReplica, Replica } from "./services/replica.js"
 export * from "./builders/index.js"
 export * from "./ids.js"
 
@@ -62,6 +63,15 @@ export class ConfigError extends Data.TaggedError("ConfigError")<{
 	message: string
 }> {}
 
+// const DefaultReplica = DfxDefaultReplica.pipe(
+// 	Layer.provide(NodeContext.layer),
+// 	Layer.provide(configLayer),
+// )
+const DefaultReplicaService = Layer.effect(DefaultReplica, picReplicaImpl).pipe(
+	Layer.provide(NodeContext.layer),
+	Layer.provide(configLayer),
+)
+
 // TODO: construct later? or this is just defaults
 export const DefaultsLayer = Layer.mergeAll(
 	NodeContext.layer,
@@ -71,10 +81,7 @@ export const DefaultsLayer = Layer.mergeAll(
 	// 	Layer.provide(configLayer),
 	// ),
 	// TODO: use pocket-ic
-	DfxDefaultReplica.pipe(
-		Layer.provide(NodeContext.layer),
-		Layer.provide(configLayer),
-	),
+	DefaultReplicaService,
 	Moc.Live.pipe(Layer.provide(NodeContext.layer)),
 	configLayer,
 	ICEConfigService.Live.pipe(Layer.provide(NodeContext.layer)),
