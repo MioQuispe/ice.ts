@@ -14,7 +14,7 @@ import type { ICECtx, TaskTree, TaskTreeNode } from "./types/types.js"
 import { Moc } from "./services/moc.js"
 import { TaskRegistry } from "./services/taskRegistry.js"
 import { ICEConfigService } from "./services/iceConfig.js"
-import { picReplicaImpl } from "./services/pic.js"
+import { picReplicaImpl } from "./services/pic/pic.js"
 import { CanisterIdsService } from "./services/canisterIds.js"
 import { TaskCtx } from "./tasks/lib.js"
 import type { ICEConfig } from "./types/types.js"
@@ -63,10 +63,11 @@ export class ConfigError extends Data.TaggedError("ConfigError")<{
 	message: string
 }> {}
 
-// const DefaultReplica = DfxDefaultReplica.pipe(
+// const DefaultReplicaService = DfxDefaultReplica.pipe(
 // 	Layer.provide(NodeContext.layer),
 // 	Layer.provide(configLayer),
 // )
+
 const DefaultReplicaService = Layer.effect(DefaultReplica, picReplicaImpl).pipe(
 	Layer.provide(NodeContext.layer),
 	Layer.provide(configLayer),

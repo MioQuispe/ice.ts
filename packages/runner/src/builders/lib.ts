@@ -71,10 +71,10 @@ export const makeCanisterStatusTask = (tags: string[]) => {
 			// 			}`,
 			// 		}),
 			// // })
-			const { roles: { deployer: { agent } } } = yield* TaskCtx
+			const { roles: { deployer: { identity } } } = yield* TaskCtx
 			const status = yield* replica.getCanisterStatus({
 				canisterId,
-				agent,
+				identity,
 			})
 			return { canisterName, canisterId, status }
 		}),

@@ -47,12 +47,12 @@ export const installCanister = ({
 		const wasmModuleHash = Array.from(sha256.array(wasm))
 		// const identity =
 		yield* Effect.logDebug(`Installing code for ${canisterId} at ${wasmPath}`)
-		const { roles: { deployer: { agent } } } = yield* TaskCtx
+		const { roles: { deployer: { identity } } } = yield* TaskCtx
 		yield* replica.installCode({
 			canisterId,
 			wasm,
 			encodedArgs,
-			agent,
+			identity,
 		})
 		yield* Effect.logDebug(`Code installed for ${canisterId}`)
 	})
@@ -218,10 +218,10 @@ export interface PicCreateCanisterParams {
 export const createCanister = (canisterId?: string) =>
 	Effect.gen(function* () {
 		const { users, replica } = yield* TaskCtx
-		const { roles: { deployer: { agent } } } = yield* TaskCtx
+		const { roles: { deployer: { identity } } } = yield* TaskCtx
 		const createdCanisterId = yield* replica.createCanister({
 			canisterId,
-			agent,
+			identity,
 		})
 		return createdCanisterId
 	})
@@ -332,7 +332,7 @@ export const encodeArgs = (
 
 export const stopCanister = (canisterId: string) =>
 	Effect.gen(function* () {
-		const { roles: { deployer: { agent } }, replica } = yield* TaskCtx
+		const { roles: { deployer: { identity } }, replica } = yield* TaskCtx
 		// const { mgmt } = yield* DfxService
 		// yield* Effect.tryPromise(() =>
 		// 	mgmt.stop_canister({
@@ -341,17 +341,17 @@ export const stopCanister = (canisterId: string) =>
 		// )
 		yield* replica.stopCanister({
 			canisterId,
-			agent,
+			identity,
 		})
 	})
 
 export const removeCanister = (canisterId: string) =>
 	Effect.gen(function* () {
-		const { roles: { deployer: { agent } }, replica } = yield* TaskCtx
+		const { roles: { deployer: { identity } }, replica } = yield* TaskCtx
 		// TODO: delete from canister_ids.json
 		yield* replica.removeCanister({
 			canisterId,
-			agent,
+			identity,
 		})
 		// const { mgmt } = yield* DfxService
 		// yield* Effect.tryPromise(() =>
@@ -371,8 +371,24 @@ export const createActor = <T>({
 	Effect.gen(function* () {
 		const { users, roles } = yield* TaskCtx
 		// TODO: do we need a separate role for this?
-		const agent = roles.deployer.agent
+		const { identity } = roles.deployer
 		const commandExecutor = yield* CommandExecutor.CommandExecutor
+
+		// TODO: optimize / cache?
+		const agent = yield* Effect.tryPromise({
+			try: () => HttpAgent.create({ identity }),
+			catch: (error) =>
+				new DeploymentError({
+					message: `Failed to create agent: ${error instanceof Error ? error.message : String(error)}`,
+				}),
+		})
+		yield* Effect.tryPromise({
+			try: () => agent.fetchRootKey(),
+			catch: (error) =>
+				new DeploymentError({
+					message: `Failed to fetch root key: ${error instanceof Error ? error.message : String(error)}`,
+				}),
+		})
 		// TODO: should be agnostic of dfx
 		const getControllers = () => Promise.resolve()
 		const addControllers = (controllers: Array<string>) =>
@@ -429,10 +445,10 @@ export const createActor = <T>({
 
 export const getCanisterInfo = (canisterId: string) =>
 	Effect.gen(function* () {
-		const { roles: { deployer: { agent } }, replica } = yield* TaskCtx
+		const { roles: { deployer: { identity } }, replica } = yield* TaskCtx
 		const canisterInfo = yield* replica.getCanisterInfo({
 			canisterId,
-			agent,
+			identity,
 		})
 		// if (result.module_hash.length > 0) {
 		//   console.log(

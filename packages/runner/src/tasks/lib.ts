@@ -53,7 +53,6 @@ export interface TaskCtxShape {
 			identity: SignIdentity
 			principal: string
 			accountId: string
-			agent: HttpAgent
 		}
 	}
 	readonly replica: ReplicaService
@@ -233,6 +232,52 @@ export const executeTasks = <A, E, R, I>(
 				...defaultNetworks,
 			},
 		}
+
+		const { config } = yield* ICEConfigService
+		// TODO: get from cli args
+		const currentNetwork = "local"
+		const currentNetworkConfig =
+			config?.networks?.[currentNetwork] ?? defaultNetworks[currentNetwork]
+		const currentReplica = currentNetworkConfig.replica
+		const currentRoles = config?.roles ?? defaultConfig.roles
+		const currentUsers = config?.users ?? defaultConfig.users
+		const networks = config?.networks ?? defaultConfig.networks
+		const initializedRoles = Object.fromEntries(
+			Object.entries(currentRoles).map(([name, user]) => {
+				return [name, currentUsers[user]]
+			}),
+		)
+		// TODO: pre-initialize agents? this is repeated for each task now
+		// save it in the replica?
+		// const rolesResult = yield* Effect.all(
+		// 	// TODO: default roles?
+		// 	Object.entries(currentRoles).map(([name, role]) =>
+		// 		Effect.gen(function* () {
+		// 			const agent = yield* Effect.tryPromise(() =>
+		// 				HttpAgent.create({
+		// 					identity: currentUsers[role].identity,
+		// 					host: `${currentReplica.host}:${currentReplica.port}`,
+		// 				}),
+		// 			)
+		// 			yield* Effect.tryPromise(() => agent.fetchRootKey())
+		// 			return {
+		// 				[name]: {
+		// 					identity: currentUsers[role].identity,
+		// 					principal: currentUsers[role].principal,
+		// 					accountId: currentUsers[role].accountId,
+		// 					agent,
+		// 				},
+		// 			}
+		// 		}),
+		// 	),
+		// 	{
+		// 		concurrency: "unbounded",
+		// 	},
+		// )
+		// const roles = rolesResult.reduce((acc, role) => {
+		// 	return Object.assign(acc, role)
+		// }, {})
+
 		// Create a deferred for every task to hold its eventual result.
 		const deferredMap = new Map<symbol, Deferred.Deferred<E | unknown, R>>()
 		for (const task of tasks) {
@@ -253,46 +298,6 @@ export const executeTasks = <A, E, R, I>(
 				}
 				const taskPath = yield* getTaskPathById(task.id)
 				progressCb({ taskId: task.id, taskPath, status: "starting" })
-				const { config } = yield* ICEConfigService
-				// TODO: get from cli args
-				const currentNetwork = "local"
-				const currentNetworkConfig =
-					config?.networks?.[currentNetwork] ?? defaultNetworks[currentNetwork]
-				const currentReplica = currentNetworkConfig.replica
-				const currentRoles = config?.roles ?? defaultConfig.roles
-				const currentUsers = config?.users ?? defaultConfig.users
-				const networks = config?.networks ?? defaultConfig.networks
-				// TODO: pre-initialize agents? this is repeated for each task now
-				// save it in the replica?
-				const rolesResult = yield* Effect.all(
-					// TODO: default roles?
-					Object.entries(currentRoles).map(([name, role]) =>
-						Effect.gen(function* () {
-							const agent = yield* Effect.tryPromise(() =>
-								HttpAgent.create({
-									identity: currentUsers[role].identity,
-									host: `${currentReplica.host}:${currentReplica.port}`,
-								}),
-							)
-							yield* Effect.tryPromise(() => agent.fetchRootKey())
-							return {
-								[name]: {
-									identity: currentUsers[role].identity,
-									principal: currentUsers[role].principal,
-									accountId: currentUsers[role].accountId,
-									agent,
-								},
-							}
-						}),
-					),
-					{
-						concurrency: "unbounded",
-					},
-				)
-
-				const roles = rolesResult.reduce((acc, role) => {
-					return Object.assign(acc, role)
-				}, {})
 
 				const taskLayer = Layer.mergeAll(
 					Layer.succeed(TaskInfo, {
@@ -310,7 +315,7 @@ export const executeTasks = <A, E, R, I>(
 							default: defaultUser,
 							...currentUsers,
 						},
-						roles,
+						roles: initializedRoles,
 					}),
 					Layer.succeed(DependencyResults, {
 						dependencies: dependencyResults,

@@ -146,6 +146,7 @@ export const CapRouter = (
       return {
         candid: path.resolve(__dirname, "./cap/cap-router/cap-router.did"),
         wasm: path.resolve(__dirname, "./cap/cap-router/cap-router.wasm.gz"),
+        // subnetType: "application",
         canisterId: initArgs?.canisterId ?? CapRouterIds.local,
       }
     })

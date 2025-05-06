@@ -386,6 +386,12 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 
 			const configCanisterId = canisterConfig?.canisterId
 			// TODO: do we need to optimize this?
+			// TODO: use this directly instead of getCanisterInfo
+			// const { roles: { deployer: { identity } }, replica } = yield* TaskCtx
+			// const canisterInfo = yield* replica.getCanisterInfo({
+			// 	canisterId,
+			// 	identity,
+			// })
 			const isAlreadyInstalled =
 				configCanisterId &&
 				(yield* getCanisterInfo(configCanisterId)).status !== "not_installed"

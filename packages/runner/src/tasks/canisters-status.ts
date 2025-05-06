@@ -7,6 +7,7 @@ import { filterNodes } from "./lib.js"
 import { runTask, TaskInfo } from "./index.js"
 import { DefaultReplica, Replica } from "../services/replica.js"
 import { HttpAgent } from "@dfinity/agent"
+import { Ed25519KeyIdentity } from "@dfinity/identity"
 
 export const canistersStatusTask = () =>
 	Effect.gen(function* () {
@@ -16,10 +17,13 @@ export const canistersStatusTask = () =>
 		// TODO: what if we have multiple replicas?
 		const replica = yield* DefaultReplica
 		// TODO: ??
-		const agent = yield* Effect.tryPromise(() => HttpAgent.create({
-			host: `${replica.host}:${replica.port}`,
-			// TODO: identity
-		}))
+		// const agent = yield* Effect.tryPromise(() => HttpAgent.create({
+		// 	host: `${replica.host}:${replica.port}`,
+		// 	// TODO: identity
+		// }))
+
+		// TODO: hmm?? get from default config?
+		const identity = Ed25519KeyIdentity.generate()
 		const canisterStatusesEffects = Object.keys(canisterIdsMap).map(
 			(canisterName) =>
 				Effect.either(
@@ -34,7 +38,7 @@ export const canistersStatusTask = () =>
 						}
 						const status = yield* replica.getCanisterInfo({
 							canisterId,
-							agent,
+							identity,
 						})
 						return { canisterName, canisterId, status }
 					}),

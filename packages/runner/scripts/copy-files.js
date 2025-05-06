@@ -6,7 +6,7 @@ const shell = require('shelljs');
 import path from 'node:path';
 
 const patterns = [
-  'src/services/pocket-ic',
+  'src/services/pic/pocket-ic',
 ];
 const distDir = 'dist';
 

@@ -27,6 +27,10 @@ export class CanisterDeleteError extends Data.TaggedError("CanisterDeleteError")
 	readonly message: string
 }> {}
 
+export class AgentError extends Data.TaggedError("AgentError")<{
+	readonly message: string
+}> {}
+
 export type ReplicaService = {
 	host: string
 	port: number
@@ -43,30 +47,30 @@ export type ReplicaService = {
 		canisterId: string
 		wasm: Uint8Array
 		encodedArgs: Uint8Array
-		agent: HttpAgent
+		identity: SignIdentity
 		// TODO: progress callback?
-	}) => Effect.Effect<void, CanisterInstallError>
+	}) => Effect.Effect<void, CanisterInstallError | AgentError | CanisterStatusError>
 	// uninstallCode: (canisterId: string) => Effect.Effect<void, unknown, unknown>
 	getCanisterStatus: (params: {
 		canisterId: string
-		agent: HttpAgent
-	}) => Effect.Effect<CanisterStatus, CanisterStatusError>
+		identity: SignIdentity
+	}) => Effect.Effect<CanisterStatus, CanisterStatusError | AgentError>
 	getCanisterInfo: (params: {
 		canisterId: string
-		agent: HttpAgent
-	}) => Effect.Effect<CanisterInfo, CanisterStatusError>
+		identity: SignIdentity
+	}) => Effect.Effect<CanisterInfo, CanisterStatusError | AgentError>
 	stopCanister: (params: {
 		canisterId: string
-		agent: HttpAgent
-	}) => Effect.Effect<void, CanisterStopError>
+		identity: SignIdentity
+	}) => Effect.Effect<void, CanisterStopError | AgentError>
 	removeCanister: (params: {
 		canisterId: string
-		agent: HttpAgent
-	}) => Effect.Effect<void, CanisterDeleteError>
+		identity: SignIdentity
+	}) => Effect.Effect<void, CanisterDeleteError | AgentError>
 	createCanister: (params: {
 		canisterId: string | undefined
-		agent: HttpAgent
-	}) => Effect.Effect<string, CanisterCreateError | CanisterStatusError> // returns canister id
+		identity: SignIdentity
+	}) => Effect.Effect<string, CanisterCreateError | CanisterStatusError | AgentError> // returns canister id
 }
 
 export class Replica extends Context.Tag("Replica")<

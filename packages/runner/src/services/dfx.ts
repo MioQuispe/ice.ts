@@ -25,6 +25,7 @@ import {
 	CanisterDeleteError,
 	DefaultReplica,
 	Replica,
+	AgentError,
 } from "./replica.js"
 import { Opt } from "../canister.js"
 import { TaskCtx } from "src/tasks/lib.js"
@@ -69,6 +70,40 @@ const dfxReplicaImpl = Effect.gen(function* () {
 	const port = 8080
 	const host = "http://0.0.0.0"
 
+	const getAgent = (identity: SignIdentity) =>
+		// TODO: cache these
+		Effect.gen(function* () {
+			const agent = yield* Effect.tryPromise({
+				try: () =>
+					HttpAgent.create({
+						identity,
+						host: `${host}:${port}`,
+					}),
+				catch: (error) =>
+					new AgentError({
+						message: `Failed to create agent: ${error instanceof Error ? error.message : String(error)}`,
+					}),
+			})
+			yield* Effect.tryPromise({
+				try: () => agent.fetchRootKey(),
+				catch: (error) =>
+					new AgentError({
+						message: `Failed to fetch root key: ${error instanceof Error ? error.message : String(error)}`,
+					}),
+			})
+			return agent
+		})
+
+	const getMgmt = (identity: SignIdentity) =>
+		Effect.gen(function* () {
+			const agent = yield* getAgent(identity)
+			const mgmt = Actor.createActor<ManagementActor>(idlFactory, {
+				canisterId: "aaaaa-aa",
+				agent,
+			})
+			return mgmt
+		})
+
 	// const processes = yield* Effect.tryPromise(() =>
 	//   psList({
 	//     all: true,
@@ -91,15 +126,12 @@ const dfxReplicaImpl = Effect.gen(function* () {
 	// TODO: create errors
 	const getCanisterStatus = ({
 		canisterId,
-		agent,
-	}: { canisterId: string; agent: HttpAgent }) =>
+		identity,
+	}: { canisterId: string; identity: SignIdentity }) =>
 		Effect.gen(function* () {
 			// TODO: canisterStatus implement it in dfx & pic services instead
 			// TODO: get from environment
-			const mgmt = Actor.createActor<ManagementActor>(idlFactory, {
-				canisterId: "aaaaa-aa",
-				agent,
-			})
+			const mgmt = yield* getMgmt(identity)
 			const canisterInfo = yield* Effect.tryPromise({
 				try: async () => {
 					// TODO: throw error instead? not sure
@@ -143,15 +175,12 @@ const dfxReplicaImpl = Effect.gen(function* () {
 
 	const getCanisterInfo = ({
 		canisterId,
-		agent,
-	}: { canisterId: string; agent: HttpAgent }) =>
+		identity,
+	}: { canisterId: string; identity: SignIdentity }) =>
 		Effect.gen(function* () {
 			// TODO: canisterStatus implement it in dfx & pic services instead
 			// TODO: get from environment
-			const mgmt = Actor.createActor<ManagementActor>(idlFactory, {
-				canisterId: "aaaaa-aa",
-				agent,
-			})
+			const mgmt = yield* getMgmt(identity)
 			const canisterInfo = yield* Effect.tryPromise({
 				try: async () => {
 					// TODO: throw error instead? not sure
@@ -184,15 +213,12 @@ const dfxReplicaImpl = Effect.gen(function* () {
 		host,
 		port,
 		// TODO: implement methods
-		installCode: ({ canisterId, wasm, encodedArgs, agent }) =>
+		installCode: ({ canisterId, wasm, encodedArgs, identity }) =>
 			Effect.gen(function* () {
 				const maxSize = 3670016
 				const isOverSize = wasm.length > maxSize
 				const wasmModuleHash = Array.from(sha256.array(wasm))
-				const mgmt = Actor.createActor<ManagementActor>(idlFactory, {
-					canisterId: "aaaaa-aa",
-					agent,
-				})
+				const mgmt = yield* getMgmt(identity)
 				yield* Effect.logDebug(`Installing code for ${canisterId}`)
 				if (isOverSize) {
 					// TODO: proper error handling if fails?
@@ -295,23 +321,21 @@ const dfxReplicaImpl = Effect.gen(function* () {
 				}
 				yield* Effect.logDebug(`Code installed for ${canisterId}`)
 			}),
-		createCanister: ({ canisterId, agent }) =>
+		createCanister: ({ canisterId, identity }) =>
 			Effect.gen(function* () {
-				const mgmt = Actor.createActor<ManagementActor>(idlFactory, {
-					canisterId: "aaaaa-aa",
-					agent,
-				})
-				const controller = yield* Effect.tryPromise({
-					try: () => agent.getPrincipal(),
-					catch: (error) =>
-						new CanisterCreateError({
-							message: `Failed to get controller: ${error instanceof Error ? error.message : String(error)}`,
-						}),
-				})
+				const mgmt = yield* getMgmt(identity)
+				const controller = identity.getPrincipal()
+				// const controller = yield* Effect.tryPromise({
+				// 	try: () => identity.getPrincipal(),
+				// 	catch: (error) =>
+				// 		new CanisterCreateError({
+				// 			message: `Failed to get controller: ${error instanceof Error ? error.message : String(error)}`,
+				// 		}),
+				// })
 				if (canisterId) {
 					const canisterStatus = yield* getCanisterStatus({
 						canisterId,
-						agent,
+						identity,
 					})
 					if (canisterStatus !== "not_installed") {
 						return canisterId
@@ -360,12 +384,9 @@ const dfxReplicaImpl = Effect.gen(function* () {
 				})
 				return createResult.canister_id.toText()
 			}),
-		stopCanister: ({ canisterId, agent }) =>
+		stopCanister: ({ canisterId, identity }) =>
 			Effect.gen(function* () {
-				const mgmt = Actor.createActor<ManagementActor>(idlFactory, {
-					canisterId: "aaaaa-aa",
-					agent,
-				})
+				const mgmt = yield* getMgmt(identity)
 				yield* Effect.tryPromise({
 					try: () =>
 						mgmt.stop_canister({
@@ -377,12 +398,9 @@ const dfxReplicaImpl = Effect.gen(function* () {
 						}),
 				})
 			}),
-		removeCanister: ({ canisterId, agent }) =>
+		removeCanister: ({ canisterId, identity }) =>
 			Effect.gen(function* () {
-				const mgmt = Actor.createActor<ManagementActor>(idlFactory, {
-					canisterId: "aaaaa-aa",
-					agent,
-				})
+				const mgmt = yield* getMgmt(identity)
 				yield* Effect.tryPromise({
 					try: () =>
 						mgmt.delete_canister({
