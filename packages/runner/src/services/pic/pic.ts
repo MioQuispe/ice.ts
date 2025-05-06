@@ -387,6 +387,11 @@ export const picReplicaImpl = Effect.gen(function* () {
 					canisterId,
 					identity,
 				})
+				// const mode =
+				// 	canisterInfo.status === "not_installed" ? "install" : "reinstall"
+				// TODO: "install" doesnt work for certain canisters for some reason
+				const mode = "reinstall"
+
 				yield* Effect.logDebug(
 					`pic install code: Canister info: ${canisterInfo}`,
 				)
@@ -470,14 +475,25 @@ export const picReplicaImpl = Effect.gen(function* () {
 					})
 				} else {
 					yield* Effect.tryPromise({
-						try: () =>
-							pic.installCode({
-								arg: encodedArgs.buffer,
-								sender: identity.getPrincipal(),
-								canisterId: Principal.fromText(canisterId),
-								wasm: wasm.buffer,
-								// targetSubnetId: nnsSubnet?.id!,
-							}),
+						try: () => {
+							if (mode === "reinstall") {
+								return pic.reinstallCode({
+									arg: encodedArgs.buffer,
+									sender: identity.getPrincipal(),
+									canisterId: Principal.fromText(canisterId),
+									wasm: wasm.buffer,
+									// targetSubnetId: nnsSubnet?.id!,
+								})
+							} else {
+								return pic.installCode({
+									arg: encodedArgs.buffer,
+									sender: identity.getPrincipal(),
+									canisterId: Principal.fromText(canisterId),
+									wasm: wasm.buffer,
+									// targetSubnetId: nnsSubnet?.id!,
+								})
+							}
+						},
 						// TODO: BadIngressMessage doesnt stop due to polling
 						// mgmt.install_code({
 						// 	// arg: encodedArgs,
@@ -506,7 +522,7 @@ export const picReplicaImpl = Effect.gen(function* () {
 							return new CanisterInstallError({
 								message: `Failed to install code: ${error instanceof Error ? error.message : String(error)}`,
 							})
-						}
+						},
 					})
 				}
 				yield* Effect.logDebug(`Code installed for ${canisterId}`)
