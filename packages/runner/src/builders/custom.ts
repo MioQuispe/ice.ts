@@ -19,7 +19,6 @@ import { TaskInfo } from "../tasks/run.js"
 import { TaskCtx } from "../tasks/lib.js"
 import { DependencyResults } from "../tasks/run.js"
 import {
-	createActor,
 	createCanister,
 	removeCanister,
 	generateDIDJS,
@@ -147,8 +146,8 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 		effect: Effect.gen(function* () {
 			yield* Effect.logDebug("Starting custom canister installation")
 			const taskCtx = yield* TaskCtx
+			const { replica } = taskCtx
 			const { dependencies } = yield* DependencyResults
-
 			const { taskPath } = yield* TaskInfo
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			// TODO: this is a hack, we should have a better way to handle this
@@ -252,9 +251,10 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 				wasmPath,
 			})
 			yield* Effect.logDebug(`Canister ${canisterName} installed successfully`)
-			const actor = yield* createActor<_SERVICE>({
+			const actor = yield* replica.createActor<_SERVICE>({
 				canisterId,
 				canisterDID,
+				identity: taskCtx.roles.deployer.identity,
 			})
 			return {
 				canisterId,
@@ -382,8 +382,8 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 			const path = yield* Path.Path
 			const fs = yield* FileSystem.FileSystem
 			const taskCtx = yield* TaskCtx
+			const { taskPath } = yield* TaskInfo
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
-
 			const configCanisterId = canisterConfig?.canisterId
 			// TODO: do we need to optimize this?
 			// TODO: use this directly instead of getCanisterInfo
@@ -392,16 +392,28 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 			// 	canisterId,
 			// 	identity,
 			// })
+			const {
+				roles: {
+					deployer: { identity },
+				},
+				replica,
+			} = yield* TaskCtx
 			const isAlreadyInstalled =
 				configCanisterId &&
-				(yield* getCanisterInfo(configCanisterId)).status !== "not_installed"
+				(yield* replica.getCanisterInfo({
+					canisterId: configCanisterId,
+					identity,
+				})).status !== "not_installed"
+
 			const canisterId = isAlreadyInstalled
 				? configCanisterId
-				: yield* createCanister(configCanisterId)
+				: yield* replica.createCanister({
+						canisterId: configCanisterId,
+						identity,
+					})
 
 			const canisterIdsService = yield* CanisterIdsService
 			const appDir = yield* Config.string("APP_DIR")
-			const { taskPath } = yield* TaskInfo
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			yield* canisterIdsService.setCanisterId({
 				canisterName,

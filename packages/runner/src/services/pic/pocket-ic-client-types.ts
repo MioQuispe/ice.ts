@@ -586,6 +586,26 @@ export function decodeUploadBlobResponse(
 
 //#endregion UploadBlob
 
+//#region MakeLive
+
+export interface MakeLiveRequest {
+	artificialDelayMs: number
+}
+
+export interface EncodedMakeLiveRequest {
+	artificial_delay_ms: number
+}
+
+export function encodeMakeLiveRequest(
+	req: MakeLiveRequest,
+): EncodedMakeLiveRequest {
+	return {
+		artificial_delay_ms: req.artificialDelayMs
+	}
+}
+
+//#endregion MakeLive
+
 //#region SetStableMemory
 
 export interface SetStableMemoryRequest {

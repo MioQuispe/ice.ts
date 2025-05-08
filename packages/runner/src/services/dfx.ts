@@ -29,6 +29,7 @@ import {
 } from "./replica.js"
 import { Opt } from "../canister.js"
 import { TaskCtx } from "src/tasks/lib.js"
+import type * as ActorTypes from "../types/actor.js"
 
 export const dfxDefaults: DfxJson = {
 	defaults: {
@@ -471,6 +472,20 @@ const dfxReplicaImpl = Effect.gen(function* () {
 		// 		}
 		// 		return port
 		// 	}),
+		createActor: <_SERVICE>({
+			canisterId,
+			canisterDID,
+			identity,
+		}: { canisterId: string; canisterDID: any; identity: SignIdentity }) =>
+			Effect.gen(function* () {
+				const agent = yield* getAgent(identity)
+				// return agent.createActor(canisterDID)
+				return Actor.createActor<_SERVICE>(canisterDID.idlFactory, {
+					// TODO: users.deployer?
+					agent,
+					canisterId,
+				}) as ActorTypes.ActorSubclass<_SERVICE>
+			}),
 	})
 })
 

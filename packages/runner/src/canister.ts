@@ -369,14 +369,18 @@ export const createActor = <T>({
 	canisterDID: any
 }) =>
 	Effect.gen(function* () {
-		const { users, roles } = yield* TaskCtx
+		const { users, roles, replica } = yield* TaskCtx
 		// TODO: do we need a separate role for this?
 		const { identity } = roles.deployer
 		const commandExecutor = yield* CommandExecutor.CommandExecutor
 
+		// TODO: pic has its own createActor ? cant use HttpAgent directly?
 		// TODO: optimize / cache?
 		const agent = yield* Effect.tryPromise({
-			try: () => HttpAgent.create({ identity }),
+			try: () => HttpAgent.create({ 
+				identity,
+				host: `${replica.host}:${replica.port}`,
+			}),
 			catch: (error) =>
 				new DeploymentError({
 					message: `Failed to create agent: ${error instanceof Error ? error.message : String(error)}`,

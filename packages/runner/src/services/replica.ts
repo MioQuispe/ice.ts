@@ -1,6 +1,7 @@
 import { type Effect, Context, Data } from "effect"
-import type { HttpAgent, SignIdentity } from "@dfinity/agent"
+import type { ActorSubclass, HttpAgent, SignIdentity } from "@dfinity/agent"
 import type { canister_status_result } from "src/canisters/management_latest/management.types.js"
+import { ActorInterface } from "@dfinity/pic"
 
 export type CanisterStatus = "not_installed" | "stopped" | "running"
 
@@ -17,6 +18,7 @@ export class CanisterInstallError extends Data.TaggedError("CanisterInstallError
 
 export class CanisterCreateError extends Data.TaggedError("CanisterCreateError")<{
 	readonly message: string
+	readonly cause?: Error
 }> {}
 
 export class CanisterStopError extends Data.TaggedError("CanisterStopError")<{
@@ -71,6 +73,11 @@ export type ReplicaService = {
 		canisterId: string | undefined
 		identity: SignIdentity
 	}) => Effect.Effect<string, CanisterCreateError | CanisterStatusError | AgentError> // returns canister id
+	createActor: <_SERVICE>(params: {
+		canisterId: string
+		canisterDID: any
+		identity: SignIdentity
+	}) => Effect.Effect<ActorInterface<_SERVICE>, AgentError>
 }
 
 export class Replica extends Context.Tag("Replica")<

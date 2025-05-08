@@ -77,6 +77,9 @@ import {
 	GetControllersResponse,
 	decodeGetControllersResponse,
 	encodeGetControllersRequest,
+	MakeLiveRequest,
+	EncodedMakeLiveRequest,
+	encodeMakeLiveRequest,
 } from "./pocket-ic-client-types.js"
 
 const PROCESSING_TIME_VALUE_MS = 30_000
@@ -97,24 +100,28 @@ export class PocketIcClient {
 			req?.processingTimeoutMs ?? PROCESSING_TIME_VALUE_MS
 		const serverClient = new Http2Client(url, processingTimeoutMs)
 
-		const res = await serverClient.jsonPost<
-			EncodedCreateInstanceRequest,
-			CreateInstanceResponse
-		>({
+		let instanceId = 0
+		const instances = await serverClient.jsonGet<Array<string>>({
 			path: "/instances",
-			body: encodeCreateInstanceRequest(req),
 		})
+		// TODO: instanceId might be more than +1 away from length
+		if (instances.length === 0) {
+			const res = await serverClient.jsonPost<
+				EncodedCreateInstanceRequest,
+				CreateInstanceResponse
+			>({
+				path: "/instances",
+				body: encodeCreateInstanceRequest(req),
+			})
 
-		// console.log("create instance res", JSON.stringify(res))
+			if ("Error" in res) {
+				console.error("Error creating instance", res.Error.message)
 
-		if ("Error" in res) {
-			console.error("Error creating instance", res.Error.message)
+				throw new Error(res.Error.message)
+			}
 
-			throw new Error(res.Error.message)
+			instanceId = res.Created.instance_id
 		}
-
-		const instanceId = res.Created.instance_id
-
 		return new PocketIcClient(serverClient, `/instances/${instanceId}`)
 	}
 
@@ -127,6 +134,14 @@ export class PocketIcClient {
 		})
 
 		this.isInstanceDeleted = true
+	}
+
+	public async makeLive(req: MakeLiveRequest): Promise<void> {
+		this.assertInstanceNotDeleted()
+		await this.post<EncodedMakeLiveRequest, {}>(
+			"/auto_progress",
+			encodeMakeLiveRequest(req),
+		)
 	}
 
 	public async getControllers(
@@ -313,14 +328,12 @@ export class PocketIcClient {
 		this.assertInstanceNotDeleted()
 
 		let res: EncodedSubmitCanisterCallResponse
-        // TODO: this might cause issues if call fails for some other reason
+		// TODO: this might cause issues if call fails for some other reason
 		if (
 			req.canisterId.toText() === "aaaaa-aa" &&
-			(
-                req.method === "canister_status"
-				// req.method === "install_code" ||
-				// req.method === "install_chunked_code"
-            )
+			req.method === "canister_status"
+			// req.method === "install_code" ||
+			// req.method === "install_chunked_code"
 		) {
 			res = await this.postNoPoll<
 				EncodedSubmitCanisterCallRequest,
@@ -362,7 +375,7 @@ export class PocketIcClient {
 		body?: B,
 	): Promise<R> {
 		// @ts-ignore
-		return await this.serverClient.jsonPostNoPoll<B, R>({
+		return await this.serverClient.jsonPost<B, R>({
 			path: `${this.instancePath}${endpoint}`,
 			body,
 		})

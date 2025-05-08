@@ -1,7 +1,12 @@
 import { Effect, Layer, Context, Data, Config, Ref } from "effect"
 import { Command, CommandExecutor, Path, FileSystem } from "@effect/platform"
 import { Principal } from "@dfinity/principal"
-import { Actor, HttpAgent, type SignIdentity } from "@dfinity/agent"
+import {
+	Actor,
+	ActorSubclass,
+	HttpAgent,
+	type SignIdentity,
+} from "@dfinity/agent"
 import { IDL } from "@dfinity/candid"
 import find from "find-process"
 import { idlFactory } from "../../canisters/management_latest/management.did.js"
@@ -12,7 +17,12 @@ import type { ManagementActor } from "../../types/types.js"
 import type { PlatformError } from "@effect/platform/Error"
 import os from "node:os"
 import psList from "ps-list"
-import { PocketIc, PocketIcServer, createActorClass } from "@dfinity/pic"
+import {
+	ActorInterface,
+	PocketIc,
+	PocketIcServer,
+	createActorClass,
+} from "@dfinity/pic"
 import { PocketIcClient as CustomPocketIcClient } from "./pocket-ic-client.js"
 import {
 	AgentError,
@@ -121,13 +131,30 @@ export const picReplicaImpl = Effect.gen(function* () {
 	// @ts-ignore
 	const pic: PocketIc = new PocketIc(customPocketIcClient)
 
-	const topology = yield* Effect.tryPromise({
-		try: () => customPocketIcClient.getTopology(),
+	// /{id}/auto_progress
+	// pic.makeLive()
+	// pub struct AutoProgressConfig {
+	// 	pub artificial_delay_ms: Option<u64>,
+	// }
+	yield* Effect.tryPromise({
+		try: () =>
+			customPocketIcClient.makeLive({
+				artificialDelayMs: 0,
+			}),
 		catch: (error) =>
 			new AgentError({
-				message: `Failed to get topology: ${error instanceof Error ? error.message : String(error)}`,
+				message: `Failed to make pic live: ${error instanceof Error ? error.message : String(error)}`,
 			}),
-	})
+	}).pipe(Effect.ignore)
+
+	// const topology = yield* Effect.tryPromise({
+	// 	try: () => customPocketIcClient.getTopology(),
+	// 	catch: (error) =>
+	// 		new AgentError({
+	// 			message: `Failed to get topology: ${error instanceof Error ? error.message : String(error)}`,
+	// 		}),
+	// })
+
 	// const applicationSubnets = yield* Effect.tryPromise({
 	// 	try: () => pic.getApplicationSubnets(),
 	// 	catch: (error) =>
@@ -135,27 +162,13 @@ export const picReplicaImpl = Effect.gen(function* () {
 	// 			message: `Failed to get application subnets: ${error instanceof Error ? error.message : String(error)}`,
 	// 		}),
 	// })
-	// topology {
-	// 	'qidue-b5dtt-2qlvl-izwys-ayphk-ov2vd-oq3dv-b7afy-b7e5f-ujzhi-oqe': {
-	// 	  id: Principal { _arr: [Uint8Array], _isPrincipal: true },
-	// 	  type: 'NNS',
-	// 	  size: undefined,
-	// 	  canisterRanges: [ [Object], [Object], [Object] ]
-	// 	},
-	// 	'j3hn4-tfek2-2dzwi-2fiwt-yl43g-lljef-o5tyt-oi44t-pnvrw-tbquz-bae': {
-	// 	  id: Principal { _arr: [Uint8Array], _isPrincipal: true },
-	// 	  type: 'Application',
-	// 	  size: undefined,
-	// 	  canisterRanges: [ [Object] ]
-	// 	}
-	//   }
-	const nnsSubnet = Object.values(topology).find(
-		(subnet) => subnet.type === "NNS",
-	)
-	const appSubnet = Object.values(topology).find(
-		(subnet) => subnet.type === "Application",
-	)
-	console.log("topology", topology)
+
+	// const nnsSubnet = Object.values(topology).find(
+	// 	(subnet) => subnet.type === "NNS",
+	// )
+	// const appSubnet = Object.values(topology).find(
+	// 	(subnet) => subnet.type === "Application",
+	// )
 
 	const getAgent = (identity: SignIdentity) =>
 		// TODO: cache these
@@ -202,13 +215,7 @@ export const picReplicaImpl = Effect.gen(function* () {
 		identity,
 	}: { canisterId: string; identity: SignIdentity }) =>
 		Effect.gen(function* () {
-			// TODO: canisterStatus implement it in dfx & pic services instead
-			// TODO: get from environment
 			const mgmt = yield* getMgmt(identity)
-			// const mgmt = Actor.createActor<ManagementActor>(idlFactory, {
-			// 	canisterId: "aaaaa-aa",
-			// 	agent,
-			// })
 			const canisterInfo = yield* Effect.tryPromise({
 				try: async () => {
 					// TODO: throw error instead? not sure
@@ -255,31 +262,7 @@ export const picReplicaImpl = Effect.gen(function* () {
 		identity,
 	}: { canisterId: string; identity: SignIdentity }) =>
 		Effect.gen(function* () {
-			// TODO: canisterStatus implement it in dfx & pic services instead
-			// TODO: get from environment
-			// const mgmt = Actor.createActor<ManagementActor>(idlFactory, {
-			// 	canisterId: "aaaaa-aa",
-			// 	agent,
-			// })
 			const mgmt = yield* getMgmt(identity)
-			// const agent = yield* getAgent(identity)
-			// const status = yield* Effect.tryPromise({
-			// 	try: async () =>
-			// 		await DfinityCanisterStatus.request({
-			// 			agent,
-			// 			canisterId: Principal.fromText(canisterId),
-			// 			// paths: ["status"],
-			// 			strategy: failImmediatelyStrategy, // <- override here
-			// 		}),
-			// 	catch: (error) => {
-			// 		console.log("error getting canister info")
-			// 		return new CanisterStatusError({
-			// 			message: `Failed to get canister info: ${error instanceof Error ? error.message : String(error)}`,
-			// 		})
-			// 	},
-			// })
-
-			// console.log("finished getting canister info", status)
 			const canisterInfo = yield* Effect.tryPromise({
 				try: async () => {
 					// TODO: throw error instead? not sure
@@ -306,52 +289,12 @@ export const picReplicaImpl = Effect.gen(function* () {
 			//     `Canister ${canisterName} is already installed. Skipping deployment.`,
 			//   )
 			// }
-			console.log("finished getting canister info", canisterInfo)
 			return canisterInfo
 		})
 
 	return Replica.of({
 		host,
 		port,
-		// createCanister: ({ canisterId, identity }) =>
-		// 	Effect.gen(function* () {
-		// 		const createdCanisterId = yield* Effect.tryPromise({
-		// 			try: () =>
-		// 				pic.createCanister({
-		// 					sender: identity.getPrincipal(),
-		// 					...(canisterId
-		// 						? {
-		// 								targetCanisterId: Principal.fromText(canisterId),
-		// 								// targetSubnetId: Principal.fromText(NNS_SUBNET_ID),
-		// 							}
-		// 						: {}),
-		// 				}),
-		// 			catch: (error) =>
-		// 				new PocketICError({
-		// 					message: `Failed to create canister: ${error instanceof Error ? error.message : String(error)}`,
-		// 				}),
-		// 		})
-		// 		return createdCanisterId.toText()
-		// 	}),
-		// installCode: ({ canisterId, wasm, encodedArgs, identity }) =>
-		// 	Effect.gen(function* () {
-		// 		yield* Effect.tryPromise({
-		// 			try: () =>
-		// 				// TODO: mode: install / reinstall etc.
-		// 				pic.reinstallCode({
-		// 					arg: encodedArgs.buffer,
-		// 					sender: identity.getPrincipal(),
-		// 					canisterId: Principal.fromText(canisterId),
-		// 					wasm: wasm.buffer,
-		// 					// targetSubnetId: Principal.fromText(NNS_SUBNET_ID),
-		// 				}),
-		// 			catch: (error) =>
-		// 				new PocketICError({
-		// 					message: `Failed to install code: ${error instanceof Error ? error.message : String(error)}`,
-		// 				}),
-		// 		})
-		// 	}),
-
 		// start: () =>
 		// 	Effect.gen(function* () {
 		// 		const command = Command.make("./pocket-ic", "--port", dfxPort)
@@ -375,7 +318,6 @@ export const picReplicaImpl = Effect.gen(function* () {
 		// 				message: `Failed to kill DFX processes: ${error instanceof Error ? error.message : String(error)}`,
 		// 			}),
 		// 	}),
-		// getUrl: () => Effect.succeed(url),
 
 		installCode: ({ canisterId, wasm, encodedArgs, identity }) =>
 			Effect.gen(function* () {
@@ -387,17 +329,11 @@ export const picReplicaImpl = Effect.gen(function* () {
 					canisterId,
 					identity,
 				})
-				// const mode =
-				// 	canisterInfo.status === "not_installed" ? "install" : "reinstall"
+				const mode =
+					canisterInfo.status === "not_installed" ? "install" : "reinstall"
 				// TODO: "install" doesnt work for certain canisters for some reason
-				const mode = "reinstall"
+				// const mode = "reinstall"
 
-				yield* Effect.logDebug(
-					`pic install code: Canister info: ${canisterInfo}`,
-				)
-				yield* Effect.logDebug(
-					`pic install code: Installing code for ${canisterId}`,
-				)
 				if (isOverSize) {
 					// TODO: proper error handling if fails?
 					const chunkSize = 1048576
@@ -525,27 +461,18 @@ export const picReplicaImpl = Effect.gen(function* () {
 						},
 					})
 				}
-				yield* Effect.logDebug(`Code installed for ${canisterId}`)
 			}),
 		createCanister: ({ canisterId, identity }) =>
 			Effect.gen(function* () {
-				yield* Effect.logDebug(
-					`pic create canister: Creating canister for ${canisterId}`,
-				)
+				// TODO: get stack trace somehow
 				// const mgmt = yield* getMgmt(identity)
 				const controller = identity.getPrincipal()
 				if (canisterId) {
-					yield* Effect.logDebug(
-						`pic create canister: Checking canister status for ${canisterId}`,
-					)
 					// TODO: canisterId is set but its not created, causes error?
 					const canisterStatus = yield* getCanisterStatus({
 						canisterId,
 						identity,
 					})
-					yield* Effect.logDebug(
-						`pic create canister: Canister status: ${canisterStatus}`,
-					)
 					if (canisterStatus !== "not_installed") {
 						return canisterId
 					}
@@ -555,9 +482,6 @@ export const picReplicaImpl = Effect.gen(function* () {
 				const targetCanisterId = canisterId
 					? Principal.fromText(canisterId)
 					: undefined
-				yield* Effect.logDebug(
-					`pic create canister: Creating canister for ${canisterId}`,
-				)
 				// TODO: not working. need to create subnet first?
 				const createResult = yield* Effect.tryPromise({
 					try: () =>
@@ -581,11 +505,10 @@ export const picReplicaImpl = Effect.gen(function* () {
 					catch: (error) =>
 						new CanisterCreateError({
 							message: `Failed to create canister: ${error instanceof Error ? error.message : String(error)}`,
+							cause: new Error("Failed to create canister"),
 						}),
 				})
-				yield* Effect.logDebug(
-					`pic create canister: createResult: ${createResult}`,
-				)
+				// pic.addCycles(createResult, 1_000_000_000_000_000)
 				return createResult.toText()
 
 				// const createResult = yield* Effect.tryPromise({
@@ -661,5 +584,19 @@ export const picReplicaImpl = Effect.gen(function* () {
 			}),
 		getCanisterStatus,
 		getCanisterInfo,
+		createActor: <_SERVICE extends ActorInterface<_SERVICE>>({
+			canisterId,
+			canisterDID,
+			identity,
+		}: { canisterId: string; canisterDID: any; identity: SignIdentity }) =>
+			Effect.gen(function* () {
+				// TODO: configure which identity to use, etc.
+				const actor = pic.createActor<_SERVICE>(
+					canisterDID.idlFactory,
+					Principal.fromText(canisterId),
+				)
+				actor.setIdentity(identity)
+				return actor
+			}),
 	})
 })

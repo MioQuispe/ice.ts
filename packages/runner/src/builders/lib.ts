@@ -101,7 +101,6 @@ export const makeDeployTask = (tags: string[]) => {
 			const [canisterId] = yield* Effect.all(
 				[
 					Effect.gen(function* () {
-						const taskPath = `${canisterName}:create`
 						const canisterId = (yield* runTask(
 							parentScope.children.create,
 						)) as unknown as string
