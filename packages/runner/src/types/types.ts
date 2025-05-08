@@ -22,25 +22,37 @@ export type ReplicaConfig = {
   canister_http?: boolean
   type: "pocketic" | "dfx"
 }
+
+type ICEUser = {
+  identity: SignIdentity
+  principal: string
+  accountId: string
+  // agent: Agent
+}
+
 // TODO: create service? dependencies?
 export type ICEConfig = {
-  // dfxConfig: DfxConfig
-  // currentUser: {
-  //   identity: Identity
-  //   principal: Principal
-  //   accountId: string
-  //   agent: Agent
-  // }
   users: {
-    [key: string]: {
-      identity: SignIdentity
-      principal: string
-      accountId: string
-      // agent: Agent
-    }
+    [key: string]: ICEUser
   }
   roles: {
     [key: string]: string
+  }
+  networks: {
+    [key: string]: {
+      replica: ReplicaService
+      host: string
+      port: number
+    }
+  }
+}
+
+export type InitializedICEConfig = {
+  users: {
+    [key: string]: ICEUser
+  }
+  roles: {
+    [key: string]: ICEUser
   }
   networks: {
     [key: string]: {

@@ -26,6 +26,7 @@ import { configMap, Ids } from "../index.js"
 import { runtime } from "../index.js"
 import { NodeContext } from "@effect/platform-node"
 import { DefaultReplica, type ReplicaService } from "../services/replica.js"
+import { DefaultConfig } from "../services/defaultConfig.js"
 
 const asyncRunTask = async <A>(task: Task): Promise<A> => {
 	// @ts-ignore
@@ -193,90 +194,21 @@ export const executeTasks = <A, E, R, I>(
 	progressCb: (update: ProgressUpdate<A>) => void = () => {},
 ) =>
 	Effect.gen(function* () {
-		const defaultReplica = yield* DefaultReplica
-		// TODO: yield* DefaultConfig?
-		const defaultUser = yield* Effect.tryPromise({
-			try: () => Ids.fromDfx("default"),
-			// TODO: tagged error
-			catch: () => new Error("Failed to get default user"),
-		})
-		const defaultNetworks = {
-			local: {
-				replica: defaultReplica,
-				host: "https://0.0.0.0",
-				port: 8080,
-			},
-			staging: {
-				replica: defaultReplica,
-				host: "https://staging.ic0.app",
-				port: 80,
-			},
-			ic: {
-				replica: defaultReplica,
-				host: "https://ic0.app",
-				port: 80,
-			},
-		}
-		const defaultConfig: ICEConfig = {
-			// replica: defaultReplica,
-			users: {
-				default: defaultUser,
-			},
-			roles: {
-				deployer: "default",
-				minter: "default",
-				controller: "default",
-				treasury: "default",
-			},
-			networks: {
-				...defaultNetworks,
-			},
-		}
-
+		const defaultConfig = yield* DefaultConfig
 		const { config } = yield* ICEConfigService
 		// TODO: get from cli args
 		const currentNetwork = "local"
 		const currentNetworkConfig =
-			config?.networks?.[currentNetwork] ?? defaultNetworks[currentNetwork]
+			config?.networks?.[currentNetwork] ?? defaultConfig.networks[currentNetwork]
 		const currentReplica = currentNetworkConfig.replica
-		const currentRoles = config?.roles ?? defaultConfig.roles
 		const currentUsers = config?.users ?? defaultConfig.users
 		const networks = config?.networks ?? defaultConfig.networks
-		const initializedRoles = Object.fromEntries(
-			Object.entries(currentRoles).map(([name, user]) => {
+		// TODO: merge with defaultConfig.roles
+		const initializedRoles = config?.roles ? Object.fromEntries(
+			Object.entries(config.roles).map(([name, user]) => {
 				return [name, currentUsers[user]]
 			}),
-		)
-		// TODO: pre-initialize agents? this is repeated for each task now
-		// save it in the replica?
-		// const rolesResult = yield* Effect.all(
-		// 	// TODO: default roles?
-		// 	Object.entries(currentRoles).map(([name, role]) =>
-		// 		Effect.gen(function* () {
-		// 			const agent = yield* Effect.tryPromise(() =>
-		// 				HttpAgent.create({
-		// 					identity: currentUsers[role].identity,
-		// 					host: `${currentReplica.host}:${currentReplica.port}`,
-		// 				}),
-		// 			)
-		// 			yield* Effect.tryPromise(() => agent.fetchRootKey())
-		// 			return {
-		// 				[name]: {
-		// 					identity: currentUsers[role].identity,
-		// 					principal: currentUsers[role].principal,
-		// 					accountId: currentUsers[role].accountId,
-		// 					agent,
-		// 				},
-		// 			}
-		// 		}),
-		// 	),
-		// 	{
-		// 		concurrency: "unbounded",
-		// 	},
-		// )
-		// const roles = rolesResult.reduce((acc, role) => {
-		// 	return Object.assign(acc, role)
-		// }, {})
+		) : defaultConfig.roles
 
 		// Create a deferred for every task to hold its eventual result.
 		const deferredMap = new Map<symbol, Deferred.Deferred<E | unknown, R>>()
@@ -312,7 +244,7 @@ export const executeTasks = <A, E, R, I>(
 						currentNetwork,
 						networks,
 						users: {
-							default: defaultUser,
+							...defaultConfig.users,
 							...currentUsers,
 						},
 						roles: initializedRoles,

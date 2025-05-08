@@ -113,11 +113,27 @@ export const picReplicaImpl = Effect.gen(function* () {
 				ii: {
 					state: {
 						type: SubnetStateType.New,
-						// TODO: save state
-						// "path": "/nns/subnet/state",
-						// subnetId: Principal.fromText(NNS_SUBNET_ID),
 					},
 				},
+				fiduciary: {
+					state: {
+						type: SubnetStateType.New,
+					},
+				},
+				bitcoin: {
+					state: {
+						type: SubnetStateType.New,
+					},
+				},
+				sns: {
+					state: {
+						type: SubnetStateType.New,
+					},
+				},
+				// TODO:
+				// system: vec![],
+				// verified_application: vec![],
+				// application: vec![],
 				// application: [
 				// 	{ state: { type: SubnetStateType.New } },
 				// 	{ state: { type: SubnetStateType.New } },

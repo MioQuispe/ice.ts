@@ -20,6 +20,7 @@ import { TaskCtx } from "./tasks/lib.js"
 import type { ICEConfig } from "./types/types.js"
 import { Ids } from "./ids.js"
 import { DefaultReplica, Replica } from "./services/replica.js"
+import { DefaultConfig } from "./services/defaultConfig.js"
 export * from "./builders/index.js"
 export * from "./ids.js"
 
@@ -77,12 +78,7 @@ const DefaultReplicaService = Layer.effect(DefaultReplica, picReplicaImpl).pipe(
 export const DefaultsLayer = Layer.mergeAll(
 	NodeContext.layer,
 	TaskRegistry.Live,
-	// PocketICService.Live.pipe(
-	// 	Layer.provide(NodeContext.layer),
-	// 	Layer.provide(configLayer),
-	// ),
-	// TODO: use pocket-ic
-	DefaultReplicaService,
+	DefaultConfig.Live.pipe(Layer.provide(DefaultReplicaService)),
 	Moc.Live.pipe(Layer.provide(NodeContext.layer)),
 	configLayer,
 	ICEConfigService.Live.pipe(Layer.provide(NodeContext.layer)),
