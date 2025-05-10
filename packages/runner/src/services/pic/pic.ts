@@ -493,12 +493,14 @@ export const picReplicaImpl = Effect.gen(function* () {
 						return canisterId
 					}
 				}
+				// targetSubnetId related:
+				// Canister ranges:
+				// https://wiki.internetcomputer.org/wiki/Subnet_splitting_forum_announcement_template#firstHeading
 
 				const sender = identity.getPrincipal()
 				const targetCanisterId = canisterId
 					? Principal.fromText(canisterId)
 					: undefined
-				// TODO: not working. need to create subnet first?
 				const createResult = yield* Effect.tryPromise({
 					try: () =>
 						pic.createCanister({

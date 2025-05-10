@@ -1,17 +1,9 @@
 import { Effect, Console, Stream, Either } from "effect"
 import {
-	canistersBindingsTask,
-	canistersBuildTask,
-	canistersCreateTask,
-	canistersDeployTask,
-	canistersInstallTask,
-	canistersStatusTask,
-	canistersStopTask,
-	listTasksTask,
 	runTaskByPath,
+	runTasks,
 } from "../tasks/index.js"
-import { runtime } from "../index.js"
-import { listCanistersTask } from "../tasks/list-canisters.js"
+import { DeploymentError, runtime } from "../index.js"
 import { uiTask } from "./ui/index.js"
 import { ICEConfigService } from "../services/iceConfig.js"
 import * as p from "@clack/prompts"
@@ -24,6 +16,13 @@ import {
 } from "citty"
 import { isCancel } from "@clack/prompts"
 import { cancel } from "@clack/prompts"
+import { filterNodes, type ProgressUpdate } from "../tasks/lib.js"
+import { Tags } from "../builders/types.js"
+import type { Task } from "../types/types.js"
+import { CanisterIdsService } from "../services/canisterIds.js"
+import { stopCanister } from "../canister.js"
+import { DefaultReplica } from "../services/replica.js"
+import { Ed25519KeyIdentity } from "@dfinity/identity"
 
 function moduleHashToHexString(moduleHash: [] | [number[]]): string {
 	if (moduleHash.length === 0) {
@@ -95,7 +94,16 @@ const deployRun = async ({ args }: CommandContext<ArgsDef>) => {
 	await runtime.runPromise(
 		// @ts-ignore
 		Effect.gen(function* () {
-			yield* canistersDeployTask((update) => {
+			const { taskTree } = yield* ICEConfigService
+			const tasksWithPath = (yield* filterNodes(
+				taskTree,
+				(node) =>
+					node._tag === "task" &&
+					node.tags.includes(Tags.CANISTER) &&
+					node.tags.includes(Tags.DEPLOY),
+			)) as Array<{ node: Task; path: string[] }>
+			const tasks = tasksWithPath.map(({ node }) => node)
+			yield* runTasks(tasks, (update) => {
 				if (update.status === "starting") {
 					// const s = p.spinner()
 					// s.start(`Deploying ${update.taskPath}\n`)
@@ -126,14 +134,27 @@ const canistersCreateCommand = defineCommand({
 			Effect.gen(function* () {
 				const s = p.spinner()
 				s.start("Creating all canisters")
-				yield* canistersCreateTask((update) => {
-					if (update.status === "starting") {
-						s.message(`Running ${update.taskPath}`)
-					}
-					if (update.status === "completed") {
-						s.message(`Completed ${update.taskPath}`)
-					}
-				})
+
+				yield* Effect.logDebug("Running canisters:create")
+				const { taskTree } = yield* ICEConfigService
+				const tasksWithPath = (yield* filterNodes(
+					taskTree,
+					(node) =>
+						node._tag === "task" &&
+						node.tags.includes(Tags.CANISTER) &&
+						node.tags.includes(Tags.CREATE),
+				)) as Array<{ node: Task; path: string[] }>
+				yield* runTasks(
+					tasksWithPath.map(({ node }) => node),
+					(update) => {
+						if (update.status === "starting") {
+							s.message(`Running ${update.taskPath}`)
+						}
+						if (update.status === "completed") {
+							s.message(`Completed ${update.taskPath}`)
+						}
+					},
+				)
 				s.stop("Finished creating all canisters")
 			}),
 		)
@@ -151,14 +172,28 @@ const canistersBuildCommand = defineCommand({
 			Effect.gen(function* () {
 				const s = p.spinner()
 				s.start("Building all canisters")
-				yield* canistersBuildTask((update) => {
-					if (update.status === "starting") {
-						s.message(`Running ${update.taskPath}`)
-					}
-					if (update.status === "completed") {
-						s.message(`Completed ${update.taskPath}`)
-					}
-				})
+
+				yield* Effect.logDebug("Running canisters:create")
+				const { taskTree } = yield* ICEConfigService
+				const tasksWithPath = (yield* filterNodes(
+					taskTree,
+					(node) =>
+						node._tag === "task" &&
+						node.tags.includes(Tags.CANISTER) &&
+						node.tags.includes(Tags.CREATE),
+				)) as Array<{ node: Task; path: string[] }>
+				yield* runTasks(
+					tasksWithPath.map(({ node }) => node),
+					(update) => {
+						if (update.status === "starting") {
+							s.message(`Running ${update.taskPath}`)
+						}
+						if (update.status === "completed") {
+							s.message(`Completed ${update.taskPath}`)
+						}
+					},
+				)
+
 				s.stop("Finished building all canisters")
 			}),
 		)
@@ -176,14 +211,28 @@ const canistersBindingsCommand = defineCommand({
 			Effect.gen(function* () {
 				const s = p.spinner()
 				s.start("Generating bindings for all canisters")
-				yield* canistersBindingsTask((update) => {
-					if (update.status === "starting") {
-						s.message(`Running ${update.taskPath}`)
-					}
-					if (update.status === "completed") {
-						s.message(`Completed ${update.taskPath}`)
-					}
-				})
+
+				yield* Effect.logDebug("Running canisters:bindings")
+				const { taskTree } = yield* ICEConfigService
+				const tasksWithPath = (yield* filterNodes(
+					taskTree,
+					(node) =>
+						node._tag === "task" &&
+						node.tags.includes(Tags.CANISTER) &&
+						node.tags.includes(Tags.BINDINGS),
+				)) as Array<{ node: Task; path: string[] }>
+				yield* runTasks(
+					tasksWithPath.map(({ node }) => node),
+					(update) => {
+						if (update.status === "starting") {
+							s.message(`Running ${update.taskPath}`)
+						}
+						if (update.status === "completed") {
+							s.message(`Completed ${update.taskPath}`)
+						}
+					},
+				)
+
 				s.stop("Finished generating bindings for all canisters")
 			}),
 		)
@@ -201,14 +250,28 @@ const canistersInstallCommand = defineCommand({
 			Effect.gen(function* () {
 				const s = p.spinner()
 				s.start("Installing all canisters")
-				yield* canistersInstallTask((update) => {
-					if (update.status === "starting") {
-						s.message(`Running ${update.taskPath}`)
-					}
-					if (update.status === "completed") {
-						s.message(`Completed ${update.taskPath}`)
-					}
-				})
+
+				yield* Effect.logDebug("Running canisters:create")
+				const { taskTree } = yield* ICEConfigService
+				const tasksWithPath = (yield* filterNodes(
+					taskTree,
+					(node) =>
+						node._tag === "task" &&
+						node.tags.includes(Tags.CANISTER) &&
+						node.tags.includes(Tags.CREATE),
+				)) as Array<{ node: Task; path: string[] }>
+				yield* runTasks(
+					tasksWithPath.map(({ node }) => node),
+					(update) => {
+						if (update.status === "starting") {
+							s.message(`Running ${update.taskPath}`)
+						}
+						if (update.status === "completed") {
+							s.message(`Completed ${update.taskPath}`)
+						}
+					},
+				)
+
 				s.stop("Finished installing all canisters")
 			}),
 		)
@@ -226,14 +289,26 @@ const canistersStopCommand = defineCommand({
 			Effect.gen(function* () {
 				const s = p.spinner()
 				s.start("Stopping all canisters")
-				yield* canistersStopTask((update) => {
-					if (update.status === "starting") {
-						s.message(`Running ${update.taskPath}`)
-					}
-					if (update.status === "completed") {
-						s.message(`Completed ${update.taskPath}`)
-					}
-				})
+
+				yield* Effect.logDebug("Running canisters:stop")
+				const canisterIdsService = yield* CanisterIdsService
+				const canisterIdsMap = yield* canisterIdsService.getCanisterIds()
+				// TODO: runTask?
+				yield* Effect.forEach(
+					Object.keys(canisterIdsMap),
+					(canisterId) => stopCanister(canisterId),
+					{ concurrency: "unbounded" },
+				)
+
+				// (update) => {
+				// 				if (update.status === "starting") {
+				// 					s.message(`Running ${update.taskPath}`)
+				// 				}
+				// 				if (update.status === "completed") {
+				// 					s.message(`Completed ${update.taskPath}`)
+				// 				}
+				// 			}
+
 				s.stop("Finished stopping all canisters")
 			}),
 		)
@@ -250,9 +325,38 @@ const canistersStatusCommand = defineCommand({
 		if (args._.length === 0) {
 			await runtime.runPromise(
 				Effect.gen(function* () {
+					const canisterIdsService = yield* CanisterIdsService
+					const canisterIdsMap = yield* canisterIdsService.getCanisterIds()
+					const replica = yield* DefaultReplica
+					const identity = Ed25519KeyIdentity.generate()
+					const canisterStatusesEffects = Object.keys(canisterIdsMap).map(
+						(canisterName) =>
+							Effect.either(
+								Effect.gen(function* () {
+									const network = "local"
+									const canisterInfo = canisterIdsMap[canisterName]
+									const canisterId = canisterInfo[network]
+									if (!canisterId) {
+										throw new DeploymentError({
+											message: `No canister ID found for ${canisterName} on network ${network}`,
+										})
+									}
+									const status = yield* replica.getCanisterInfo({
+										canisterId,
+										identity,
+									})
+									return { canisterName, canisterId, status }
+								}),
+							),
+					)
+
+					const canisterStatuses = yield* Effect.all(canisterStatusesEffects, {
+						concurrency: "unbounded",
+					})
+
 					// TODO: this needs to run as a task
-					const statuses = yield* canistersStatusTask()
-					const statusLog = statuses
+					// TODO: inline
+					const statusLog = canisterStatuses
 						.map((result) =>
 							Either.match(result, {
 								onLeft: (left) => `Error for canister: ${left}`,
@@ -320,12 +424,28 @@ const listCanistersCommand = defineCommand({
 	run: async ({ args }) => {
 		await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskList = yield* listCanistersTask()
+				const { taskTree } = yield* ICEConfigService
+				const canisterScopesWithPath = yield* filterNodes(
+					taskTree,
+					(node) => node._tag === "scope" && node.tags.includes(Tags.CANISTER),
+				)
+
+				// TODO: format nicely
+				const canisterList = canisterScopesWithPath.map(({ node, path }) => {
+					const scopePath = path.join(":") // Use colon to represent hierarchy
+					return `  ${scopePath}` // Indent for better readability
+				})
+
+				// const formattedTaskList = ["Available canister tasks:", ...taskList].join(
+				//   "\n",
+				// )
+
+				// yield* Effect.logDebug(formattedTaskList)
 				// p.note(taskList.join("\n"))
 				// yield* Console.log(taskList.join("\n"))
 				p.select({
 					message: "Select a canister",
-					options: taskList.map((task) => ({
+					options: canisterList.map((task) => ({
 						value: task,
 						label: task,
 					})),
@@ -344,7 +464,22 @@ const listCommand = defineCommand({
 		if (args._.length === 0) {
 			await runtime.runPromise(
 				Effect.gen(function* () {
-					const taskList = yield* listTasksTask()
+					// TODO: remove builders
+					const { taskTree } = yield* ICEConfigService
+					const tasksWithPath = yield* filterNodes(
+						taskTree,
+						(node) =>
+							node._tag === "task" && !node.tags.includes(Tags.CANISTER),
+					)
+					// TODO: format nicely
+					const taskList = tasksWithPath.map(({ node: task, path }) => {
+						const taskPath = path.join(":") // Use colon to represent hierarchy
+						return `  ${taskPath}` // Indent for better readability
+					})
+					// const formattedTaskList = ["Available tasks:", ...taskList].join("\n")
+
+					// yield* Effect.logDebug(formattedTaskList)
+
 					// p.text({ message: taskList.join("\n") })
 					p.note(taskList.join("\n"))
 					// yield* Console.log(taskList.join("\n"))
@@ -391,7 +526,18 @@ const canisterCommand = defineCommand({
 			await runtime.runPromise(
 				// @ts-ignore
 				Effect.gen(function* () {
-					const canisterList = yield* listCanistersTask()
+					const { taskTree } = yield* ICEConfigService
+					const canisterScopesWithPath = yield* filterNodes(
+						taskTree,
+						(node) =>
+							node._tag === "scope" && node.tags.includes(Tags.CANISTER),
+					)
+
+					// TODO: format nicely
+					const canisterList = canisterScopesWithPath.map(({ node, path }) => {
+						const scopePath = path.join(":") // Use colon to represent hierarchy
+						return `  ${scopePath}` // Indent for better readability
+					})
 					const canister = (yield* Effect.tryPromise(() =>
 						p.select({
 							message: "Select a canister",
@@ -467,7 +613,17 @@ const taskCommand = defineCommand({
 			await runtime.runPromise(
 				// @ts-ignore
 				Effect.gen(function* () {
-					const taskList = yield* listTasksTask()
+					const { taskTree } = yield* ICEConfigService
+					const tasksWithPath = yield* filterNodes(
+						taskTree,
+						(node) =>
+							node._tag === "task" && !node.tags.includes(Tags.CANISTER),
+					)
+					// TODO: format nicely
+					const taskList = tasksWithPath.map(({ node: task, path }) => {
+						const taskPath = path.join(":") // Use colon to represent hierarchy
+						return `  ${taskPath}` // Indent for better readability
+					})
 					const task = (yield* Effect.tryPromise(() =>
 						p.select({
 							message: "Select a task",

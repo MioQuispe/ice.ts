@@ -78,6 +78,7 @@ const DefaultReplicaService = Layer.effect(DefaultReplica, picReplicaImpl).pipe(
 export const DefaultsLayer = Layer.mergeAll(
 	NodeContext.layer,
 	TaskRegistry.Live,
+	DefaultReplicaService,
 	DefaultConfig.Live.pipe(Layer.provide(DefaultReplicaService)),
 	Moc.Live.pipe(Layer.provide(NodeContext.layer)),
 	configLayer,
