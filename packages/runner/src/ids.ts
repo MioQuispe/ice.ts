@@ -8,11 +8,15 @@ import find from "find-process"
 import { idlFactory } from "./canisters/management_latest/management.did.js"
 import { Ed25519KeyIdentity } from "@dfinity/identity"
 import type { DfxJson } from "./types/schema.js"
-import { ConfigError } from "./index.js"
 import type { ManagementActor } from "./types/types.js"
 import type { PlatformError } from "@effect/platform/Error"
 import os from "node:os"
 import psList from "ps-list"
+
+export class ConfigError extends Data.TaggedError("ConfigError")<{
+	message: string
+}> {}
+
 
 type User = {
 	accountId: string

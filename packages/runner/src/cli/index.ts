@@ -1,9 +1,7 @@
 import { Effect, Console, Stream, Either } from "effect"
-import {
-	runTaskByPath,
-	runTasks,
-} from "../tasks/index.js"
-import { DeploymentError, runtime } from "../index.js"
+import { runTaskByPath, runTasks } from "../tasks/index.js"
+import { makeRuntime } from "../index.js"
+import { DeploymentError } from "../canister.js"
 import { uiTask } from "./ui/index.js"
 import { ICEConfigService } from "../services/iceConfig.js"
 import * as p from "@clack/prompts"
@@ -13,14 +11,14 @@ import {
 	createMain,
 	type CommandContext,
 	type ArgsDef,
+	Resolvable,
 } from "citty"
 import { isCancel } from "@clack/prompts"
 import { cancel } from "@clack/prompts"
-import { filterNodes, type ProgressUpdate } from "../tasks/lib.js"
+import { filterNodes, TaskCtx, type ProgressUpdate } from "../tasks/lib.js"
 import { Tags } from "../builders/types.js"
 import type { Task } from "../types/types.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
-import { stopCanister } from "../canister.js"
 import { DefaultReplica } from "../services/replica.js"
 import { Ed25519KeyIdentity } from "@dfinity/identity"
 
@@ -32,6 +30,23 @@ function moduleHashToHexString(moduleHash: [] | [number[]]): string {
 	const hexString = Buffer.from(bytes).toString("hex")
 	return `0x${hexString}`
 }
+
+const runtimeArgs = {
+	network: {
+		type: "string",
+		required: false,
+		// TODO: hmm?
+		default: "local",
+		// TODO: better description
+		description: "Select a network",
+	},
+	logLevel: {
+		type: "string",
+		required: false,
+		default: "info",
+		description: "Select a log level",
+	},
+} satisfies Resolvable<ArgsDef>
 
 //   // TODO: we need to construct this dynamically if we want space delimited task paths
 const runCommand = defineCommand({
@@ -47,11 +62,15 @@ const runCommand = defineCommand({
 			description:
 				"The task to run. examples: icrc1:build, nns:governance:install",
 		},
+		...runtimeArgs,
 	},
 	run: async ({ args }) => {
 		const s = p.spinner()
 		s.start(`Running task... ${color.green(color.underline(args.taskPath))}`)
-		await runtime.runPromise(
+		await makeRuntime({
+			network: args.network,
+			logLevel: args.logLevel,
+		}).runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
 				yield* runTaskByPath(args.taskPath)
@@ -77,21 +96,16 @@ const initCommand = defineCommand({
 	},
 })
 
-// export const tasks = async (tasks) => {
-//   for (const task of tasks) {
-//     if (task.enabled === false) continue
-
-//     const s = spinner()
-//     s.start(task.title)
-//     const result = await task.task(s.message)
-//     s.stop(result || task.title)
-//   }
-// }
-
-const deployRun = async ({ args }: CommandContext<ArgsDef>) => {
+const deployRun = async ({
+	network,
+	logLevel,
+}: { network: string; logLevel: string }) => {
 	const s = p.spinner()
 	s.start("Deploying all canisters...")
-	await runtime.runPromise(
+	await makeRuntime({
+		network,
+		logLevel,
+	}).runPromise(
 		// @ts-ignore
 		Effect.gen(function* () {
 			const { taskTree } = yield* ICEConfigService
@@ -128,8 +142,16 @@ const canistersCreateCommand = defineCommand({
 		name: "create",
 		description: "Creates all canisters",
 	},
+	args: {
+		...runtimeArgs,
+	},
 	run: async ({ args }) => {
-		await runtime.runPromise(
+		const { network, logLevel } = args
+		// TODO: makeRuntime fn?
+		await makeRuntime({
+			network,
+			logLevel,
+		}).runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
 				const s = p.spinner()
@@ -166,8 +188,15 @@ const canistersBuildCommand = defineCommand({
 		name: "build",
 		description: "Builds all canisters",
 	},
+	args: {
+		...runtimeArgs,
+	},
 	run: async ({ args }) => {
-		await runtime.runPromise(
+		const { network, logLevel } = args
+		await makeRuntime({
+			network,
+			logLevel,
+		}).runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
 				const s = p.spinner()
@@ -205,8 +234,15 @@ const canistersBindingsCommand = defineCommand({
 		name: "bindings",
 		description: "Generates bindings for all canisters",
 	},
+	args: {
+		...runtimeArgs,
+	},
 	run: async ({ args }) => {
-		await runtime.runPromise(
+		const { network, logLevel } = args
+		await makeRuntime({
+			network,
+			logLevel,
+		}).runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
 				const s = p.spinner()
@@ -244,8 +280,15 @@ const canistersInstallCommand = defineCommand({
 		name: "install",
 		description: "Installs all canisters",
 	},
+	args: {
+		...runtimeArgs,
+	},
 	run: async ({ args }) => {
-		await runtime.runPromise(
+		const { network, logLevel } = args
+		await makeRuntime({
+			network,
+			logLevel,
+		}).runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
 				const s = p.spinner()
@@ -283,22 +326,59 @@ const canistersStopCommand = defineCommand({
 		name: "stop",
 		description: "Stops all canisters",
 	},
+	args: {
+		...runtimeArgs,
+	},
 	run: async ({ args }) => {
-		await runtime.runPromise(
+		const { network, logLevel } = args
+		await makeRuntime({
+			network,
+			logLevel,
+		}).runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
 				const s = p.spinner()
 				s.start("Stopping all canisters")
 
 				yield* Effect.logDebug("Running canisters:stop")
-				const canisterIdsService = yield* CanisterIdsService
-				const canisterIdsMap = yield* canisterIdsService.getCanisterIds()
-				// TODO: runTask?
-				yield* Effect.forEach(
-					Object.keys(canisterIdsMap),
-					(canisterId) => stopCanister(canisterId),
-					{ concurrency: "unbounded" },
+				const { taskTree } = yield* ICEConfigService
+				const tasksWithPath = (yield* filterNodes(
+					taskTree,
+					(node) =>
+						node._tag === "task" &&
+						node.tags.includes(Tags.CANISTER) &&
+						node.tags.includes(Tags.STOP),
+				)) as Array<{ node: Task; path: string[] }>
+				yield* runTasks(
+					tasksWithPath.map(({ node }) => node),
+					(update) => {
+						if (update.status === "starting") {
+							s.message(`Running ${update.taskPath}`)
+						}
+						if (update.status === "completed") {
+							s.message(`Completed ${update.taskPath}`)
+						}
+					},
 				)
+
+				// // TODO: runTask?
+				// yield* Effect.forEach(
+				// 	Object.keys(canisterIdsMap),
+				// 	(canisterId) =>
+				// 		Effect.gen(function* () {
+				// 			const {
+				// 				roles: {
+				// 					deployer: { identity },
+				// 				},
+				// 				replica,
+				// 			} = yield* TaskCtx
+				// 			yield* replica.stopCanister({
+				// 				canisterId,
+				// 				identity,
+				// 			})
+				// 		}),
+				// 	{ concurrency: "unbounded" },
+				// )
 
 				// (update) => {
 				// 				if (update.status === "starting") {
@@ -320,10 +400,22 @@ const canistersStatusCommand = defineCommand({
 		name: "status",
 		description: "Show the status of all canisters",
 	},
+	args: {
+		canisterNameOrId: {
+			type: "positional",
+			required: false,
+			description: "The name or ID of the canister to get the status of",
+		},
+		...runtimeArgs,
+	},
 	run: async ({ args }) => {
 		// TODO: support canister name or ID
 		if (args._.length === 0) {
-			await runtime.runPromise(
+			const { network, logLevel } = args
+			await makeRuntime({
+				network,
+				logLevel,
+			}).runPromise(
 				Effect.gen(function* () {
 					const canisterIdsService = yield* CanisterIdsService
 					const canisterIdsMap = yield* canisterIdsService.getCanisterIds()
@@ -333,6 +425,7 @@ const canistersStatusCommand = defineCommand({
 						(canisterName) =>
 							Effect.either(
 								Effect.gen(function* () {
+									// TODO: currentNetwork
 									const network = "local"
 									const canisterInfo = canisterIdsMap[canisterName]
 									const canisterId = canisterInfo[network]
@@ -393,13 +486,6 @@ ${color.underline(right.canisterName)}
 			)
 		}
 	},
-	args: {
-		canisterNameOrId: {
-			type: "positional",
-			required: false,
-			description: "The name or ID of the canister to get the status of",
-		},
-	},
 })
 
 const canistersRemoveCommand = defineCommand({
@@ -407,88 +493,19 @@ const canistersRemoveCommand = defineCommand({
 		name: "remove",
 		description: "Removes all canisters",
 	},
+	args: {
+		...runtimeArgs,
+	},
 	run: async ({ args }) => {
-		await runtime.runPromise(
+		const { network, logLevel } = args
+		await makeRuntime({
+			network,
+			logLevel,
+		}).runPromise(
 			Effect.gen(function* () {
 				yield* Console.log("Coming soon...")
 			}),
 		)
-	},
-})
-
-const listCanistersCommand = defineCommand({
-	meta: {
-		name: "List canisters",
-		description: "Lists all canisters",
-	},
-	run: async ({ args }) => {
-		await runtime.runPromise(
-			Effect.gen(function* () {
-				const { taskTree } = yield* ICEConfigService
-				const canisterScopesWithPath = yield* filterNodes(
-					taskTree,
-					(node) => node._tag === "scope" && node.tags.includes(Tags.CANISTER),
-				)
-
-				// TODO: format nicely
-				const canisterList = canisterScopesWithPath.map(({ node, path }) => {
-					const scopePath = path.join(":") // Use colon to represent hierarchy
-					return `  ${scopePath}` // Indent for better readability
-				})
-
-				// const formattedTaskList = ["Available canister tasks:", ...taskList].join(
-				//   "\n",
-				// )
-
-				// yield* Effect.logDebug(formattedTaskList)
-				// p.note(taskList.join("\n"))
-				// yield* Console.log(taskList.join("\n"))
-				p.select({
-					message: "Select a canister",
-					options: canisterList.map((task) => ({
-						value: task,
-						label: task,
-					})),
-				})
-			}),
-		)
-	},
-})
-
-const listCommand = defineCommand({
-	meta: {
-		name: "list",
-		description: "Lists all tasks",
-	},
-	run: async ({ args }) => {
-		if (args._.length === 0) {
-			await runtime.runPromise(
-				Effect.gen(function* () {
-					// TODO: remove builders
-					const { taskTree } = yield* ICEConfigService
-					const tasksWithPath = yield* filterNodes(
-						taskTree,
-						(node) =>
-							node._tag === "task" && !node.tags.includes(Tags.CANISTER),
-					)
-					// TODO: format nicely
-					const taskList = tasksWithPath.map(({ node: task, path }) => {
-						const taskPath = path.join(":") // Use colon to represent hierarchy
-						return `  ${taskPath}` // Indent for better readability
-					})
-					// const formattedTaskList = ["Available tasks:", ...taskList].join("\n")
-
-					// yield* Effect.logDebug(formattedTaskList)
-
-					// p.text({ message: taskList.join("\n") })
-					p.note(taskList.join("\n"))
-					// yield* Console.log(taskList.join("\n"))
-				}),
-			)
-		}
-	},
-	subCommands: {
-		canisters: listCanistersCommand,
 	},
 })
 
@@ -498,7 +515,11 @@ const uiCommand = defineCommand({
 		description: "Opens the experimental ICE terminal UI",
 	},
 	run: async ({ args }) => {
-		await runtime.runPromise(
+		const { network, logLevel } = args
+		await makeRuntime({
+			network: "local",
+			logLevel: "debug",
+		}).runPromise(
 			Effect.gen(function* () {
 				const { config, taskTree } = yield* ICEConfigService
 				yield* uiTask({ config, taskTree })
@@ -512,7 +533,13 @@ const canistersDeployCommand = defineCommand({
 		name: "deploy",
 		description: "Deploys all canisters",
 	},
-	run: deployRun,
+	args: {
+		...runtimeArgs,
+	},
+	run: async ({ args }) => {
+		const { network, logLevel } = args
+		await deployRun({ network, logLevel })
+	},
 })
 
 const canisterCommand = defineCommand({
@@ -521,9 +548,16 @@ const canisterCommand = defineCommand({
 		description:
 			"Select a specific canister to run a task on. install, build, deploy, etc.",
 	},
+	args: {
+		...runtimeArgs,
+	},
 	run: async ({ args }) => {
 		if (args._.length === 0) {
-			await runtime.runPromise(
+			const { network, logLevel } = args
+			await makeRuntime({
+				network,
+				logLevel,
+			}).runPromise(
 				// @ts-ignore
 				Effect.gen(function* () {
 					const { taskTree } = yield* ICEConfigService
@@ -543,6 +577,7 @@ const canisterCommand = defineCommand({
 							message: "Select a canister",
 							options: canisterList.map((canister) => ({
 								value: canister,
+								// TODO: add a status marker to the canister
 								label: canister,
 							})),
 						}),
@@ -596,6 +631,7 @@ const canisterCommand = defineCommand({
 		create: canistersCreateCommand,
 		build: canistersBuildCommand,
 		bindings: canistersBindingsCommand,
+		stop: canistersStopCommand,
 		install: canistersInstallCommand,
 		// TODO:
 		// status: canistersStatusCommand,
@@ -608,9 +644,16 @@ const taskCommand = defineCommand({
 		name: "task",
 		description: `Select and run a task from the available tasks`,
 	},
+	args: {
+		...runtimeArgs,
+	},
 	run: async ({ args }) => {
 		if (args._.length === 0) {
-			await runtime.runPromise(
+			const { network, logLevel } = args
+			await makeRuntime({
+				network,
+				logLevel,
+			}).runPromise(
 				// @ts-ignore
 				Effect.gen(function* () {
 					const { taskTree } = yield* ICEConfigService
@@ -681,9 +724,16 @@ const main = defineCommand({
 		name: "ice",
 		description: "ICE CLI",
 	},
+	args: {
+		...runtimeArgs,
+	},
 	run: async (ctx) => {
+		const { network, logLevel } = ctx.args
 		if (ctx.args._.length === 0) {
-			await deployRun(ctx)
+			await deployRun({
+				network,
+				logLevel,
+			})
 		}
 	},
 	subCommands: {

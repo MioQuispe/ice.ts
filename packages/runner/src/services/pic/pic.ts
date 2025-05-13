@@ -12,7 +12,7 @@ import find from "find-process"
 import { idlFactory } from "../../canisters/management_latest/management.did.js"
 import { Ed25519KeyIdentity } from "@dfinity/identity"
 import type { DfxJson } from "../../types/schema.js"
-import { ConfigError, Opt } from "../../index.js"
+import { Opt } from "../../index.js"
 import type { ManagementActor } from "../../types/types.js"
 import type { PlatformError } from "@effect/platform/Error"
 import os from "node:os"
@@ -39,31 +39,6 @@ import type { log_visibility } from "@dfinity/agent/lib/cjs/canisters/management
 import * as url from "node:url"
 import { SubnetStateType } from "./pocket-ic-client-types.js"
 
-// Error types
-// export class PocketICError extends Data.TaggedError("PocketICError")<{
-// 	readonly message: string
-// }> {}
-
-// export class PocketICService extends Context.Tag("PocketICService")<
-// 	PocketICService,
-// 	{
-// 		// readonly start: () => Effect.Effect<void, PlatformError>
-// 		// readonly stop: () => Effect.Effect<void, PocketICError>
-// 		readonly getUrl: () => Effect.Effect<string, PocketICError>
-// 		readonly network: string
-// 		readonly createCanister: (args: {
-// 			canisterId?: string
-// 			identity: SignIdentity
-// 		}) => Effect.Effect<string, PocketICError>
-// 		readonly installCode: (args: {
-// 			canisterId: string
-// 			wasm: Uint8Array
-// 			encodedArgs: Uint8Array
-// 			identity: SignIdentity
-// 		}) => Effect.Effect<void, PocketICError>
-// 	}
-// >() {}
-
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 export const picReplicaImpl = Effect.gen(function* () {
 	const commandExecutor = yield* CommandExecutor.CommandExecutor
@@ -76,7 +51,10 @@ export const picReplicaImpl = Effect.gen(function* () {
 	// const dirUrl = new URL(".", import.meta.url).href
 	// TODO: pocket-ic isnt moved to dist/
 	// we need to move it in the build step and get the url somehow
-	const port = 8080
+
+
+	// TODO: fix!
+	const port = 8081
 	const ipAddr = "0.0.0.0"
 	const host = `http://${ipAddr}`
 	// const command = Command.make(picPath, "--ip-addr", ipAddr, "--port", port.toString())
@@ -94,9 +72,8 @@ export const picReplicaImpl = Effect.gen(function* () {
 	// const host = `http://${urlParts.hostname}`
 	// const port = Number.parseInt(urlParts.port, 10)
 	// const port = 8080
-	// const pic = yield* Effect.tryPromise(() => PocketIc.create(`${host}:${port}`))
-	const NNS_SUBNET_ID =
-		"nt6ha-vabpm-j6nog-bkr62-vbgbt-swwzc-u54zn-odtoy-igwlu-ab7uj-4qe"
+	// const NNS_SUBNET_ID =
+	// 	"nt6ha-vabpm-j6nog-bkr62-vbgbt-swwzc-u54zn-odtoy-igwlu-ab7uj-4qe"
 
 	const customPocketIcClient = yield* Effect.tryPromise({
 		try: () =>
@@ -107,6 +84,7 @@ export const picReplicaImpl = Effect.gen(function* () {
 						type: SubnetStateType.New,
 						// TODO: save state
 						// "path": "/nns/subnet/state",
+						// "path": "/.ice/subnets/",
 						// subnetId: Principal.fromText(NNS_SUBNET_ID),
 					},
 				},
@@ -608,7 +586,6 @@ export const picReplicaImpl = Effect.gen(function* () {
 			identity,
 		}: { canisterId: string; canisterDID: any; identity: SignIdentity }) =>
 			Effect.gen(function* () {
-				// TODO: configure which identity to use, etc.
 				const actor = pic.createActor<_SERVICE>(
 					canisterDID.idlFactory,
 					Principal.fromText(canisterId),

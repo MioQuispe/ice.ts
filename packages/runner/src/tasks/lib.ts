@@ -21,25 +21,22 @@ import type { Identity } from "@dfinity/agent"
 import { DependencyResults, runTaskByPath, runTask, TaskInfo } from "./run.js"
 import { principalToAccountId } from "../utils/utils.js"
 import { Layer } from "effect"
-import { Stream } from "effect"
 import { configMap, Ids } from "../index.js"
-import { runtime } from "../index.js"
-import { NodeContext } from "@effect/platform-node"
-import { DefaultReplica, type ReplicaService } from "../services/replica.js"
+import { makeRuntime } from "../index.js"
+import { type ReplicaService } from "../services/replica.js"
 import { DefaultConfig } from "../services/defaultConfig.js"
+import { CLIFlags } from "../services/cliFlags.js"
 
-const asyncRunTask = async <A>(task: Task): Promise<A> => {
-	// @ts-ignore
-	const result = runtime.runPromise(runTask(task))
-	return result as A
-}
+// const asyncRunTask = async <A>(task: Task): Promise<A> => {
+// 	const result = makeRuntime({
+// 		network: "local",
+// 		logLevel: "debug",
+// 		// @ts-ignore
+// 	}).runPromise(runTask(task))
+// 	return result as A
+// }
 
 export interface TaskCtxShape {
-	// readonly network: string
-	// networks?: {
-	// 	[k: string]: ConfigNetwork
-	// } | null
-	// readonly subnet: string
 	readonly users: {
 		[name: string]: {
 			identity: SignIdentity
@@ -57,13 +54,14 @@ export interface TaskCtxShape {
 		}
 	}
 	readonly replica: ReplicaService
-	readonly runTask: typeof asyncRunTask
+	readonly runTask: <A>(task: Task) => Promise<A>
 	readonly currentNetwork: string
 	readonly networks: {
 		[key: string]: {
 			replica: ReplicaService
 			host: string
 			port: number
+			// subnet: Subnet?
 		}
 	}
 }
@@ -196,19 +194,22 @@ export const executeTasks = <A, E, R, I>(
 	Effect.gen(function* () {
 		const defaultConfig = yield* DefaultConfig
 		const { config } = yield* ICEConfigService
-		// TODO: get from cli args
-		const currentNetwork = "local"
+		const cliFlags = yield* CLIFlags
+		const currentNetwork = cliFlags.network ?? "local"
 		const currentNetworkConfig =
-			config?.networks?.[currentNetwork] ?? defaultConfig.networks[currentNetwork]
+			config?.networks?.[currentNetwork] ??
+			defaultConfig.networks[currentNetwork]
 		const currentReplica = currentNetworkConfig.replica
 		const currentUsers = config?.users ?? defaultConfig.users
 		const networks = config?.networks ?? defaultConfig.networks
 		// TODO: merge with defaultConfig.roles
-		const initializedRoles = config?.roles ? Object.fromEntries(
-			Object.entries(config.roles).map(([name, user]) => {
-				return [name, currentUsers[user]]
-			}),
-		) : defaultConfig.roles
+		const initializedRoles = config?.roles
+			? Object.fromEntries(
+					Object.entries(config.roles).map(([name, user]) => {
+						return [name, currentUsers[user]]
+					}),
+				)
+			: defaultConfig.roles
 
 		// Create a deferred for every task to hold its eventual result.
 		const deferredMap = new Map<symbol, Deferred.Deferred<E | unknown, R>>()
@@ -239,7 +240,13 @@ export const executeTasks = <A, E, R, I>(
 					Layer.succeed(TaskCtx, {
 						...defaultConfig,
 						// TODO: wrap with proxy?
-						runTask: asyncRunTask,
+						// runTask: asyncRunTask,
+						runTask: async <A>(task: Task): Promise<A> => {
+							const result = makeRuntime(cliFlags)
+								// @ts-ignore
+								.runPromise(runTask(task))
+							return result as A
+						},
 						replica: currentReplica,
 						currentNetwork,
 						networks,

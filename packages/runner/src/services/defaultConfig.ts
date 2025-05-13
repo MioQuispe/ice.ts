@@ -1,7 +1,17 @@
 import { Context, Effect, Layer } from "effect"
 import { InitializedICEConfig } from "../types/types.js"
 import { Ids } from "../ids.js"
-import { DefaultReplica } from "./replica.js"
+import { DefaultReplica, Replica } from "./replica.js"
+import { DfxReplica } from "./dfx.js"
+import { picReplicaImpl } from "./pic/pic.js"
+import { NodeContext } from "@effect/platform-node"
+import { configLayer } from "../index.js"
+
+// const DfxReplicaService = DfxReplica.pipe(
+// 	Layer.provide(NodeContext.layer),
+// 	Layer.provide(configLayer),
+// )
+
 export class DefaultConfig extends Context.Tag("DefaultConfig")<
 	DefaultConfig,
 	InitializedICEConfig
@@ -9,7 +19,6 @@ export class DefaultConfig extends Context.Tag("DefaultConfig")<
 	static readonly Live = Layer.effect(
 		DefaultConfig,
 		Effect.gen(function* () {
-			// // TODO: move to services
 			const defaultReplica = yield* DefaultReplica
 			const defaultUser = yield* Effect.tryPromise({
 				try: () => Ids.fromDfx("default"),
@@ -33,16 +42,6 @@ export class DefaultConfig extends Context.Tag("DefaultConfig")<
 					port: 80,
 				},
 			}
-			// const { config } = yield* ICEConfigService
-			// yield* Effect.logDebug("Got config")
-			// // TODO: get from cli args
-			// const currentNetwork = "local"
-			// const currentNetworkConfig =
-			// 	config?.networks?.[currentNetwork] ?? defaultNetworks[currentNetwork]
-			// const currentReplica = currentNetworkConfig.replica
-			// const currentRoles = config?.roles ?? defaultConfig.roles
-			// const currentUsers = config?.users ?? defaultConfig.users
-			// const networks = config?.networks ?? defaultConfig.networks
 			const defaultUsers = {
 				default: defaultUser,
 			}

@@ -21,8 +21,7 @@ export const makeCanisterStatusTask = (tags: string[]) => {
 		provide: {},
 		effect: Effect.gen(function* () {
 			// TODO:
-			const network = "local"
-			const { replica } = yield* TaskCtx
+			const { replica, currentNetwork } = yield* TaskCtx
 			const { taskPath } = yield* TaskInfo
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			const canisterIdsService = yield* CanisterIdsService
@@ -36,7 +35,7 @@ export const makeCanisterStatusTask = (tags: string[]) => {
 					status: { not_installed: null },
 				}
 			}
-			const canisterId = canisterInfo[network]
+			const canisterId = canisterInfo[currentNetwork]
 			if (!canisterId) {
 				// TODO: fix format
 				return { canisterName, canisterId, status: { not_installed: null } }

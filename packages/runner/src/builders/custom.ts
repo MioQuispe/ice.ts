@@ -18,15 +18,7 @@ import { proxyActor } from "../utils/extension.js"
 import { TaskInfo } from "../tasks/run.js"
 import { TaskCtx } from "../tasks/lib.js"
 import { DependencyResults } from "../tasks/run.js"
-import {
-	createCanister,
-	removeCanister,
-	generateDIDJS,
-	installCanister,
-	stopCanister,
-	encodeArgs,
-	getCanisterInfo,
-} from "../canister.js"
+import { generateDIDJS, installCanister, encodeArgs } from "../canister.js"
 import { makeCanisterStatusTask, makeDeployTask } from "./lib.js"
 
 // TODO: later
@@ -57,7 +49,16 @@ export const makeStopTask = () => {
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			// TODO: handle error
 			const canisterId = yield* loadCanisterId(taskPath)
-			yield* stopCanister(canisterId)
+			const {
+				roles: {
+					deployer: { identity },
+				},
+				replica,
+			} = yield* TaskCtx
+			yield* replica.stopCanister({
+				canisterId,
+				identity,
+			})
 			yield* Effect.logDebug(`Stopped canister ${canisterName}`)
 		}),
 		description: "some description",
@@ -83,7 +84,16 @@ export const makeRemoveTask = () => {
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			// TODO: handle error
 			const canisterId = yield* loadCanisterId(taskPath)
-			yield* removeCanister(canisterId)
+			const {
+				roles: {
+					deployer: { identity },
+				},
+				replica,
+			} = yield* TaskCtx
+			yield* replica.removeCanister({
+				canisterId,
+				identity,
+			})
 			const canisterIdsService = yield* CanisterIdsService
 			yield* canisterIdsService.removeCanisterId(canisterName)
 			yield* Effect.logDebug(`Removed canister ${canisterName}`)
@@ -146,6 +156,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 		effect: Effect.gen(function* () {
 			yield* Effect.logDebug("Starting custom canister installation")
 			const taskCtx = yield* TaskCtx
+			const identity = taskCtx.roles.deployer.identity
 			const { replica } = taskCtx
 			const { dependencies } = yield* DependencyResults
 			const { taskPath } = yield* TaskInfo
@@ -245,16 +256,23 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 				canisterName,
 				isGzipped ? `${canisterName}.wasm.gz` : `${canisterName}.wasm`,
 			)
-			yield* installCanister({
-				encodedArgs,
+			const wasmContent = yield* fs.readFile(wasmPath)
+			const wasm = new Uint8Array(wasmContent)
+			const maxSize = 3670016
+			// const identity =
+			yield* Effect.logDebug(`Installing code for ${canisterId} at ${wasmPath}`)
+			yield* replica.installCode({
 				canisterId,
-				wasmPath,
+				wasm,
+				encodedArgs,
+				identity,
 			})
+			yield* Effect.logDebug(`Code installed for ${canisterId}`)
 			yield* Effect.logDebug(`Canister ${canisterName} installed successfully`)
 			const actor = yield* replica.createActor<_SERVICE>({
 				canisterId,
 				canisterDID,
-				identity: taskCtx.roles.deployer.identity,
+				identity,
 			})
 			return {
 				canisterId,
@@ -667,8 +685,8 @@ export const loadCanisterId = (taskPath: string) =>
 		const canisterName = taskPath.split(":").slice(0, -1).join(":")
 		const canisterIdsService = yield* CanisterIdsService
 		const canisterIds = yield* canisterIdsService.getCanisterIds()
-		// TODO: dont hardcode local. add support for networks
-		const canisterId = canisterIds[canisterName]?.local
+		const { currentNetwork } = yield* TaskCtx
+		const canisterId = canisterIds[canisterName]?.[currentNetwork]
 		if (canisterId) {
 			return canisterId as string
 		}

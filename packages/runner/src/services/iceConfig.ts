@@ -8,6 +8,7 @@ import type {
 import { Path, FileSystem } from "@effect/platform"
 import { deployTaskPlugin } from "../plugins/deploy.js"
 import { tsImport } from "tsx/esm/api"
+import { CLIFlags } from "./cliFlags.js"
 // import { removeBuilders } from "../plugins/remove_builders.js"
 // import { candidUITaskPlugin } from "../plugins/candid-ui.js"
 
@@ -96,8 +97,8 @@ export class ICEConfigService extends Context.Tag("ICEConfigService")<
 				Object.entries(mod).filter(([key]) => key !== "default"),
 			) as TaskTree
 			const transformedTaskTree = yield* applyPlugins(taskTree)
-			// TODO: get from cli args
-			const iceCtx = { network: "local" }
+			const { network } = yield* CLIFlags
+			const iceCtx = { network }
 			let config: Partial<ICEConfig>
 			const d = mod.default
 			if (typeof d === "function") {
