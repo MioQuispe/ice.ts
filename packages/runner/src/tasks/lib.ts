@@ -9,23 +9,26 @@ import {
 	Option,
 } from "effect"
 import { ICEConfigService } from "../services/iceConfig.js"
-import type { ICEConfig, TaskTree } from "../types/types.js"
+import type {
+	ICEConfig,
+	NamedParam,
+	PositionalParam,
+	TaskParam,
+	TaskTree,
+} from "../types/types.js"
 import type { Scope } from "../types/types.js"
 import type { TaskTreeNode } from "../types/types.js"
 import type { Task } from "../types/types.js"
-import type { ConfigNetwork } from "../types/schema.js"
-import { HttpAgent } from "@dfinity/agent"
 import type { SignIdentity } from "@dfinity/agent"
-import type { Principal } from "@dfinity/principal"
-import type { Identity } from "@dfinity/agent"
 import { DependencyResults, runTaskByPath, runTask, TaskInfo } from "./run.js"
-import { principalToAccountId } from "../utils/utils.js"
 import { Layer } from "effect"
 import { configMap, Ids } from "../index.js"
 import { makeRuntime } from "../index.js"
 import { type ReplicaService } from "../services/replica.js"
 import { DefaultConfig } from "../services/defaultConfig.js"
 import { CLIFlags } from "../services/cliFlags.js"
+import mri from "mri"
+import { StandardSchemaV1 } from "@standard-schema/spec"
 
 // const asyncRunTask = async <A>(task: Task): Promise<A> => {
 // 	const result = makeRuntime({
@@ -35,6 +38,28 @@ import { CLIFlags } from "../services/cliFlags.js"
 // 	}).runPromise(runTask(task))
 // 	return result as A
 // }
+
+
+type ExtractNamedParams<
+	TP extends Record<string, NamedParam | PositionalParam>,
+> = {
+	[K in keyof TP]: TP[K] extends NamedParam ? TP[K] : never
+}
+
+export type ExtractPositionalParams<
+	TP extends Record<string, NamedParam | PositionalParam>,
+> = Extract<TP[keyof TP], PositionalParam>[]
+
+export type ExtractArgsFromTaskParams<
+	TP extends Record<string, NamedParam | PositionalParam>,
+> = {
+	// TODO: schema needs to be typed as StandardSchemaV1
+	[K in keyof TP]: StandardSchemaV1.InferOutput<TP[K]["schema"]>
+}
+
+export type TaskParamsToArgs<T extends Task> = {
+	[K in keyof T["params"]]: T["params"][K] extends TaskParam ? StandardSchemaV1.InferOutput<T["params"][K]["schema"]> : never
+}
 
 export interface TaskCtxShape {
 	readonly users: {
@@ -54,7 +79,10 @@ export interface TaskCtxShape {
 		}
 	}
 	readonly replica: ReplicaService
-	readonly runTask: <A>(task: Task) => Promise<A>
+	readonly runTask: <T extends Task>(
+		task: T,
+		args: TaskParamsToArgs<T>,
+	) => Promise<Effect.Effect.Success<T["effect"]>>
 	readonly currentNetwork: string
 	readonly networks: {
 		[key: string]: {
@@ -64,6 +92,7 @@ export interface TaskCtxShape {
 			// subnet: Subnet?
 		}
 	}
+	readonly args: Record<string, unknown>
 }
 export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {}
 
@@ -107,6 +136,65 @@ export const collectDependencies = (
 	}
 	return collected
 }
+
+export class TaskArgsParseError extends Data.TaggedError("TaskArgsParseError")<{
+	message: string
+}> {}
+
+// Helper function to validate a single parameter
+const validateParam = (
+	schema: PositionalParam["schema"] | NamedParam["schema"], // Adjust type as per your actual schema structure
+	value: unknown,
+	paramName?: string, // Optional: for better error messages with named params
+): Effect.Effect<unknown, TaskArgsParseError> => {
+	// @ts-ignore // Assuming schema has a validate method
+	const result = schema["~standard"].validate(value)
+	if (result instanceof Promise) {
+		return Effect.fail(
+			new TaskArgsParseError({
+				message: `Async validation not implemented for ${paramName ?? "positional parameter"}`,
+			}),
+		)
+	}
+	// @ts-ignore // Assuming result has issues and value properties
+	if (result.issues) {
+		return Effect.fail(
+			new TaskArgsParseError({
+				message: `Validation failed for ${paramName ?? "positional parameter"}: ${JSON.stringify(result.issues, null, 2)}`,
+			}),
+		)
+	}
+	// @ts-ignore
+	return Effect.succeed(result.value)
+}
+
+export const parseTaskArgs = (task: Task, taskArgs: string[]) =>
+	Effect.gen(function* () {
+		const parsedArgs = mri(taskArgs)
+		const namedArgsFromCli = Object.fromEntries(
+			Object.entries(parsedArgs).filter(([name]) => name !== "_"),
+		)
+		const positionalArgsFromCli = parsedArgs._
+
+		const positionalParamsEffect = task.positionalParams.map((param, index) =>
+			validateParam(param.schema, positionalArgsFromCli[index]),
+		)
+
+		const namedParamsEffectMap = Object.fromEntries(
+			Object.entries(task.namedParams).map(([name, param]) => [
+				name,
+				validateParam(param.schema, namedArgsFromCli[name], name),
+			]),
+		)
+
+		const namedParams = yield* Effect.all(namedParamsEffectMap)
+		const positionalParams = yield* Effect.all(positionalParamsEffect)
+
+		return {
+			positionalParams,
+			namedParams,
+		}
+	})
 
 /**
  * Topologically sorts tasks based on the "provide" field dependencies.
@@ -187,15 +275,15 @@ export type ProgressUpdate<A> = {
 	error?: unknown
 }
 
-export const executeTasks = <A, E, R, I>(
-	tasks: Task<A, E, R, I>[],
-	progressCb: (update: ProgressUpdate<A>) => void = () => {},
+export const executeTasks = (
+	tasks: Task[],
+	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) =>
 	Effect.gen(function* () {
 		const defaultConfig = yield* DefaultConfig
 		const { config } = yield* ICEConfigService
 		const cliFlags = yield* CLIFlags
-		const currentNetwork = cliFlags.network ?? "local"
+		const currentNetwork = cliFlags.globalArgs.network ?? "local"
 		const currentNetworkConfig =
 			config?.networks?.[currentNetwork] ??
 			defaultConfig.networks[currentNetwork]
@@ -212,9 +300,9 @@ export const executeTasks = <A, E, R, I>(
 			: defaultConfig.roles
 
 		// Create a deferred for every task to hold its eventual result.
-		const deferredMap = new Map<symbol, Deferred.Deferred<E | unknown, R>>()
+		const deferredMap = new Map<symbol, Deferred.Deferred<unknown, unknown>>()
 		for (const task of tasks) {
-			const deferred = yield* Deferred.make<E | unknown, R>()
+			const deferred = yield* Deferred.make<unknown, unknown>()
 			deferredMap.set(task.id, deferred)
 		}
 		const results = new Map<symbol, unknown>()
@@ -232,6 +320,8 @@ export const executeTasks = <A, E, R, I>(
 				const taskPath = yield* getTaskPathById(task.id)
 				progressCb({ taskId: task.id, taskPath, status: "starting" })
 
+				const parsedTaskArgs = yield* parseTaskArgs(task, cliFlags.taskArgs)
+
 				const taskLayer = Layer.mergeAll(
 					Layer.succeed(TaskInfo, {
 						taskPath,
@@ -241,11 +331,14 @@ export const executeTasks = <A, E, R, I>(
 						...defaultConfig,
 						// TODO: wrap with proxy?
 						// runTask: asyncRunTask,
-						runTask: async <A>(task: Task): Promise<A> => {
+						runTask: async <A extends Task>(
+							task: A,
+							args: TaskParamsToArgs<A>,
+						): Promise<Effect.Effect.Success<A["effect"]>> => {
 							const result = makeRuntime(cliFlags)
 								// @ts-ignore
-								.runPromise(runTask(task))
-							return result as A
+								.runPromise(runTask(task, args))
+							return result as Promise<Effect.Effect.Success<A["effect"]>>
 						},
 						replica: currentReplica,
 						currentNetwork,
@@ -255,6 +348,9 @@ export const executeTasks = <A, E, R, I>(
 							...currentUsers,
 						},
 						roles: initializedRoles,
+						// TODO: taskArgs
+						// what format? we need to check the task itself
+						args: parsedTaskArgs,
 					}),
 					Layer.succeed(DependencyResults, {
 						dependencies: dependencyResults,

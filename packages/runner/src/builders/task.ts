@@ -1,4 +1,4 @@
-import type { CanisterConstructor, Task } from "../types/types.js"
+import type { CanisterConstructor, Task, TaskParam } from "../types/types.js"
 import { Effect, Option } from "effect"
 import type {
 	ExtractTaskEffectSuccess,
@@ -11,6 +11,41 @@ import { TaskInfo } from "../tasks/run.js"
 import { DependencyResults } from "../tasks/run.js"
 import { patchGlobals } from "../utils/extension.js"
 import { Tags, type TaskCtxShape } from "./types.js"
+import { NamedParam, PositionalParam } from "../types/types.js"
+import { match, type } from "arktype"
+import { StandardSchemaV1 } from "@standard-schema/spec"
+
+// const PositionalParam = positionalParamSchema
+// const NamedParam = namedParamSchema("unknown")
+// type PositionalParam = typeof PositionalParam.infer
+// type NamedParam = typeof NamedParam.infer
+
+type MergeTaskParams<
+	T extends Task,
+	TP extends Record<string, NamedParam | PositionalParam>,
+> = T & {
+	// TODO: extract namedParams and positionalParams from TP
+	namedParams: ExtractNamedParams<TP>
+	positionalParams: ExtractPositionalParams<TP>
+	params: TP
+}
+
+type ExtractNamedParams<
+	TP extends Record<string, NamedParam | PositionalParam>,
+> = {
+	[K in keyof TP]: TP[K] extends NamedParam ? TP[K] : never
+}
+
+export type ExtractPositionalParams<
+	TP extends Record<string, NamedParam | PositionalParam>,
+> = Extract<TP[keyof TP], PositionalParam>[]
+
+export type ExtractArgsFromTaskParams<
+	TP extends Record<string, NamedParam | PositionalParam>,
+> = {
+	// TODO: schema needs to be typed as StandardSchemaV1
+	[K in keyof TP]: StandardSchemaV1.InferOutput<TP[K]["schema"]>
+}
 
 function normalizeDep(dep: Task | CanisterScope | CanisterConstructor): Task {
 	if ("_tag" in dep && dep._tag === "task") return dep
@@ -93,14 +128,19 @@ interface TaskBuilderInitial<
 	T extends Task,
 	D extends Record<string, Task> = {},
 	P extends Record<string, Task> = {},
+	TP extends Record<string, NamedParam | PositionalParam> = {},
 > {
+	params<TP extends Record<string, NamedParam | PositionalParam>>(
+		params: TP,
+	): TaskBuilderParams<I, T, D, P, TP>
 	dependsOn<ND extends Record<string, AllowedDep>>(
 		deps: ND,
 	): TaskBuilderDeps<
 		I,
 		MergeTaskDeps<T, NormalizeDeps<ND>>,
 		NormalizeDeps<ND>,
-		P
+		P,
+		TP
 	>
 	deps<NP extends Record<string, AllowedDep>>(
 		providedDeps: ValidProvidedDeps<D, NP>,
@@ -108,7 +148,8 @@ interface TaskBuilderInitial<
 		I,
 		MergeTaskProvide<T, NormalizeDeps<ValidProvidedDeps<D, NP>>>,
 		D,
-		NormalizeDeps<ValidProvidedDeps<D, NP>>
+		NormalizeDeps<ValidProvidedDeps<D, NP>>,
+		TP
 	>
 	run<Output>(
 		fn: (args: {
@@ -125,7 +166,53 @@ interface TaskBuilderInitial<
 			>
 		},
 		D,
-		P
+		P,
+		TP
+	>
+}
+
+interface TaskBuilderParams<
+	I,
+	T extends Task,
+	D extends Record<string, Task>,
+	P extends Record<string, Task>,
+	TP extends Record<string, NamedParam | PositionalParam>,
+> {
+	dependsOn<ND extends Record<string, AllowedDep>>(
+		deps: ND,
+	): TaskBuilderDeps<
+		I,
+		MergeTaskDeps<T, NormalizeDeps<ND>>,
+		NormalizeDeps<ND>,
+		P,
+		TP
+	>
+	deps<NP extends Record<string, AllowedDep>>(
+		providedDeps: ValidProvidedDeps<D, NP>,
+	): TaskBuilderProvide<
+		I,
+		MergeTaskProvide<T, NormalizeDeps<ValidProvidedDeps<D, NP>>>,
+		D,
+		NormalizeDeps<ValidProvidedDeps<D, NP>>,
+		TP
+	>
+	run<Output>(
+		fn: (args: {
+			ctx: TaskCtxShape
+			deps: ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>
+		}) => Promise<Output>,
+	): TaskBuilderRun<
+		I,
+		Omit<T, "effect"> & {
+			effect: Effect.Effect<
+				Output,
+				Error,
+				TaskCtx | TaskInfo | DependencyResults
+			>
+		},
+		D,
+		P,
+		TP
 	>
 }
 
@@ -137,6 +224,7 @@ interface TaskBuilderDeps<
 	T extends Task,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
+	TP extends Record<string, NamedParam | PositionalParam>,
 > {
 	deps<NP extends Record<string, AllowedDep>>(
 		providedDeps: ValidProvidedDeps<D, NP>,
@@ -144,7 +232,8 @@ interface TaskBuilderDeps<
 		I,
 		MergeTaskProvide<T, NormalizeDeps<ValidProvidedDeps<D, NP>>>,
 		D,
-		NormalizeDeps<ValidProvidedDeps<D, NP>>
+		NormalizeDeps<ValidProvidedDeps<D, NP>>,
+		TP
 	>
 }
 
@@ -156,9 +245,12 @@ interface TaskBuilderProvide<
 	T extends Task,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
+	TP extends Record<string, NamedParam | PositionalParam>,
 > {
 	run<Output>(
 		fn: (args: {
+			// TODO: get the params type
+			args: ExtractArgsFromTaskParams<TP>
 			ctx: TaskCtxShape
 			deps: ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>
 		}) => Promise<Output>,
@@ -172,7 +264,8 @@ interface TaskBuilderProvide<
 			>
 		},
 		D,
-		P
+		P,
+		TP
 	>
 }
 
@@ -184,6 +277,7 @@ interface TaskBuilderRun<
 	T extends Task,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
+	TP extends Record<string, NamedParam | PositionalParam>,
 > {
 	done(): T
 	_tag: "builder"
@@ -213,9 +307,11 @@ function runTask<
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
 	Output,
+	TP extends Record<string, NamedParam | PositionalParam>,
 >(
 	task: T,
-	fn: (args: {
+	fn: (env: {
+		args: ExtractArgsFromTaskParams<TP>
 		ctx: TaskCtxShape
 		deps: ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>
 	}) => Promise<Output>,
@@ -225,7 +321,8 @@ function runTask<
 		effect: Effect.Effect<Output, Error, TaskCtx | TaskInfo | DependencyResults>
 	},
 	D,
-	P
+	P,
+	TP
 > {
 	const newTask = {
 		...task,
@@ -237,6 +334,8 @@ function runTask<
 				try: () =>
 					patchGlobals(() =>
 						fn({
+							// TODO: get args how?
+							args: taskCtx.args as ExtractArgsFromTaskParams<TP>,
 							ctx: taskCtx,
 							deps: dependencies as ExtractTaskEffectSuccess<P> &
 								ExtractTaskEffectSuccess<D>,
@@ -251,7 +350,60 @@ function runTask<
 		}),
 	} satisfies Task
 
-	return makeTaskBuilderRun<I, typeof newTask, D, P>(newTask)
+	return makeTaskBuilderRun<I, typeof newTask, D, P, TP>(newTask)
+}
+
+const matchParam = match({})
+	// NamedParam
+	.case(
+		{
+			isFlag: "boolean",
+			aliases: "string[]",
+			description: "string",
+			isOptional: "boolean",
+			isVariadic: "boolean",
+		},
+		(param) => ({ namedParam: param as NamedParam }),
+	)
+	// PositionalParam
+	.case(
+		{
+			description: "string",
+			isOptional: "boolean",
+			isVariadic: "boolean",
+		},
+		(param) => ({ positionalParam: param as PositionalParam }),
+	)
+	.default("assert")
+
+function handleParams<
+	I,
+	T extends Task,
+	D extends Record<string, Task>,
+	P extends Record<string, Task>,
+	TP extends Record<string, NamedParam | PositionalParam>,
+>(task: T, params: TP): TaskBuilderParams<I, T, D, P, TP> {
+	// TODO: use arktype?
+	const namedParams: Record<string, NamedParam> = {}
+	const positionalParams: Array<PositionalParam> = []
+	for (const [name, param] of Object.entries(params)) {
+		// TODO: nicer error?
+		const result = matchParam(param)
+		if ("namedParam" in result) {
+			namedParams[name] = result.namedParam
+		} else if ("positionalParam" in result) {
+			positionalParams.push(result.positionalParam)
+		} else {
+			throw new Error(`Invalid parameter type: ${param}`)
+		}
+	}
+	const updatedTask = {
+		...task,
+		namedParams,
+		positionalParams,
+		params,
+	} satisfies Task as MergeTaskParams<T, TP>
+	return makeTaskBuilderParams<I, typeof updatedTask, D, P, TP>(updatedTask)
 }
 
 /**
@@ -263,6 +415,7 @@ function handleDeps<
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
 	ND extends Record<string, AllowedDep>,
+	TP extends Record<string, NamedParam | PositionalParam>,
 >(
 	task: T,
 	dependencies: ND,
@@ -270,7 +423,8 @@ function handleDeps<
 	I,
 	MergeTaskDeps<T, NormalizeDeps<ND>>,
 	NormalizeDeps<ND>,
-	P
+	P,
+	TP
 > {
 	const finalDeps = normalizeDepsMap(dependencies) as NormalizeDeps<
 		typeof dependencies
@@ -283,7 +437,8 @@ function handleDeps<
 		I,
 		typeof updatedTask,
 		NormalizeDeps<typeof dependencies>,
-		P
+		P,
+		TP
 	>(updatedTask)
 }
 
@@ -295,6 +450,7 @@ function handleProvide<
 	T extends Task,
 	D extends Record<string, Task>,
 	NP extends Record<string, AllowedDep>,
+	TP extends Record<string, NamedParam | PositionalParam>,
 >(
 	task: T,
 	providedDeps: NP,
@@ -302,7 +458,8 @@ function handleProvide<
 	I,
 	MergeTaskProvide<T, NormalizeDeps<ValidProvidedDeps<D, NP>>>,
 	D,
-	NormalizeDeps<ValidProvidedDeps<D, NP>>
+	NormalizeDeps<ValidProvidedDeps<D, NP>>,
+	TP
 > {
 	const finalDeps = normalizeDepsMap(providedDeps) as NormalizeDeps<
 		typeof providedDeps
@@ -318,7 +475,8 @@ function handleProvide<
 		I,
 		typeof updatedTask,
 		D,
-		NormalizeDeps<ValidProvidedDeps<D, typeof providedDeps>>
+		NormalizeDeps<ValidProvidedDeps<D, typeof providedDeps>>,
+		TP
 	>(updatedTask)
 }
 
@@ -334,13 +492,31 @@ function makeTaskBuilderInitial<
 	T extends Task,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
->(task: T): TaskBuilderInitial<I, T, D, P> {
+	TP extends Record<string, NamedParam | PositionalParam>,
+>(task: T): TaskBuilderInitial<I, T, D, P, TP> {
+	return {
+		params: (params) => handleParams<I, T, D, P, typeof params>(task, params),
+		dependsOn: (dependencies) =>
+			handleDeps<I, T, D, P, typeof dependencies, TP>(task, dependencies),
+		deps: (providedDeps) =>
+			handleProvide<I, T, D, typeof providedDeps, TP>(task, providedDeps),
+		run: (fn) => runTask<I, T, D, P, any, TP>(task, fn),
+	}
+}
+
+function makeTaskBuilderParams<
+	I,
+	T extends Task,
+	D extends Record<string, Task>,
+	P extends Record<string, Task>,
+	TP extends Record<string, NamedParam | PositionalParam>,
+>(task: T): TaskBuilderParams<I, T, D, P, TP> {
 	return {
 		dependsOn: (dependencies) =>
-			handleDeps<I, T, D, P, typeof dependencies>(task, dependencies),
+			handleDeps<I, T, D, P, typeof dependencies, TP>(task, dependencies),
 		deps: (providedDeps) =>
-			handleProvide<I, T, D, typeof providedDeps>(task, providedDeps),
-		run: (fn) => runTask<I, T, D, P, any>(task, fn),
+			handleProvide<I, T, D, typeof providedDeps, TP>(task, providedDeps),
+		run: (fn) => runTask<I, T, D, P, any, TP>(task, fn),
 	}
 }
 
@@ -352,10 +528,11 @@ function makeTaskBuilderDeps<
 	T extends Task,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
->(task: T): TaskBuilderDeps<I, T, D, P> {
+	TP extends Record<string, NamedParam | PositionalParam>,
+>(task: T): TaskBuilderDeps<I, T, D, P, TP> {
 	return {
 		deps: (providedDeps) =>
-			handleProvide<I, T, D, typeof providedDeps>(task, providedDeps),
+			handleProvide<I, T, D, typeof providedDeps, TP>(task, providedDeps),
 	}
 }
 
@@ -367,9 +544,10 @@ function makeTaskBuilderProvide<
 	T extends Task,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
->(task: T): TaskBuilderProvide<I, T, D, P> {
+	TP extends Record<string, NamedParam | PositionalParam>,
+>(task: T): TaskBuilderProvide<I, T, D, P, TP> {
 	return {
-		run: (fn) => runTask<I, T, D, P, any>(task, fn),
+		run: (fn) => runTask<I, T, D, P, any, TP>(task, fn),
 	}
 }
 
@@ -381,7 +559,8 @@ function makeTaskBuilderRun<
 	T extends Task,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
->(task: T): TaskBuilderRun<I, T, D, P> {
+	TP extends Record<string, NamedParam | PositionalParam>,
+>(task: T): TaskBuilderRun<I, T, D, P, TP> {
 	return {
 		done: () => task,
 		_tag: "builder",
@@ -402,9 +581,12 @@ export function task<I = unknown>(description = "description") {
 		dependencies: {},
 		provide: {},
 		tags: [],
+		params: {},
+		namedParams: {},
+		positionalParams: [],
 		effect: Effect.gen(function* () {}),
 	}
-	return makeTaskBuilderInitial<I, typeof baseTask, {}, {}>(baseTask)
+	return makeTaskBuilderInitial<I, typeof baseTask, {}, {}, {}>(baseTask)
 }
 
 //

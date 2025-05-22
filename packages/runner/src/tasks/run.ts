@@ -39,17 +39,17 @@ export interface RunTaskOptions {
 	forceRun?: boolean
 }
 
-export const runTaskByPath = <A, E, R, I>(
+export const runTaskByPath = (
 	taskPath: string,
 	progressCb?: (update: ProgressUpdate<unknown>) => void,
 ) =>
 	Effect.gen(function* () {
 		const { task } = yield* getTaskByPath(taskPath)
-		return (yield* runTask(task, progressCb)) as A
+		return yield* runTask(task, progressCb)
 	})
 
-export const runTask = <A = unknown, E = unknown, R = unknown, I = unknown>(
-	task: Task<A, E, R, I>,
+export const runTask = (
+	task: Task,
 	progressCb?: (update: ProgressUpdate<unknown>) => void,
 ) =>
 	Effect.gen(function* () {
@@ -57,11 +57,11 @@ export const runTask = <A = unknown, E = unknown, R = unknown, I = unknown>(
 		const collectedTasks = collectDependencies([task])
 		const sortedTasks = topologicalSortTasks(collectedTasks)
 		const results = yield* executeTasks(sortedTasks, progressCb)
-		return results.get(task.id) as A
+		return results.get(task.id)
 	})
 
-export const runTasks = <A = unknown, E = unknown, R = unknown, I = unknown>(
-	tasks: Task<A, E, R, I>[],
+export const runTasks = (
+	tasks: Task[],
 	progressCb?: (update: ProgressUpdate<unknown>) => void,
 ) =>
 	Effect.gen(function* () {

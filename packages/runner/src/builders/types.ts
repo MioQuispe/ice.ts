@@ -303,6 +303,9 @@ const testTask = {
 	description: "",
 	tags: [],
 	computeCacheKey: Option.none(),
+	namedParams: {},
+	positionalParams: [],
+	params: {},
 } satisfies Task
 
 const testTask2 = {
@@ -317,6 +320,9 @@ const testTask2 = {
 	description: "",
 	tags: [],
 	computeCacheKey: Option.none(),
+	namedParams: {},
+	positionalParams: [],
+	params: {},
 } satisfies Task
 
 const providedTask = {
@@ -333,6 +339,9 @@ const providedTask = {
 	provide: {
 		test: testTask,
 	},
+	namedParams: {},
+	positionalParams: [],
+	params: {},
 } satisfies Task
 
 const unProvidedTask = {
@@ -354,6 +363,9 @@ const unProvidedTask = {
 		// test2: testTask,
 		// test3: testTask,
 	},
+	namedParams: {},
+	positionalParams: [],
+	params: {},
 } satisfies Task
 
 const unProvidedTask2 = {
@@ -375,6 +387,9 @@ const unProvidedTask2 = {
 		// test2: testTask,
 		// test3: testTask,
 	},
+	namedParams: {},
+	positionalParams: [],
+	params: {},
 } satisfies Task
 
 const testScope = {

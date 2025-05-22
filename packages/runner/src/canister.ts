@@ -20,36 +20,6 @@ export const Opt = <T>(value?: T): Opt<T> => {
 	return value || value === 0 ? [value] : []
 }
 
-export const installCanister = ({
-	encodedArgs,
-	canisterId,
-	wasmPath,
-}: {
-	encodedArgs: Uint8Array
-	canisterId: string
-	wasmPath: string
-}) =>
-	Effect.gen(function* () {
-		// TODO: we should get an agent and identity perhaps?
-		// const { mgmt } = yield* DfxService
-		// const pic = yield* PocketICService
-		const { users, replica } = yield* TaskCtx
-		const fs = yield* FileSystem.FileSystem
-		const wasmContent = yield* fs.readFile(wasmPath)
-		const wasm = new Uint8Array(wasmContent)
-		const maxSize = 3670016
-		// const identity =
-		yield* Effect.logDebug(`Installing code for ${canisterId} at ${wasmPath}`)
-		const { roles: { deployer: { identity } } } = yield* TaskCtx
-		yield* replica.installCode({
-			canisterId,
-			wasm,
-			encodedArgs,
-			identity,
-		})
-		yield* Effect.logDebug(`Code installed for ${canisterId}`)
-	})
-
 export const compileMotokoCanister = (
 	src: string,
 	canisterName: string,

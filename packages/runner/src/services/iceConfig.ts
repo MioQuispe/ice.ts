@@ -97,7 +97,7 @@ export class ICEConfigService extends Context.Tag("ICEConfigService")<
 				Object.entries(mod).filter(([key]) => key !== "default"),
 			) as TaskTree
 			const transformedTaskTree = yield* applyPlugins(taskTree)
-			const { network } = yield* CLIFlags
+			const { globalArgs: { network } } = yield* CLIFlags
 			const iceCtx = { network }
 			let config: Partial<ICEConfig>
 			const d = mod.default

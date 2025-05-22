@@ -10,6 +10,7 @@
     ],
     "strict": true,
     "esModuleInterop": true,
+    "strictNullChecks": true,
     "isolatedModules": true,
     "moduleResolution": "node",
     "resolveJsonModule": true,

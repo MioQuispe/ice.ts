@@ -38,6 +38,7 @@ import { sha256 } from "js-sha256"
 import type { log_visibility } from "@dfinity/agent/lib/cjs/canisters/management_service.js"
 import * as url from "node:url"
 import { SubnetStateType } from "./pocket-ic-client-types.js"
+import type * as ActorTypes from "../../types/actor.js"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 export const picReplicaImpl = Effect.gen(function* () {
@@ -580,18 +581,19 @@ export const picReplicaImpl = Effect.gen(function* () {
 			}),
 		getCanisterStatus,
 		getCanisterInfo,
-		createActor: <_SERVICE extends ActorInterface<_SERVICE>>({
+		createActor: <_SERVICE>({
 			canisterId,
 			canisterDID,
 			identity,
 		}: { canisterId: string; canisterDID: any; identity: SignIdentity }) =>
 			Effect.gen(function* () {
-				const actor = pic.createActor<_SERVICE>(
+				const actor = pic.createActor(
 					canisterDID.idlFactory,
 					Principal.fromText(canisterId),
 				)
 				actor.setIdentity(identity)
-				return actor
+				// TODO: fix this. ActorInterface<_SERVICE>
+				return actor as unknown as ActorTypes.ActorSubclass<_SERVICE>
 			}),
 	})
 })

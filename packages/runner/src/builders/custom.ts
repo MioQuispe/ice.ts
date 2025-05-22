@@ -18,7 +18,7 @@ import { proxyActor } from "../utils/extension.js"
 import { TaskInfo } from "../tasks/run.js"
 import { TaskCtx } from "../tasks/lib.js"
 import { DependencyResults } from "../tasks/run.js"
-import { generateDIDJS, installCanister, encodeArgs } from "../canister.js"
+import { generateDIDJS, encodeArgs } from "../canister.js"
 import { makeCanisterStatusTask, makeDeployTask } from "./lib.js"
 
 // TODO: later
@@ -66,6 +66,9 @@ export const makeStopTask = () => {
 		tags: [Tags.CANISTER, Tags.STOP],
 		computeCacheKey: Option.none(),
 		input: Option.none(),
+		namedParams: {},
+		positionalParams: [],
+		params: {},
 	} satisfies Task
 }
 
@@ -103,6 +106,9 @@ export const makeRemoveTask = () => {
 		tags: [Tags.CANISTER, Tags.REMOVE],
 		computeCacheKey: Option.none(),
 		input: Option.none(),
+		namedParams: {},
+		positionalParams: [],
+		params: {},
 	} satisfies Task
 }
 
@@ -136,6 +142,9 @@ export const makeCustomBindingsTask = (
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BINDINGS],
 		computeCacheKey: Option.none(),
 		input: Option.none(),
+		namedParams: {},
+		positionalParams: [],
+		params: {},
 	} satisfies Task
 }
 
@@ -282,6 +291,9 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 		}),
 		description: "Install canister code",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.INSTALL],
+		namedParams: {},
+		positionalParams: [],
+		params: {},
 	} satisfies Task
 }
 
@@ -349,6 +361,9 @@ const makeBuildTask = <P extends Record<string, unknown>>(
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BUILD],
 		computeCacheKey: Option.none(),
 		input: Option.none(),
+		namedParams: {},
+		positionalParams: [],
+		params: {},
 	} satisfies Task
 }
 
@@ -390,6 +405,8 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 		| CreateConfig,
 	tags: string[] = [],
 ) => {
+	// TODO: move to .done() / .make()
+	// this will allow us to branch builders
 	const id = Symbol("canister/create")
 	return {
 		_tag: "task",
@@ -447,6 +464,9 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 		tags: [Tags.CANISTER, Tags.CREATE, ...tags],
 		computeCacheKey: Option.none(),
 		input: Option.none(),
+		namedParams: {},
+		positionalParams: [],
+		params: {},
 	} satisfies Task
 }
 
@@ -761,6 +781,9 @@ const testTask = {
 	tags: [],
 	computeCacheKey: Option.none(),
 	input: Option.none(),
+	namedParams: {},
+	positionalParams: [],
+	params: {},
 } satisfies Task
 
 const testTask2 = {
@@ -773,6 +796,9 @@ const testTask2 = {
 	tags: [],
 	computeCacheKey: Option.none(),
 	input: Option.none(),
+	namedParams: {},
+	positionalParams: [],
+	params: {},
 } satisfies Task
 
 const providedTask = {
@@ -789,6 +815,9 @@ const providedTask = {
 	provide: {
 		test: testTask,
 	},
+	namedParams: {},
+	positionalParams: [],
+	params: {},
 } satisfies Task
 
 const unProvidedTask = {
@@ -810,6 +839,9 @@ const unProvidedTask = {
 		// test2: testTask,
 		// test3: testTask,
 	},
+	namedParams: {},
+	positionalParams: [],
+	params: {},
 } satisfies Task
 
 const unProvidedTask2 = {
@@ -831,6 +863,9 @@ const unProvidedTask2 = {
 		// test2: testTask,
 		// test3: testTask,
 	},
+	namedParams: {},
+	positionalParams: [],
+	params: {},
 } satisfies Task
 
 const testScope = {

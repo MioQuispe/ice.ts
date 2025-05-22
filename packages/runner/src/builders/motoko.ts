@@ -84,6 +84,9 @@ export const makeMotokoBindingsTask = () => {
 		tags: [Tags.CANISTER, Tags.MOTOKO, Tags.BINDINGS],
 		computeCacheKey: Option.none(),
 		input: Option.none(),
+		namedParams: {},
+		positionalParams: [],
+		params: {},
 	} satisfies Task
 }
 
@@ -136,6 +139,9 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 		}),
 		description: "some description",
 		tags: [Tags.CANISTER, Tags.MOTOKO, Tags.BUILD],
+		namedParams: {},
+		positionalParams: [],
+		params: {},
 	} satisfies Task
 }
 
@@ -152,6 +158,9 @@ const makeMotokoRemoveTask = (): Task => {
 		}),
 		description: "some description",
 		tags: [Tags.CANISTER, Tags.MOTOKO, Tags.REMOVE],
+		namedParams: {},
+		positionalParams: [],
+		params: {},
 	}
 }
 
@@ -356,6 +365,9 @@ const testTask = {
 	tags: [],
 	computeCacheKey: Option.none(),
 	input: Option.none(),
+	namedParams: {},
+	positionalParams: [],
+	params: {},
 } satisfies Task
 
 const testTask2 = {
@@ -368,6 +380,9 @@ const testTask2 = {
 	tags: [],
 	computeCacheKey: Option.none(),
 	input: Option.none(),
+	namedParams: {},
+	positionalParams: [],
+	params: {},
 } satisfies Task
 
 const providedTask = {
@@ -386,6 +401,9 @@ const providedTask = {
 	provide: {
 		test: testTask,
 	},
+	namedParams: {},
+	positionalParams: [],
+	params: {},
 } satisfies Task
 
 const unProvidedTask = {
@@ -407,6 +425,9 @@ const unProvidedTask = {
 		// test2: testTask,
 		// test3: testTask,
 	},
+	namedParams: {},
+	positionalParams: [],
+	params: {},
 } satisfies Task
 
 const unProvidedTask2 = {
@@ -428,6 +449,9 @@ const unProvidedTask2 = {
 		// test2: testTask,
 		// test3: testTask,
 	},
+	namedParams: {},
+	positionalParams: [],
+	params: {},
 } satisfies Task
 
 const testScope = {

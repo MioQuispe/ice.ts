@@ -1,113 +1,176 @@
-import type { Effect, Option } from "effect"
-import type { ActorSubclass, Agent, Identity, SignIdentity } from "@dfinity/agent"
+import type { Effect, Option, Schema } from "effect"
+import type {
+	ActorSubclass,
+	Agent,
+	Identity,
+	SignIdentity,
+} from "@dfinity/agent"
 import type { Principal } from "@dfinity/principal"
 import type { ReplicaService } from "../services/replica.js"
+import type { StandardSchemaV1 } from "@standard-schema/spec"
+import { type } from "arktype"
 
 export type CanisterActor = {
-  actor: ActorSubclass<unknown>
-  canisterId: string
-  getControllers: () => Promise<void>
-  addControllers: (controllers: string[]) => Promise<void>
-  setControllers: (controllers: string[]) => Promise<void>
+	actor: ActorSubclass<unknown>
+	canisterId: string
+	getControllers: () => Promise<void>
+	addControllers: (controllers: string[]) => Promise<void>
+	setControllers: (controllers: string[]) => Promise<void>
 }
 
 export type ManagementActor = import("@dfinity/agent").ActorSubclass<
-  import("../canisters/management_latest/management.types.js")._SERVICE
+	import("../canisters/management_latest/management.types.js")._SERVICE
 >
 
 export type ReplicaConfig = {
-  subnet: "system" | "application" | "verified_application"
-  // type?: "ephemeral" | "persistent"
-  bitcoin?: boolean
-  canister_http?: boolean
-  type: "pocketic" | "dfx"
+	subnet: "system" | "application" | "verified_application"
+	// type?: "ephemeral" | "persistent"
+	bitcoin?: boolean
+	canister_http?: boolean
+	type: "pocketic" | "dfx"
 }
 
 type ICEUser = {
-  identity: SignIdentity
-  principal: string
-  accountId: string
-  // agent: Agent
+	identity: SignIdentity
+	principal: string
+	accountId: string
+	// agent: Agent
 }
 
 // TODO: create service? dependencies?
 export type ICEConfig = {
-  users: {
-    [key: string]: ICEUser
-  }
-  roles: {
-    [key: string]: string
-  }
-  networks: {
-    [key: string]: {
-      replica: ReplicaService
-      host: string
-      port: number
-    }
-  }
+	users: {
+		[key: string]: ICEUser
+	}
+	roles: {
+		[key: string]: string
+	}
+	networks: {
+		[key: string]: {
+			replica: ReplicaService
+			host: string
+			port: number
+		}
+	}
 }
 
 export type InitializedICEConfig = {
-  users: {
-    [key: string]: ICEUser
-  }
-  roles: {
-    [key: string]: ICEUser
-  }
-  networks: {
-    [key: string]: {
-      replica: ReplicaService
-      host: string
-      port: number
-    }
-  }
+	users: {
+		[key: string]: ICEUser
+	}
+	roles: {
+		[key: string]: ICEUser
+	}
+	networks: {
+		[key: string]: {
+			replica: ReplicaService
+			host: string
+			port: number
+		}
+	}
 }
 
-export interface Task<
-  A = unknown,
-  E = unknown,
-  R = unknown,
-  I = unknown,
-> {
-  _tag: "task"
-  // TODO: how do we define args? do we just pass them in or inject into context?
-  // task: (args: any) => Effect.Effect<A, E, R>
-  readonly id: symbol // assigned by the builder
-  effect: Effect.Effect<A, E, R>
-  description: string
-  tags: Array<string | symbol>
-  // TODO: we only want the shape of the task here
-  dependencies: Record<string, Task>
-  provide: Record<string, Task>
-  // TODO: hmm? is this needed? hardhat has them but not sure if we need them
-  // flags: {
-  //   [key: `--${string}`]: any
-  // }
-  // TODO: not sure if we need this
-  // transformArgs?: (args: string[]) => any[]
-  // for caching
-  input: Option.Option<I> // optional input
-  // TODO: causes type issues in builders
-  // computeCacheKey?: (task: Task<A, E, R, I>) => string
-  computeCacheKey: Option.Option<
-    (task: Task<A, E, R, I>) => string
-  >
+export interface TaskParam<T = unknown> {
+  name: string;
+  schema: StandardSchemaV1<T>;
+  description?: string;
+  default?: T;
+  isOptional: boolean;
+  isVariadic: boolean;
+}
+
+export interface NamedParam<T = unknown> extends TaskParam<T> {
+  isFlag: boolean;
+  aliases: Array<string>;
+  // TODO: means it shouldnt appear in the help. not sure if we need this
+  // hidden: boolean;
+}
+
+export interface PositionalParam<T = unknown> extends TaskParam<T> {}
+
+
+
+// // Helper type that compares two types for equality.
+// type IsEqual<T, U> =
+//   (<V>() => V extends T ? 1 : 2) extends
+//   (<V>() => V extends U ? 1 : 2)
+//     ? true
+//     : false;
+
+// type IsSubType<T, U> = T extends U ? true : false;
+
+// // Assertion type used in tests. If T and U aren’t equal, this will result in a compile-time error.
+// type AssertEqual<T, U> = IsEqual<T, U> extends true ? true : never;
+// type AssertSubType<T, U> = IsSubType<T, U> extends true ? true : never;
+
+// // Usage examples:
+// type TestSuccess = AssertEqual<{ a: number }, { a: number }>; // OK, resolves to true
+// // type TestFailure = AssertEqual<number, string>; // Uncommenting this line causes a compile-time error
+
+
+
+
+// export const TaskParam = type("<t>", {
+// 	schema: "object",
+// 	"description?": "string",
+// 	"default?": "t",
+// 	"isOptional?": "boolean",
+// 	"isVariadic?": "boolean",
+// })
+
+// export const NamedParam = type({
+// 	"...": TaskParam("unknown"),
+// })
+// export type NamedParam = typeof NamedParam.infer
+// export const PositionalParam = type({
+// 	"...": TaskParam("unknown"),
+// 	"isFlag?": "boolean",
+// 	"aliases?": "string[]",
+// })
+// export type PositionalParam = typeof PositionalParam.infer
+
+// type NamedParamSchema = typeof namedParamSchema.infer
+
+// export const namedParamSchema = type.and(taskParamSchema, {
+//   "isFlag?": "boolean",
+//   "aliases?": "string[]",
+// })
+// export const positionalParamSchema = type.and(taskParamSchema)
+
+
+export interface Task<A = unknown, E = unknown, R = unknown, I = unknown> {
+	_tag: "task"
+	readonly id: symbol // assigned by the builder
+	effect: Effect.Effect<A, E, R>
+	description: string
+	tags: Array<string | symbol>
+	// TODO: we only want the shape of the task here
+	dependencies: Record<string, Task>
+	provide: Record<string, Task>
+	namedParams: Record<string, NamedParam>
+	positionalParams: Array<PositionalParam>
+  params: Record<string, NamedParam | PositionalParam>
+	// for caching. do we use standard schema here as well?
+	input: Option.Option<I> // optional input
+	// TODO: causes type issues in builders
+	// computeCacheKey?: (task: Task<A, E, R, I>) => string
+	computeCacheKey: Option.Option<(task: Task<A, E, R, I>) => string>
 }
 
 export type Scope = {
-  _tag: "scope"
-  // TODO: hmm do we need this?
-  tags: Array<string | symbol>
-  description: string
-  children: Record<string, TaskTreeNode>
-  // TODO:
-  defaultTask: Option.Option<string>
+	_tag: "scope"
+	// TODO: hmm do we need this?
+	tags: Array<string | symbol>
+	description: string
+	children: Record<string, TaskTreeNode>
+	// TODO:
+	defaultTask: Option.Option<string>
 }
 
 export type BuilderResult = {
-  _tag: "builder"
-  done: () => Task | Scope
-  [key: string]: any
+	_tag: "builder"
+	done: () => Task | Scope
+	[key: string]: any
 }
 
 export type TaskTreeNode = Task | Scope | BuilderResult
@@ -126,22 +189,24 @@ export type ICECtx = {
 }
 // TODO: fix
 export type ICEConfigFile = {
-  default: Partial<ICEConfig> | ((ctx: ICECtx) => Promise<Partial<ICEConfig>> | Partial<ICEConfig>)
+	default:
+		| Partial<ICEConfig>
+		| ((ctx: ICECtx) => Promise<Partial<ICEConfig>> | Partial<ICEConfig>)
 } & {
-  [key: string]: TaskTreeNode
+	[key: string]: TaskTreeNode
 }
 
 export type CanisterConstructor = {
-  // _tag: "canister-constructor"
-  provides: Task
+	// _tag: "canister-constructor"
+	provides: Task
 }
 
 // TODO: fix?
 export type CanisterScope = {
-  _tag: "scope"
-  tags: Array<string | symbol>
-  description: string
-  defaultTask: Option.Option<string>
-  // only limited to tasks
-  children: Record<string, Task>
+	_tag: "scope"
+	tags: Array<string | symbol>
+	description: string
+	defaultTask: Option.Option<string>
+	// only limited to tasks
+	children: Record<string, Task>
 }

@@ -10,7 +10,7 @@ import {
 } from "effect"
 import { NodeContext } from "@effect/platform-node"
 import { DfxDefaultReplica, DfxReplica } from "./services/dfx.js"
-import type { ICECtx, TaskTree, TaskTreeNode } from "./types/types.js"
+import type { ICECtx } from "./types/types.js"
 import { Moc } from "./services/moc.js"
 import { TaskRegistry } from "./services/taskRegistry.js"
 import { ICEConfigService } from "./services/iceConfig.js"
@@ -23,6 +23,7 @@ import { CLIFlags } from "./services/cliFlags.js"
 import { type } from "arktype"
 export * from "./builders/index.js"
 export * from "./ids.js"
+import { StandardSchemaV1 } from "@standard-schema/spec"
 
 export const Ice = (
 	configOrFn:
@@ -61,9 +62,7 @@ export const DefaultsLayer = Layer.mergeAll(
 	NodeContext.layer,
 	TaskRegistry.Live,
 	DefaultReplicaService,
-	DefaultConfig.Live.pipe(
-		Layer.provide(DefaultReplicaService),
-	),
+	DefaultConfig.Live.pipe(Layer.provide(DefaultReplicaService)),
 	Moc.Live.pipe(Layer.provide(NodeContext.layer)),
 	configLayer,
 	CanisterIdsService.Live.pipe(
@@ -76,15 +75,24 @@ export const TUILayer = Layer.mergeAll(
 	DefaultsLayer,
 	ICEConfigService.Live.pipe(
 		Layer.provide(NodeContext.layer),
-		Layer.provide(Layer.succeed(CLIFlags, { network: "local", logLevel: "debug" })),
+		Layer.provide(
+			Layer.succeed(CLIFlags, {
+				globalArgs: { network: "local", logLevel: "debug" },
+				taskArgs: [],
+			}),
+		),
 	),
 	Logger.minimumLogLevel(LogLevel.Debug),
 )
 
-const Flags = type({
+const GlobalArgs = type({
 	network: "string",
 	logLevel: "'debug' | 'info' | 'error'",
-})
+}) satisfies StandardSchemaV1<Record<string, unknown>>
+
+// Flags.
+
+// Flags["~standard"].validate
 
 const logLevelMap = {
 	debug: LogLevel.Debug,
@@ -92,21 +100,29 @@ const logLevelMap = {
 	error: LogLevel.Error,
 }
 
-export const makeRuntime = (cliFlags: { network: string; logLevel: string }) => {
-	const validatedFlags = Flags(cliFlags)
-	if (validatedFlags instanceof type.errors) {
-		throw new Error(validatedFlags.summary)
+type MakeRuntimeArgs = {
+	globalArgs: { network: string; logLevel: string }
+	taskArgs: string[]
+}
+
+export const makeRuntime = ({
+	globalArgs: rawGlobalArgs,
+	taskArgs,
+}: MakeRuntimeArgs) => {
+	const globalArgs = GlobalArgs(rawGlobalArgs)
+	if (globalArgs instanceof type.errors) {
+		throw new Error(globalArgs.summary)
 	}
 	return ManagedRuntime.make(
 		Layer.mergeAll(
 			DefaultsLayer,
 			ICEConfigService.Live.pipe(
 				Layer.provide(NodeContext.layer),
-				Layer.provide(Layer.succeed(CLIFlags, validatedFlags)),
+				Layer.provide(Layer.succeed(CLIFlags, { globalArgs, taskArgs })),
 			),
-			Layer.succeed(CLIFlags, validatedFlags),
+			Layer.succeed(CLIFlags, { globalArgs, taskArgs }),
 			Logger.pretty,
-			Logger.minimumLogLevel(logLevelMap[validatedFlags.logLevel]),
+			Logger.minimumLogLevel(logLevelMap[globalArgs.logLevel]),
 		),
 	)
 }

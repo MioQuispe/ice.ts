@@ -84,6 +84,9 @@ const makeDeployTask = (scope: CanisterScope): Task => {
     }),
     description: "Deploy canister code",
     tags: [Tags.CANISTER, Tags.DEPLOY],
+    namedParams: {},
+    positionalParams: [],
+    params: {},
   }
 }
 

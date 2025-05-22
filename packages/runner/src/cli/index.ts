@@ -21,6 +21,7 @@ import type { Task } from "../types/types.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
 import { DefaultReplica } from "../services/replica.js"
 import { Ed25519KeyIdentity } from "@dfinity/identity"
+// import { runExit, Command, Option, Cli } from "clipanion"
 
 function moduleHashToHexString(moduleHash: [] | [number[]]): string {
 	if (moduleHash.length === 0) {
@@ -31,7 +32,7 @@ function moduleHashToHexString(moduleHash: [] | [number[]]): string {
 	return `0x${hexString}`
 }
 
-const runtimeArgs = {
+const globalArgs = {
 	network: {
 		type: "string",
 		required: false,
@@ -62,14 +63,20 @@ const runCommand = defineCommand({
 			description:
 				"The task to run. examples: icrc1:build, nns:governance:install",
 		},
-		...runtimeArgs,
+		// TODO: fix. these get overridden by later args
+		...globalArgs,
 	},
-	run: async ({ args }) => {
+	run: async ({ args, rawArgs }) => {
+		// TODO: also pass in global args like network, logLevel. but handle them separately?
+		const taskArgs = rawArgs.slice(1)
 		const s = p.spinner()
 		s.start(`Running task... ${color.green(color.underline(args.taskPath))}`)
 		await makeRuntime({
-			network: args.network,
-			logLevel: args.logLevel,
+			globalArgs: {
+				network: args.network,
+				logLevel: args.logLevel,
+			},
+			taskArgs,
 		}).runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
@@ -103,8 +110,11 @@ const deployRun = async ({
 	const s = p.spinner()
 	s.start("Deploying all canisters...")
 	await makeRuntime({
-		network,
-		logLevel,
+		globalArgs: {
+			network,
+			logLevel,
+		},
+		taskArgs: [],
 	}).runPromise(
 		// @ts-ignore
 		Effect.gen(function* () {
@@ -143,14 +153,17 @@ const canistersCreateCommand = defineCommand({
 		description: "Creates all canisters",
 	},
 	args: {
-		...runtimeArgs,
+		...globalArgs,
 	},
 	run: async ({ args }) => {
 		const { network, logLevel } = args
 		// TODO: makeRuntime fn?
 		await makeRuntime({
-			network,
-			logLevel,
+			globalArgs: {
+				network,
+				logLevel,
+			},
+			taskArgs: [],
 		}).runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
@@ -189,13 +202,16 @@ const canistersBuildCommand = defineCommand({
 		description: "Builds all canisters",
 	},
 	args: {
-		...runtimeArgs,
+		...globalArgs,
 	},
 	run: async ({ args }) => {
 		const { network, logLevel } = args
 		await makeRuntime({
-			network,
-			logLevel,
+			globalArgs: {
+				network,
+				logLevel,
+			},
+			taskArgs: [],
 		}).runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
@@ -235,13 +251,16 @@ const canistersBindingsCommand = defineCommand({
 		description: "Generates bindings for all canisters",
 	},
 	args: {
-		...runtimeArgs,
+		...globalArgs,
 	},
 	run: async ({ args }) => {
 		const { network, logLevel } = args
 		await makeRuntime({
-			network,
-			logLevel,
+			globalArgs: {
+				network,
+				logLevel,
+			},
+			taskArgs: [],
 		}).runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
@@ -281,13 +300,16 @@ const canistersInstallCommand = defineCommand({
 		description: "Installs all canisters",
 	},
 	args: {
-		...runtimeArgs,
+		...globalArgs,
 	},
 	run: async ({ args }) => {
 		const { network, logLevel } = args
 		await makeRuntime({
-			network,
-			logLevel,
+			globalArgs: {
+				network,
+				logLevel,
+			},
+			taskArgs: [],
 		}).runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
@@ -327,13 +349,16 @@ const canistersStopCommand = defineCommand({
 		description: "Stops all canisters",
 	},
 	args: {
-		...runtimeArgs,
+		...globalArgs,
 	},
 	run: async ({ args }) => {
 		const { network, logLevel } = args
 		await makeRuntime({
-			network,
-			logLevel,
+			globalArgs: {
+				network,
+				logLevel,
+			},
+			taskArgs: [],
 		}).runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
@@ -406,15 +431,18 @@ const canistersStatusCommand = defineCommand({
 			required: false,
 			description: "The name or ID of the canister to get the status of",
 		},
-		...runtimeArgs,
+		...globalArgs,
 	},
 	run: async ({ args }) => {
 		// TODO: support canister name or ID
 		if (args._.length === 0) {
 			const { network, logLevel } = args
 			await makeRuntime({
-				network,
-				logLevel,
+				globalArgs: {
+					network,
+					logLevel,
+				},
+				taskArgs: [],
 			}).runPromise(
 				Effect.gen(function* () {
 					const canisterIdsService = yield* CanisterIdsService
@@ -494,13 +522,16 @@ const canistersRemoveCommand = defineCommand({
 		description: "Removes all canisters",
 	},
 	args: {
-		...runtimeArgs,
+		...globalArgs,
 	},
 	run: async ({ args }) => {
 		const { network, logLevel } = args
 		await makeRuntime({
-			network,
-			logLevel,
+			globalArgs: {
+				network,
+				logLevel,
+			},
+			taskArgs: [],
 		}).runPromise(
 			Effect.gen(function* () {
 				yield* Console.log("Coming soon...")
@@ -517,8 +548,11 @@ const uiCommand = defineCommand({
 	run: async ({ args }) => {
 		const { network, logLevel } = args
 		await makeRuntime({
-			network: "local",
-			logLevel: "debug",
+			globalArgs: {
+				network: "local",
+				logLevel: "debug",
+			},
+			taskArgs: [],
 		}).runPromise(
 			Effect.gen(function* () {
 				const { config, taskTree } = yield* ICEConfigService
@@ -534,7 +568,7 @@ const canistersDeployCommand = defineCommand({
 		description: "Deploys all canisters",
 	},
 	args: {
-		...runtimeArgs,
+		...globalArgs,
 	},
 	run: async ({ args }) => {
 		const { network, logLevel } = args
@@ -549,14 +583,17 @@ const canisterCommand = defineCommand({
 			"Select a specific canister to run a task on. install, build, deploy, etc.",
 	},
 	args: {
-		...runtimeArgs,
+		...globalArgs,
 	},
 	run: async ({ args }) => {
 		if (args._.length === 0) {
 			const { network, logLevel } = args
 			await makeRuntime({
-				network,
-				logLevel,
+				globalArgs: {
+					network,
+					logLevel,
+				},
+				taskArgs: [],
 			}).runPromise(
 				// @ts-ignore
 				Effect.gen(function* () {
@@ -645,14 +682,17 @@ const taskCommand = defineCommand({
 		description: `Select and run a task from the available tasks`,
 	},
 	args: {
-		...runtimeArgs,
+		...globalArgs,
 	},
 	run: async ({ args }) => {
 		if (args._.length === 0) {
 			const { network, logLevel } = args
 			await makeRuntime({
-				network,
-				logLevel,
+				globalArgs: {
+					network,
+					logLevel,
+				},
+				taskArgs: [],
 			}).runPromise(
 				// @ts-ignore
 				Effect.gen(function* () {
@@ -725,7 +765,7 @@ const main = defineCommand({
 		description: "ICE CLI",
 	},
 	args: {
-		...runtimeArgs,
+		...globalArgs,
 	},
 	run: async (ctx) => {
 		const { network, logLevel } = ctx.args
@@ -749,6 +789,7 @@ const main = defineCommand({
 	},
 })
 
+
 // TODO: can we load the iceConfig before running the cli?
 // Prepare and run the CLI application
 export const runCli = async () => {
@@ -770,3 +811,43 @@ export const runCli = async () => {
 	const cli = createMain(main)
 	cli()
 }
+
+// class RootCmd extends Command {
+// 	static paths = [Command.Default]
+// 	// static subCommands = [RunCmd, CanisterRoot, TaskPickerCommand];
+
+// 	network = Option.String("--network", "local")
+// 	logLevel = Option.String("--log-level", "info")
+
+// 	async execute() {
+// 		await deployRun({ network: this.network, logLevel: this.logLevel })
+// 	}
+// }
+// export const runCli = async () => {
+// 	// TODO: not in npm?
+// 	// const completion = await tab(main);
+// 	p.intro(`${color.bgCyan(color.black(" ICE CLI "))}`)
+// 	p.updateSettings({
+// 		aliases: {
+// 			w: "up",
+// 			s: "down",
+// 			a: "left",
+// 			d: "right",
+// 			j: "down",
+// 			k: "up",
+// 			h: "left",
+// 			l: "right",
+// 		},
+// 	})
+// 	const [node, app, ...args] = process.argv;
+// 	const cli = new Cli({
+// 		// binaryLabel: `ICE CLI`,
+// 		binaryName: `ice`,
+// 		// binaryVersion: `0.0.1`,
+// 		enableColors: true,
+// 	})
+// 	cli.register(RootCmd)
+// 	cli.runExit(args)
+// 	// runExit(cli, RootCmd)
+// 	// , { binaryName: "ICE CLI" }
+// }

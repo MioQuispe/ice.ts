@@ -79,6 +79,9 @@ export const makeCanisterStatusTask = (tags: string[]) => {
 		}),
 		description: "Get canister status",
 		tags: [Tags.CANISTER, Tags.STATUS, ...tags],
+		namedParams: {},
+		positionalParams: [],
+		params: {},
 	} satisfies Task
 }
 
@@ -133,5 +136,8 @@ export const makeDeployTask = (tags: string[]) => {
 		}),
 		description: "Deploy canister code",
 		tags: [Tags.CANISTER, Tags.DEPLOY, ...tags],
+		namedParams: {},
+		positionalParams: [],
+		params: {},
 	} satisfies Task
 }

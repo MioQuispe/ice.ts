@@ -22,7 +22,11 @@
 			"recommended": true,
 			"style": {
 				"noUselessElse": "off",
-				"useImportType": "off"
+				"useImportType": "off",
+				"noUnusedTemplateLiteral": "off"
+			},
+			"complexity": {
+				"noBannedTypes": "off"
 			},
 			"correctness": {
 				"useYield": "off"
