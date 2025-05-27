@@ -18,7 +18,6 @@ import type { PlatformError } from "@effect/platform/Error"
 import os from "node:os"
 import psList from "ps-list"
 import {
-	ActorInterface,
 	PocketIc,
 	PocketIcServer,
 	createActorClass,
@@ -324,10 +323,10 @@ export const picReplicaImpl = Effect.gen(function* () {
 					canisterId,
 					identity,
 				})
-				const mode =
-					canisterInfo.status === "not_installed" ? "install" : "reinstall"
+				// const mode =
+				// 	canisterInfo.status === "not_installed" ? "install" : "reinstall"
 				// TODO: "install" doesnt work for certain canisters for some reason
-				// const mode = "reinstall"
+				const mode = "reinstall"
 
 				if (isOverSize) {
 					// TODO: proper error handling if fails?

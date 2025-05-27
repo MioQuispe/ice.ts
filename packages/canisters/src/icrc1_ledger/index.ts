@@ -111,6 +111,8 @@ export const ICRC1Ledger = (
   })
 }
 
+// ICRC1Ledger().done().children.install.effect
+
 // TODO:
 //   _metadata: {
 //   standard: "icrc1",

@@ -20,31 +20,28 @@ import { StandardSchemaV1 } from "@standard-schema/spec"
 // type PositionalParam = typeof PositionalParam.infer
 // type NamedParam = typeof NamedParam.infer
 
-type MergeTaskParams<
-	T extends Task,
-	TP extends Record<string, NamedParam | PositionalParam>,
-> = T & {
+// type ParamsMap = Record<string, Omit<NamedParam, "name"> | Omit<PositionalParam, "name">>
+
+type MergeTaskParams<T extends Task, TP extends TaskParams> = T & {
 	// TODO: extract namedParams and positionalParams from TP
 	namedParams: ExtractNamedParams<TP>
 	positionalParams: ExtractPositionalParams<TP>
 	params: TP
 }
 
-type ExtractNamedParams<
-	TP extends Record<string, NamedParam | PositionalParam>,
-> = {
-	[K in keyof TP]: TP[K] extends NamedParam ? TP[K] : never
+type ExtractNamedParams<TP extends TaskParams> = {
+	// [K in keyof TP]: TP[K] extends NamedParam ? TP[K] : never
+	[K in keyof TP]: Extract<TP[K], NamedParam>
 }
 
-export type ExtractPositionalParams<
-	TP extends Record<string, NamedParam | PositionalParam>,
-> = Extract<TP[keyof TP], PositionalParam>[]
+export type ExtractPositionalParams<TP extends TaskParams> = Extract<
+	TP[keyof TP],
+	PositionalParam
+>[]
 
-export type ExtractArgsFromTaskParams<
-	TP extends Record<string, NamedParam | PositionalParam>,
-> = {
+export type ExtractArgsFromTaskParams<TP extends TaskParams> = {
 	// TODO: schema needs to be typed as StandardSchemaV1
-	[K in keyof TP]: StandardSchemaV1.InferOutput<TP[K]["schema"]>
+	[K in keyof TP]: StandardSchemaV1.InferOutput<TP[K]["type"]>
 }
 
 function normalizeDep(dep: Task | CanisterScope | CanisterConstructor): Task {
@@ -117,6 +114,63 @@ type TaskReturnValue<T extends Task> = T extends {
 // Builder Phase Interfaces
 //
 
+type OmitNames<T extends TaskParams> = {
+	[K in keyof T]: Omit<T[K], "name">
+}
+
+type AddNameToParams<T extends InputParams> = {
+	// [K in keyof T]: T[K] & { name: K extends string ? K : never }
+	// [K in keyof T]: T[K] & { name: K extends string ? K : never }
+	[K in keyof T]: T[K] extends InputPositionalParam
+		? InputPositionalParam<StandardSchemaV1.InferOutput<T[K]["type"]>> & {
+				name: K extends string ? K : never
+		  }
+		: T[K] extends InputNamedParam
+			? InputNamedParam<StandardSchemaV1.InferOutput<T[K]["type"]>> & {
+					name: K extends string ? K : never
+			  }
+			: never
+}
+
+type TaskParams = Record<string, NamedParam | PositionalParam>
+
+const t2 = {
+	a: {
+		name: "a",
+		type: type("string"),
+		isOptional: false,
+		isVariadic: false,
+	},
+} satisfies TaskParams
+const t3 = {
+	a: {
+		type: type("string"),
+		isOptional: false,
+		isVariadic: false,
+	},
+} satisfies InputParams
+
+const t4 = t2 satisfies AddNameToParams<InputParams> satisfies TaskParams
+
+// const t23 = Object.fromEntries<Record<string, NamedParam | PositionalParam>>(Object.entries(t2).filter(([k, v]) => k === "name"))
+
+type InputPositionalParam<T = unknown> = Omit<PositionalParam<T>, "name">
+type InputNamedParam<T = unknown> = Omit<NamedParam<T>, "name">
+
+type InputParams = Record<string, InputPositionalParam | InputNamedParam>
+
+type SafeInputParams<T extends InputParams> = {
+	[K in keyof T]: T[K] extends InputNamedParam
+		? InputNamedParam<StandardSchemaV1.InferOutput<T[K]["type"]>>
+		: T[K] extends InputPositionalParam
+			? InputPositionalParam<StandardSchemaV1.InferOutput<T[K]["type"]>>
+			: never
+}
+
+// type SafeTaskParams<T extends Record<string, any>> = {
+// 	[K in keyof T]: TaskParam<StandardSchemaV1.InferOutput<T[K]["type"]>>
+// }
+
 /**
  * The builder returned from `task()` which allows:
  * - Adding dependencies (.deps())
@@ -128,11 +182,17 @@ interface TaskBuilderInitial<
 	T extends Task,
 	D extends Record<string, Task> = {},
 	P extends Record<string, Task> = {},
-	TP extends Record<string, NamedParam | PositionalParam> = {},
+	TP extends TaskParams = {},
 > {
-	params<TP extends Record<string, NamedParam | PositionalParam>>(
-		params: TP,
-	): TaskBuilderParams<I, T, D, P, TP>
+	params<
+		// NTP extends OmitName<
+		// 	// SafeTaskParams<Record<string, NamedParam | PositionalParam>>
+		// 	SafeTaskParams<NTP>
+		// 	// NTP
+		// 	// Record<string, NamedParam | PositionalParam>
+		// >,
+		IP extends SafeInputParams<IP>,
+	>(params: IP): TaskBuilderParams<I, T, D, P, AddNameToParams<IP>>
 	dependsOn<ND extends Record<string, AllowedDep>>(
 		deps: ND,
 	): TaskBuilderDeps<
@@ -153,7 +213,8 @@ interface TaskBuilderInitial<
 	>
 	run<Output>(
 		fn: (args: {
-			ctx: TaskCtxShape
+			args: ExtractArgsFromTaskParams<TP>
+			ctx: TaskCtxShape<ExtractArgsFromTaskParams<TP>>
 			deps: ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>
 		}) => Promise<Output>,
 	): TaskBuilderRun<
@@ -176,7 +237,7 @@ interface TaskBuilderParams<
 	T extends Task,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
-	TP extends Record<string, NamedParam | PositionalParam>,
+	TP extends TaskParams,
 > {
 	dependsOn<ND extends Record<string, AllowedDep>>(
 		deps: ND,
@@ -198,8 +259,9 @@ interface TaskBuilderParams<
 	>
 	run<Output>(
 		fn: (args: {
-			ctx: TaskCtxShape
+			ctx: TaskCtxShape<ExtractArgsFromTaskParams<TP>>
 			deps: ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>
+			args: ExtractArgsFromTaskParams<TP>
 		}) => Promise<Output>,
 	): TaskBuilderRun<
 		I,
@@ -224,7 +286,7 @@ interface TaskBuilderDeps<
 	T extends Task,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
-	TP extends Record<string, NamedParam | PositionalParam>,
+	TP extends TaskParams,
 > {
 	deps<NP extends Record<string, AllowedDep>>(
 		providedDeps: ValidProvidedDeps<D, NP>,
@@ -245,13 +307,13 @@ interface TaskBuilderProvide<
 	T extends Task,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
-	TP extends Record<string, NamedParam | PositionalParam>,
+	TP extends TaskParams,
 > {
 	run<Output>(
 		fn: (args: {
 			// TODO: get the params type
 			args: ExtractArgsFromTaskParams<TP>
-			ctx: TaskCtxShape
+			ctx: TaskCtxShape<ExtractArgsFromTaskParams<TP>>
 			deps: ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>
 		}) => Promise<Output>,
 	): TaskBuilderRun<
@@ -277,7 +339,7 @@ interface TaskBuilderRun<
 	T extends Task,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
-	TP extends Record<string, NamedParam | PositionalParam>,
+	TP extends TaskParams,
 > {
 	done(): T
 	_tag: "builder"
@@ -307,12 +369,12 @@ function runTask<
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
 	Output,
-	TP extends Record<string, NamedParam | PositionalParam>,
+	TP extends TaskParams,
 >(
 	task: T,
 	fn: (env: {
 		args: ExtractArgsFromTaskParams<TP>
-		ctx: TaskCtxShape
+		ctx: TaskCtxShape<ExtractArgsFromTaskParams<TP>>
 		deps: ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>
 	}) => Promise<Output>,
 ): TaskBuilderRun<
@@ -336,7 +398,7 @@ function runTask<
 						fn({
 							// TODO: get args how?
 							args: taskCtx.args as ExtractArgsFromTaskParams<TP>,
-							ctx: taskCtx,
+							ctx: taskCtx as TaskCtxShape<ExtractArgsFromTaskParams<TP>>,
 							deps: dependencies as ExtractTaskEffectSuccess<P> &
 								ExtractTaskEffectSuccess<D>,
 						}),
@@ -353,7 +415,7 @@ function runTask<
 	return makeTaskBuilderRun<I, typeof newTask, D, P, TP>(newTask)
 }
 
-const matchParam = match({})
+const matchParam = match
 	// NamedParam
 	.case(
 		{
@@ -381,12 +443,26 @@ function handleParams<
 	T extends Task,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
-	TP extends Record<string, NamedParam | PositionalParam>,
->(task: T, params: TP): TaskBuilderParams<I, T, D, P, TP> {
+	IP extends InputParams,
+>(
+	task: T,
+	inputParams: IP,
+): TaskBuilderParams<I, T, D, P, AddNameToParams<IP>> {
+	const params = Object.fromEntries(
+		Object.entries(inputParams).map(([k, v]) => [
+			k,
+			{
+				...v,
+				name: k,
+			},
+		]),
+	) as AddNameToParams<IP>
 	// TODO: use arktype?
 	const namedParams: Record<string, NamedParam> = {}
 	const positionalParams: Array<PositionalParam> = []
-	for (const [name, param] of Object.entries(params)) {
+	for (const [name, param] of Object.entries<NamedParam | PositionalParam>(
+		params,
+	)) {
 		// TODO: nicer error?
 		const result = matchParam(param)
 		if ("namedParam" in result) {
@@ -402,8 +478,14 @@ function handleParams<
 		namedParams,
 		positionalParams,
 		params,
-	} satisfies Task as MergeTaskParams<T, TP>
-	return makeTaskBuilderParams<I, typeof updatedTask, D, P, TP>(updatedTask)
+	} satisfies Task as MergeTaskParams<T, AddNameToParams<IP>>
+	return makeTaskBuilderParams<
+		I,
+		typeof updatedTask,
+		D,
+		P,
+		AddNameToParams<IP>
+	>(updatedTask)
 }
 
 /**
@@ -415,7 +497,7 @@ function handleDeps<
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
 	ND extends Record<string, AllowedDep>,
-	TP extends Record<string, NamedParam | PositionalParam>,
+	TP extends TaskParams,
 >(
 	task: T,
 	dependencies: ND,
@@ -450,7 +532,7 @@ function handleProvide<
 	T extends Task,
 	D extends Record<string, Task>,
 	NP extends Record<string, AllowedDep>,
-	TP extends Record<string, NamedParam | PositionalParam>,
+	TP extends TaskParams,
 >(
 	task: T,
 	providedDeps: NP,
@@ -492,7 +574,7 @@ function makeTaskBuilderInitial<
 	T extends Task,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
-	TP extends Record<string, NamedParam | PositionalParam>,
+	TP extends TaskParams,
 >(task: T): TaskBuilderInitial<I, T, D, P, TP> {
 	return {
 		params: (params) => handleParams<I, T, D, P, typeof params>(task, params),
@@ -509,7 +591,7 @@ function makeTaskBuilderParams<
 	T extends Task,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
-	TP extends Record<string, NamedParam | PositionalParam>,
+	TP extends TaskParams,
 >(task: T): TaskBuilderParams<I, T, D, P, TP> {
 	return {
 		dependsOn: (dependencies) =>
@@ -528,7 +610,7 @@ function makeTaskBuilderDeps<
 	T extends Task,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
-	TP extends Record<string, NamedParam | PositionalParam>,
+	TP extends TaskParams,
 >(task: T): TaskBuilderDeps<I, T, D, P, TP> {
 	return {
 		deps: (providedDeps) =>
@@ -544,7 +626,7 @@ function makeTaskBuilderProvide<
 	T extends Task,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
-	TP extends Record<string, NamedParam | PositionalParam>,
+	TP extends TaskParams,
 >(task: T): TaskBuilderProvide<I, T, D, P, TP> {
 	return {
 		run: (fn) => runTask<I, T, D, P, any, TP>(task, fn),
@@ -559,7 +641,7 @@ function makeTaskBuilderRun<
 	T extends Task,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
-	TP extends Record<string, NamedParam | PositionalParam>,
+	TP extends TaskParams,
 >(task: T): TaskBuilderRun<I, T, D, P, TP> {
 	return {
 		done: () => task,

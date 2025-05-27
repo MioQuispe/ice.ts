@@ -21,6 +21,7 @@ import type { Task } from "../types/types.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
 import { DefaultReplica } from "../services/replica.js"
 import { Ed25519KeyIdentity } from "@dfinity/identity"
+import mri from "mri"
 // import { runExit, Command, Option, Cli } from "clipanion"
 
 function moduleHashToHexString(moduleHash: [] | [number[]]): string {
@@ -67,8 +68,18 @@ const runCommand = defineCommand({
 		...globalArgs,
 	},
 	run: async ({ args, rawArgs }) => {
-		// TODO: also pass in global args like network, logLevel. but handle them separately?
 		const taskArgs = rawArgs.slice(1)
+		// TODO: parse args here with mri
+		const parsedArgs = mri(taskArgs)
+		const namedArgs = Object.fromEntries(
+			Object.entries(parsedArgs).filter(([name]) => name !== "_"),
+		)
+		const positionalArgs = parsedArgs._
+		// const argsMap = {
+		// 	...namedArgsFromCli,
+		// 	// TODO: how do we handle positional args?
+		// 	// maybe we dont convert them?
+		// }
 		const s = p.spinner()
 		s.start(`Running task... ${color.green(color.underline(args.taskPath))}`)
 		await makeRuntime({
@@ -76,7 +87,10 @@ const runCommand = defineCommand({
 				network: args.network,
 				logLevel: args.logLevel,
 			},
-			taskArgs,
+			taskArgs: {
+				positionalArgs,
+				namedArgs,
+			},
 		}).runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
@@ -114,7 +128,6 @@ const deployRun = async ({
 			network,
 			logLevel,
 		},
-		taskArgs: [],
 	}).runPromise(
 		// @ts-ignore
 		Effect.gen(function* () {
@@ -163,7 +176,6 @@ const canistersCreateCommand = defineCommand({
 				network,
 				logLevel,
 			},
-			taskArgs: [],
 		}).runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
@@ -211,7 +223,6 @@ const canistersBuildCommand = defineCommand({
 				network,
 				logLevel,
 			},
-			taskArgs: [],
 		}).runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
@@ -260,7 +271,6 @@ const canistersBindingsCommand = defineCommand({
 				network,
 				logLevel,
 			},
-			taskArgs: [],
 		}).runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
@@ -309,7 +319,6 @@ const canistersInstallCommand = defineCommand({
 				network,
 				logLevel,
 			},
-			taskArgs: [],
 		}).runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
@@ -358,7 +367,6 @@ const canistersStopCommand = defineCommand({
 				network,
 				logLevel,
 			},
-			taskArgs: [],
 		}).runPromise(
 			// @ts-ignore
 			Effect.gen(function* () {
@@ -442,7 +450,6 @@ const canistersStatusCommand = defineCommand({
 					network,
 					logLevel,
 				},
-				taskArgs: [],
 			}).runPromise(
 				Effect.gen(function* () {
 					const canisterIdsService = yield* CanisterIdsService
@@ -531,7 +538,6 @@ const canistersRemoveCommand = defineCommand({
 				network,
 				logLevel,
 			},
-			taskArgs: [],
 		}).runPromise(
 			Effect.gen(function* () {
 				yield* Console.log("Coming soon...")
@@ -552,7 +558,6 @@ const uiCommand = defineCommand({
 				network: "local",
 				logLevel: "debug",
 			},
-			taskArgs: [],
 		}).runPromise(
 			Effect.gen(function* () {
 				const { config, taskTree } = yield* ICEConfigService
@@ -593,7 +598,6 @@ const canisterCommand = defineCommand({
 					network,
 					logLevel,
 				},
-				taskArgs: [],
 			}).runPromise(
 				// @ts-ignore
 				Effect.gen(function* () {
@@ -692,7 +696,6 @@ const taskCommand = defineCommand({
 					network,
 					logLevel,
 				},
-				taskArgs: [],
 			}).runPromise(
 				// @ts-ignore
 				Effect.gen(function* () {

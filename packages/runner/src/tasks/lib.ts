@@ -39,7 +39,6 @@ import { StandardSchemaV1 } from "@standard-schema/spec"
 // 	return result as A
 // }
 
-
 type ExtractNamedParams<
 	TP extends Record<string, NamedParam | PositionalParam>,
 > = {
@@ -54,14 +53,16 @@ export type ExtractArgsFromTaskParams<
 	TP extends Record<string, NamedParam | PositionalParam>,
 > = {
 	// TODO: schema needs to be typed as StandardSchemaV1
-	[K in keyof TP]: StandardSchemaV1.InferOutput<TP[K]["schema"]>
+	[K in keyof TP]: StandardSchemaV1.InferOutput<TP[K]["type"]>
 }
 
 export type TaskParamsToArgs<T extends Task> = {
-	[K in keyof T["params"]]: T["params"][K] extends TaskParam ? StandardSchemaV1.InferOutput<T["params"][K]["schema"]> : never
+	[K in keyof T["params"]]: T["params"][K] extends TaskParam
+		? StandardSchemaV1.InferOutput<T["params"][K]["type"]>
+		: never
 }
 
-export interface TaskCtxShape {
+export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
 	readonly users: {
 		[name: string]: {
 			identity: SignIdentity
@@ -92,7 +93,7 @@ export interface TaskCtxShape {
 			// subnet: Subnet?
 		}
 	}
-	readonly args: Record<string, unknown>
+	readonly args: A
 }
 export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {}
 
@@ -142,57 +143,72 @@ export class TaskArgsParseError extends Data.TaggedError("TaskArgsParseError")<{
 }> {}
 
 // Helper function to validate a single parameter
-const validateParam = (
-	schema: PositionalParam["schema"] | NamedParam["schema"], // Adjust type as per your actual schema structure
-	value: unknown,
-	paramName?: string, // Optional: for better error messages with named params
+const resolveArg = (
+	param: PositionalParam | NamedParam, // Adjust type as per your actual schema structure
+	arg: unknown,
 ): Effect.Effect<unknown, TaskArgsParseError> => {
-	// @ts-ignore // Assuming schema has a validate method
-	const result = schema["~standard"].validate(value)
+	// TODO: arg is string. convert to type
+	const value = arg ?? param.default
+	const outputType = param.type["~standard"].types?.output
+	if (value === undefined && param.isOptional) {
+		return Effect.succeed(value)
+	}
+	const result = param.type["~standard"].validate(value)
+
 	if (result instanceof Promise) {
 		return Effect.fail(
 			new TaskArgsParseError({
-				message: `Async validation not implemented for ${paramName ?? "positional parameter"}`,
+				message: `Async validation not implemented for ${param.name ?? "positional parameter"}`,
 			}),
 		)
 	}
-	// @ts-ignore // Assuming result has issues and value properties
 	if (result.issues) {
 		return Effect.fail(
 			new TaskArgsParseError({
-				message: `Validation failed for ${paramName ?? "positional parameter"}: ${JSON.stringify(result.issues, null, 2)}`,
+				message: `Validation failed for ${param.name ?? "positional parameter"}: ${JSON.stringify(result.issues, null, 2)}`,
 			}),
 		)
 	}
-	// @ts-ignore
 	return Effect.succeed(result.value)
 }
 
-export const parseTaskArgs = (task: Task, taskArgs: string[]) =>
+export const resolveTaskArgs = (
+	task: Task,
+	taskArgs: { positionalArgs: string[]; namedArgs: Record<string, unknown> },
+) =>
 	Effect.gen(function* () {
-		const parsedArgs = mri(taskArgs)
-		const namedArgsFromCli = Object.fromEntries(
-			Object.entries(parsedArgs).filter(([name]) => name !== "_"),
-		)
-		const positionalArgsFromCli = parsedArgs._
+		const { positionalArgs, namedArgs } = taskArgs
 
-		const positionalParamsEffect = task.positionalParams.map((param, index) =>
-			validateParam(param.schema, positionalArgsFromCli[index]),
-		)
-
-		const namedParamsEffectMap = Object.fromEntries(
-			Object.entries(task.namedParams).map(([name, param]) => [
-				name,
-				validateParam(param.schema, namedArgsFromCli[name], name),
-			]),
-		)
-
-		const namedParams = yield* Effect.all(namedParamsEffectMap)
-		const positionalParams = yield* Effect.all(positionalParamsEffect)
+		const named: Record<
+			string,
+			{
+				arg: unknown
+				param: NamedParam
+			}
+		> = {}
+		for (const [name, param] of Object.entries(task.namedParams)) {
+			const arg = yield* resolveArg(param, namedArgs[name])
+			named[name] = {
+				arg,
+				param,
+			}
+		}
+		const positional: Record<string, {
+			arg: unknown
+			param: PositionalParam
+		}> = {}
+		for (const index in task.positionalParams) {
+			const param = task.positionalParams[index]
+			const arg = yield* resolveArg(param, positionalArgs[index])
+			positional[param.name] = {
+				arg,
+				param,
+			}
+		}
 
 		return {
-			positionalParams,
-			namedParams,
+			positional,
+			named,
 		}
 	})
 
@@ -283,7 +299,8 @@ export const executeTasks = (
 		const defaultConfig = yield* DefaultConfig
 		const { config } = yield* ICEConfigService
 		const cliFlags = yield* CLIFlags
-		const currentNetwork = cliFlags.globalArgs.network ?? "local"
+		const { globalArgs, taskArgs } = cliFlags
+		const currentNetwork = globalArgs.network ?? "local"
 		const currentNetworkConfig =
 			config?.networks?.[currentNetwork] ??
 			defaultConfig.networks[currentNetwork]
@@ -320,7 +337,19 @@ export const executeTasks = (
 				const taskPath = yield* getTaskPathById(task.id)
 				progressCb({ taskId: task.id, taskPath, status: "starting" })
 
-				const parsedTaskArgs = yield* parseTaskArgs(task, cliFlags.taskArgs)
+				// TODO: also handle dynamic calls from other tasks
+				// dont parse here, do it at the cli sections
+				const resolvedTaskArgs = yield* resolveTaskArgs(task, taskArgs)
+				const argsMap: Record<string, unknown> = Object.fromEntries([
+					...Object.entries(resolvedTaskArgs.named).map(([name, arg]) => [
+						arg.param.name,
+						arg.arg,
+					]),
+					...Object.entries(resolvedTaskArgs.positional).map(([index, arg]) => [
+						index,
+						arg.arg,
+					]),
+				])
 
 				const taskLayer = Layer.mergeAll(
 					Layer.succeed(TaskInfo, {
@@ -350,7 +379,7 @@ export const executeTasks = (
 						roles: initializedRoles,
 						// TODO: taskArgs
 						// what format? we need to check the task itself
-						args: parsedTaskArgs,
+						args: argsMap,
 					}),
 					Layer.succeed(DependencyResults, {
 						dependencies: dependencyResults,

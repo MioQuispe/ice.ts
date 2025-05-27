@@ -78,7 +78,10 @@ export const TUILayer = Layer.mergeAll(
 		Layer.provide(
 			Layer.succeed(CLIFlags, {
 				globalArgs: { network: "local", logLevel: "debug" },
-				taskArgs: [],
+				taskArgs: {
+					positionalArgs: [],
+					namedArgs: {},
+				},
 			}),
 		),
 	),
@@ -102,12 +105,18 @@ const logLevelMap = {
 
 type MakeRuntimeArgs = {
 	globalArgs: { network: string; logLevel: string }
-	taskArgs: string[]
+	taskArgs?: {
+		positionalArgs: string[]
+		namedArgs: Record<string, unknown>
+	}
 }
 
 export const makeRuntime = ({
 	globalArgs: rawGlobalArgs,
-	taskArgs,
+	taskArgs = {
+		positionalArgs: [],
+		namedArgs: {},
+	},
 }: MakeRuntimeArgs) => {
 	const globalArgs = GlobalArgs(rawGlobalArgs)
 	if (globalArgs instanceof type.errors) {

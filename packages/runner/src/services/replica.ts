@@ -1,7 +1,23 @@
 import { type Effect, Context, Data } from "effect"
 import type { ActorSubclass, HttpAgent, SignIdentity } from "@dfinity/agent"
 import type { canister_status_result } from "src/canisters/management_latest/management.types.js"
-import { ActorInterface } from "@dfinity/pic"
+// import { ActorInterface } from "@dfinity/pic"
+/**
+ * Typesafe method of a canister.
+ *
+ * @category Types
+ */
+export interface ActorMethod<Args extends any[] = any[], Ret = any> {
+    (...args: Args): Promise<Ret>;
+}
+/**
+ * Candid interface of a canister.
+ *
+ * @category Types
+ */
+export type ActorInterface<T = object> = {
+    [K in keyof T]: ActorMethod;
+};
 
 export type CanisterStatus = "not_installed" | "stopped" | "running"
 
@@ -77,7 +93,7 @@ export type ReplicaService = {
 		canisterId: string
 		canisterDID: any
 		identity: SignIdentity
-	}) => Effect.Effect<ActorInterface<_SERVICE>, AgentError>
+	}) => Effect.Effect<ActorSubclass<_SERVICE>, AgentError>
 }
 
 export class Replica extends Context.Tag("Replica")<

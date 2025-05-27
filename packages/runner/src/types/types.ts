@@ -71,24 +71,22 @@ export type InitializedICEConfig = {
 }
 
 export interface TaskParam<T = unknown> {
-  name: string;
-  schema: StandardSchemaV1<T>;
-  description?: string;
-  default?: T;
-  isOptional: boolean;
-  isVariadic: boolean;
+	name: string
+	type: StandardSchemaV1<T> // TODO: ship built in types like "string" | "number" etc.
+	description?: string
+	default?: T
+	isOptional: boolean
+	isVariadic: boolean
 }
 
 export interface NamedParam<T = unknown> extends TaskParam<T> {
-  isFlag: boolean;
-  aliases: Array<string>;
-  // TODO: means it shouldnt appear in the help. not sure if we need this
-  // hidden: boolean;
+	isFlag: boolean
+	aliases: Array<string>
+	// TODO: means it shouldnt appear in the help. not sure if we need this
+	// hidden: boolean;
 }
 
 export interface PositionalParam<T = unknown> extends TaskParam<T> {}
-
-
 
 // // Helper type that compares two types for equality.
 // type IsEqual<T, U> =
@@ -106,9 +104,6 @@ export interface PositionalParam<T = unknown> extends TaskParam<T> {}
 // // Usage examples:
 // type TestSuccess = AssertEqual<{ a: number }, { a: number }>; // OK, resolves to true
 // // type TestFailure = AssertEqual<number, string>; // Uncommenting this line causes a compile-time error
-
-
-
 
 // export const TaskParam = type("<t>", {
 // 	schema: "object",
@@ -137,7 +132,6 @@ export interface PositionalParam<T = unknown> extends TaskParam<T> {}
 // })
 // export const positionalParamSchema = type.and(taskParamSchema)
 
-
 export interface Task<A = unknown, E = unknown, R = unknown, I = unknown> {
 	_tag: "task"
 	readonly id: symbol // assigned by the builder
@@ -149,7 +143,7 @@ export interface Task<A = unknown, E = unknown, R = unknown, I = unknown> {
 	provide: Record<string, Task>
 	namedParams: Record<string, NamedParam>
 	positionalParams: Array<PositionalParam>
-  params: Record<string, NamedParam | PositionalParam>
+	params: Record<string, NamedParam | PositionalParam>
 	// for caching. do we use standard schema here as well?
 	input: Option.Option<I> // optional input
 	// TODO: causes type issues in builders

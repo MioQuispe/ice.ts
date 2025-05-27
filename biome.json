@@ -23,7 +23,8 @@
 			"style": {
 				"noUselessElse": "off",
 				"useImportType": "off",
-				"noUnusedTemplateLiteral": "off"
+				"noUnusedTemplateLiteral": "off",
+				"useShorthandFunctionType": "off"
 			},
 			"complexity": {
 				"noBannedTypes": "off"

@@ -6,7 +6,10 @@ export class CLIFlags extends Context.Tag("CLIFlags")<CLIFlags, {
 		network: string
 		logLevel: "debug" | "info" | "error"
 	}
-	taskArgs: string[]
+	taskArgs: {
+		positionalArgs: string[]
+		namedArgs: Record<string, unknown>
+	}
 }>() {}
 
 
