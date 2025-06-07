@@ -537,8 +537,13 @@ class TaskBuilderClass<
 		>
 	}
 
+
+		// deps<NP extends Record<string, AllowedDep>>(
+		// 	providedDeps: ValidProvidedDeps<D, NP>,
+		// ): TaskBuilderProvide<
+
 	// deps<NP extends Record<string, AllowedDep>>(providedDeps: NP) {
-	deps<const NP extends ValidateDeps<D, NP>>(providedDeps: NP) {
+	deps<NP extends Record<string, AllowedDep>>(providedDeps: ValidProvidedDeps<D, NP>) {
 		const finalDeps = normalizeDepsMap(providedDeps) as NormalizeDeps<NP>
 		const updatedTask = {
 			...this.task,
