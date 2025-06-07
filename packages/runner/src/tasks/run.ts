@@ -19,6 +19,7 @@ import {
 	executeTasks,
 	collectDependencies,
 	type ProgressUpdate,
+	TaskParamsToArgs,
 } from "./lib.js"
 
 export class DependencyResults extends Context.Tag("DependencyResults")<
@@ -41,33 +42,26 @@ export interface RunTaskOptions {
 
 export const runTaskByPath = (
 	taskPath: string,
-	progressCb?: (update: ProgressUpdate<unknown>) => void,
+	args: TaskParamsToArgs<Task>,
+	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) =>
 	Effect.gen(function* () {
 		const { task } = yield* getTaskByPath(taskPath)
-		return yield* runTask(task, progressCb)
+		return yield* runTask(task, args, progressCb)
 	})
 
 export const runTask = (
 	task: Task,
-	progressCb?: (update: ProgressUpdate<unknown>) => void,
+	args: TaskParamsToArgs<Task> = {},
+	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) =>
 	Effect.gen(function* () {
+		// TODO: it fails already here. task is passed in by reference
+		const path = yield* getTaskPathById(task.id)
+		console.log("path:", path)
 		// @ts-ignore
 		const collectedTasks = collectDependencies([task])
 		const sortedTasks = topologicalSortTasks(collectedTasks)
 		const results = yield* executeTasks(sortedTasks, progressCb)
 		return results.get(task.id)
-	})
-
-export const runTasks = (
-	tasks: Task[],
-	progressCb?: (update: ProgressUpdate<unknown>) => void,
-) =>
-	Effect.gen(function* () {
-		// @ts-ignore
-		const collectedTasks = collectDependencies(tasks)
-		const sortedTasks = topologicalSortTasks(collectedTasks)
-		const results = yield* executeTasks(sortedTasks, progressCb)
-		return results
 	})

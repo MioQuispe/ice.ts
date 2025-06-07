@@ -27,6 +27,7 @@ import { makeRuntime } from "../index.js"
 import { type ReplicaService } from "../services/replica.js"
 import { DefaultConfig } from "../services/defaultConfig.js"
 import { CLIFlags } from "../services/cliFlags.js"
+import { TaskRuntime } from "../services/taskRuntime.js"
 import mri from "mri"
 import { StandardSchemaV1 } from "@standard-schema/spec"
 
@@ -98,8 +99,7 @@ export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
 export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {}
 
 export class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
-	path: string[]
-	reason: string
+	message: string
 }> {}
 
 // TODO: do we need to get by id? will symbol work?
@@ -117,8 +117,7 @@ export const getTaskPathById = (id: Symbol) =>
 		// return undefined
 		return yield* Effect.fail(
 			new TaskNotFoundError({
-				reason: "Task not found by id",
-				path: [""],
+				message: `Task not found by id`,
 			}),
 		)
 	})
@@ -143,16 +142,16 @@ export class TaskArgsParseError extends Data.TaggedError("TaskArgsParseError")<{
 }> {}
 
 // Helper function to validate a single parameter
-const resolveArg = (
-	param: PositionalParam | NamedParam, // Adjust type as per your actual schema structure
-	arg: unknown,
-): Effect.Effect<unknown, TaskArgsParseError> => {
-	// TODO: arg is string. convert to type
-	const value = arg ?? param.default
-	const outputType = param.type["~standard"].types?.output
-	if (value === undefined && param.isOptional) {
-		return Effect.succeed(value)
+const resolveArg = <T = unknown>(
+	param: PositionalParam<T> | NamedParam<T>, // Adjust type as per your actual schema structure
+	arg: string,
+): Effect.Effect<T | undefined, TaskArgsParseError> => {
+	// TODO: arg might be undefined
+	if (arg === undefined && param.isOptional) {
+		return Effect.succeed(undefined)
 	}
+	const value = param.parse(arg) ?? param.default
+	const outputType = param.type["~standard"].types?.output
 	const result = param.type["~standard"].validate(value)
 
 	if (result instanceof Promise) {
@@ -174,7 +173,7 @@ const resolveArg = (
 
 export const resolveTaskArgs = (
 	task: Task,
-	taskArgs: { positionalArgs: string[]; namedArgs: Record<string, unknown> },
+	taskArgs: { positionalArgs: string[]; namedArgs: Record<string, string> },
 ) =>
 	Effect.gen(function* () {
 		const { positionalArgs, namedArgs } = taskArgs
@@ -193,10 +192,13 @@ export const resolveTaskArgs = (
 				param,
 			}
 		}
-		const positional: Record<string, {
-			arg: unknown
-			param: PositionalParam
-		}> = {}
+		const positional: Record<
+			string,
+			{
+				arg: unknown
+				param: PositionalParam
+			}
+		> = {}
 		for (const index in task.positionalParams) {
 			const param = task.positionalParams[index]
 			const arg = yield* resolveArg(param, positionalArgs[index])
@@ -296,6 +298,7 @@ export const executeTasks = (
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) =>
 	Effect.gen(function* () {
+		const taskRuntime = yield* TaskRuntime
 		const defaultConfig = yield* DefaultConfig
 		const { config } = yield* ICEConfigService
 		const cliFlags = yield* CLIFlags
@@ -334,11 +337,12 @@ export const executeTasks = (
 						dependencyResults[dependencyName] = depResult
 					}
 				}
+				console.log("in task execution:", task)
 				const taskPath = yield* getTaskPathById(task.id)
 				progressCb({ taskId: task.id, taskPath, status: "starting" })
 
 				// TODO: also handle dynamic calls from other tasks
-				// dont parse here, do it at the cli sections
+				// this is purely for the cli
 				const resolvedTaskArgs = yield* resolveTaskArgs(task, taskArgs)
 				const argsMap: Record<string, unknown> = Object.fromEntries([
 					...Object.entries(resolvedTaskArgs.named).map(([name, arg]) => [
@@ -364,9 +368,10 @@ export const executeTasks = (
 							task: A,
 							args: TaskParamsToArgs<A>,
 						): Promise<Effect.Effect.Success<A["effect"]>> => {
-							const result = makeRuntime(cliFlags)
+							// TODO: reuse the runtime
+							const result = taskRuntime
 								// @ts-ignore
-								.runPromise(runTask(task, args))
+								.runPromise(runTask(task, args, progressCb))
 							return result as Promise<Effect.Effect.Success<A["effect"]>>
 						},
 						replica: currentReplica,
@@ -475,8 +480,7 @@ export const findNodeInTree = (tree: TaskTree, path: string[]) =>
 				if (!(segment in current)) {
 					yield* Effect.fail(
 						new TaskNotFoundError({
-							path,
-							reason: `Segment "${segment}" not found in tree.`,
+							message: `Segment "${segment}" not found in tree at path: ${path.join(":")}`,
 						}),
 					)
 				}
@@ -485,8 +489,7 @@ export const findNodeInTree = (tree: TaskTree, path: string[]) =>
 				if (!(segment in current.children)) {
 					yield* Effect.fail(
 						new TaskNotFoundError({
-							path,
-							reason: `Segment "${segment}" not found in scope children.`,
+							message: `Segment "${segment}" not found in scope children at path: ${path.join(":")}`,
 						}),
 					)
 				}
@@ -494,8 +497,7 @@ export const findNodeInTree = (tree: TaskTree, path: string[]) =>
 			} else {
 				yield* Effect.fail(
 					new TaskNotFoundError({
-						path,
-						reason: `Cannot traverse into node with tag "${current._tag}" at segment "${segment}".`,
+						message: `Cannot traverse into node with tag "${current._tag}" at segment "${segment}" at path: ${path.join(":")}`,
 					}),
 				)
 			}
@@ -531,8 +533,7 @@ export const findTaskInTaskTree = (
 
 					return yield* Effect.fail(
 						new TaskNotFoundError({
-							path: keys,
-							reason: `Invalid node type encountered at key "${key}"`,
+							message: `Invalid node type encountered at key "${key}" at path: ${keys.join(":")}`,
 						}),
 					)
 				} else {
@@ -544,8 +545,7 @@ export const findTaskInTaskTree = (
 				}
 				return yield* Effect.fail(
 					new TaskNotFoundError({
-						path: keys,
-						reason: `Invalid node type encountered at key "${key}"`,
+						message: `Invalid node type encountered at key "${key}" at path: ${keys.join(":")}`,
 					}),
 				)
 			} else if (node._tag === "scope") {
@@ -562,8 +562,7 @@ export const findTaskInTaskTree = (
 					}
 					return yield* Effect.fail(
 						new TaskNotFoundError({
-							path: keys,
-							reason: "No default task found for scope",
+							message: `No default task found for scope at path: ${keys.join(":")}`,
 						}),
 					)
 				}
@@ -573,8 +572,7 @@ export const findTaskInTaskTree = (
 
 		return yield* Effect.fail(
 			new TaskNotFoundError({
-				path: keys,
-				reason: "Path traversal completed without finding a task",
+				message: `Path traversal completed without finding a task at path: ${keys.join(":")}`,
 			}),
 		)
 	})

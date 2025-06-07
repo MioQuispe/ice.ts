@@ -8,7 +8,7 @@ export class CLIFlags extends Context.Tag("CLIFlags")<CLIFlags, {
 	}
 	taskArgs: {
 		positionalArgs: string[]
-		namedArgs: Record<string, unknown>
+		namedArgs: Record<string, string>
 	}
 }>() {}
 

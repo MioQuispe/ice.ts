@@ -71,22 +71,38 @@ export type InitializedICEConfig = {
 }
 
 export interface TaskParam<T = unknown> {
-	name: string
 	type: StandardSchemaV1<T> // TODO: ship built in types like "string" | "number" etc.
 	description?: string
 	default?: T
+	parse: (value: string) => T
 	isOptional: boolean
 	isVariadic: boolean
+	// isFlag: boolean
 }
 
-export interface NamedParam<T = unknown> extends TaskParam<T> {
-	isFlag: boolean
-	aliases: Array<string>
+export interface InputNamedParam<T = unknown> extends TaskParam<T> {
+	aliases?: Array<string>
+	isFlag: true
 	// TODO: means it shouldnt appear in the help. not sure if we need this
 	// hidden: boolean;
 }
 
-export interface PositionalParam<T = unknown> extends TaskParam<T> {}
+export interface InputPositionalParam<T = unknown> extends TaskParam<T> {
+	isFlag: false
+}
+
+export interface NamedParam<T = unknown> extends TaskParam<T> {
+	name: string
+	aliases?: Array<string>
+	isFlag: true
+	// TODO: means it shouldnt appear in the help. not sure if we need this
+	// hidden: boolean;
+}
+
+export interface PositionalParam<T = unknown> extends TaskParam<T> {
+	name: string
+	isFlag: false
+}
 
 // // Helper type that compares two types for equality.
 // type IsEqual<T, U> =

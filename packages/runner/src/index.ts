@@ -107,16 +107,15 @@ type MakeRuntimeArgs = {
 	globalArgs: { network: string; logLevel: string }
 	taskArgs?: {
 		positionalArgs: string[]
-		namedArgs: Record<string, unknown>
+		namedArgs: Record<string, string>
 	}
 }
 
+// TODO: make just once
 export const makeRuntime = ({
 	globalArgs: rawGlobalArgs,
-	taskArgs = {
-		positionalArgs: [],
-		namedArgs: {},
-	},
+	// These are not used
+	taskArgs = { positionalArgs: [], namedArgs: {} },
 }: MakeRuntimeArgs) => {
 	const globalArgs = GlobalArgs(rawGlobalArgs)
 	if (globalArgs instanceof type.errors) {
@@ -125,11 +124,21 @@ export const makeRuntime = ({
 	return ManagedRuntime.make(
 		Layer.mergeAll(
 			DefaultsLayer,
+			// TODO: this has to be instantiated once for the whole program
+			// otherwise symbols wont match
 			ICEConfigService.Live.pipe(
 				Layer.provide(NodeContext.layer),
-				Layer.provide(Layer.succeed(CLIFlags, { globalArgs, taskArgs })),
+				Layer.provide(
+					Layer.succeed(CLIFlags, {
+						globalArgs,
+						taskArgs,
+					}),
+				),
 			),
-			Layer.succeed(CLIFlags, { globalArgs, taskArgs }),
+			Layer.succeed(CLIFlags, {
+				globalArgs,
+				taskArgs,
+			}),
 			Logger.pretty,
 			Logger.minimumLogLevel(logLevelMap[globalArgs.logLevel]),
 		),

@@ -1,5 +1,5 @@
 import { Effect, Console, Stream, Either } from "effect"
-import { runTaskByPath, runTasks } from "../tasks/index.js"
+import { runTask, runTaskByPath } from "../tasks/index.js"
 import { makeRuntime } from "../index.js"
 import { DeploymentError } from "../canister.js"
 import { uiTask } from "./ui/index.js"
@@ -21,8 +21,8 @@ import type { Task } from "../types/types.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
 import { DefaultReplica } from "../services/replica.js"
 import { Ed25519KeyIdentity } from "@dfinity/identity"
+import { TaskRuntime } from "../services/taskRuntime.js"
 import mri from "mri"
-// import { runExit, Command, Option, Cli } from "clipanion"
 
 function moduleHashToHexString(moduleHash: [] | [number[]]): string {
 	if (moduleHash.length === 0) {
@@ -123,6 +123,13 @@ const deployRun = async ({
 }: { network: string; logLevel: string }) => {
 	const s = p.spinner()
 	s.start("Deploying all canisters...")
+	// TODO: remove makeRuntime?
+	const TaskRuntimeLayer = TaskRuntime.Live({
+		globalArgs: {
+			network,
+			logLevel,
+		},
+	})
 	await makeRuntime({
 		globalArgs: {
 			network,
@@ -140,21 +147,25 @@ const deployRun = async ({
 					node.tags.includes(Tags.DEPLOY),
 			)) as Array<{ node: Task; path: string[] }>
 			const tasks = tasksWithPath.map(({ node }) => node)
-			yield* runTasks(tasks, (update) => {
-				if (update.status === "starting") {
-					// const s = p.spinner()
-					// s.start(`Deploying ${update.taskPath}\n`)
-					// spinners.set(update.taskPath, s)
-					s.message(`Running ${update.taskPath}`)
-					// console.log(`Deploying ${update.taskPath}`)
-				}
-				if (update.status === "completed") {
-					// const s = spinners.get(update.taskPath)
-					// s?.stop(`Completed ${update.taskPath}\n`)
-					s.message(`Completed ${update.taskPath}`)
-					// console.log(`Completed ${update.taskPath}`)
-				}
-			})
+			yield* Effect.all(
+				tasks.map((task) =>
+					runTask(task, {}, (update) => {
+						if (update.status === "starting") {
+							// const s = p.spinner()
+							// s.start(`Deploying ${update.taskPath}\n`)
+							// spinners.set(update.taskPath, s)
+							s.message(`Running ${update.taskPath}`)
+							// console.log(`Deploying ${update.taskPath}`)
+						}
+						if (update.status === "completed") {
+							// const s = spinners.get(update.taskPath)
+							// s?.stop(`Completed ${update.taskPath}\n`)
+							s.message(`Completed ${update.taskPath}`)
+							// console.log(`Completed ${update.taskPath}`)
+						}
+					}),
+				),
+			)
 		}),
 	)
 	s.stop("Deployed all canisters")
@@ -191,16 +202,18 @@ const canistersCreateCommand = defineCommand({
 						node.tags.includes(Tags.CANISTER) &&
 						node.tags.includes(Tags.CREATE),
 				)) as Array<{ node: Task; path: string[] }>
-				yield* runTasks(
-					tasksWithPath.map(({ node }) => node),
-					(update) => {
-						if (update.status === "starting") {
-							s.message(`Running ${update.taskPath}`)
-						}
-						if (update.status === "completed") {
-							s.message(`Completed ${update.taskPath}`)
-						}
-					},
+				const tasks = tasksWithPath.map(({ node }) => node)
+				yield* Effect.all(
+					tasks.map((task) =>
+						runTask(task, {}, (update) => {
+							if (update.status === "starting") {
+								s.message(`Running ${update.taskPath}`)
+							}
+							if (update.status === "completed") {
+								s.message(`Completed ${update.taskPath}`)
+							}
+						}),
+					),
 				)
 				s.stop("Finished creating all canisters")
 			}),
@@ -238,16 +251,18 @@ const canistersBuildCommand = defineCommand({
 						node.tags.includes(Tags.CANISTER) &&
 						node.tags.includes(Tags.CREATE),
 				)) as Array<{ node: Task; path: string[] }>
-				yield* runTasks(
-					tasksWithPath.map(({ node }) => node),
-					(update) => {
-						if (update.status === "starting") {
-							s.message(`Running ${update.taskPath}`)
-						}
-						if (update.status === "completed") {
-							s.message(`Completed ${update.taskPath}`)
-						}
-					},
+				const tasks = tasksWithPath.map(({ node }) => node)
+				yield* Effect.all(
+					tasks.map((task) =>
+						runTask(task, {}, (update) => {
+							if (update.status === "starting") {
+								s.message(`Running ${update.taskPath}`)
+							}
+							if (update.status === "completed") {
+								s.message(`Completed ${update.taskPath}`)
+							}
+						}),
+					),
 				)
 
 				s.stop("Finished building all canisters")
@@ -286,16 +301,18 @@ const canistersBindingsCommand = defineCommand({
 						node.tags.includes(Tags.CANISTER) &&
 						node.tags.includes(Tags.BINDINGS),
 				)) as Array<{ node: Task; path: string[] }>
-				yield* runTasks(
-					tasksWithPath.map(({ node }) => node),
-					(update) => {
-						if (update.status === "starting") {
-							s.message(`Running ${update.taskPath}`)
-						}
-						if (update.status === "completed") {
-							s.message(`Completed ${update.taskPath}`)
-						}
-					},
+				const tasks = tasksWithPath.map(({ node }) => node)
+				yield* Effect.all(
+					tasks.map((task) =>
+						runTask(task, {}, (update) => {
+							if (update.status === "starting") {
+								s.message(`Running ${update.taskPath}`)
+							}
+							if (update.status === "completed") {
+								s.message(`Completed ${update.taskPath}`)
+							}
+						}),
+					),
 				)
 
 				s.stop("Finished generating bindings for all canisters")
@@ -334,16 +351,18 @@ const canistersInstallCommand = defineCommand({
 						node.tags.includes(Tags.CANISTER) &&
 						node.tags.includes(Tags.CREATE),
 				)) as Array<{ node: Task; path: string[] }>
-				yield* runTasks(
-					tasksWithPath.map(({ node }) => node),
-					(update) => {
-						if (update.status === "starting") {
-							s.message(`Running ${update.taskPath}`)
-						}
-						if (update.status === "completed") {
-							s.message(`Completed ${update.taskPath}`)
-						}
-					},
+				const tasks = tasksWithPath.map(({ node }) => node)
+				yield* Effect.all(
+					tasks.map((task) =>
+						runTask(task, {}, (update) => {
+							if (update.status === "starting") {
+								s.message(`Running ${update.taskPath}`)
+							}
+							if (update.status === "completed") {
+								s.message(`Completed ${update.taskPath}`)
+							}
+						}),
+					),
 				)
 
 				s.stop("Finished installing all canisters")
@@ -382,16 +401,18 @@ const canistersStopCommand = defineCommand({
 						node.tags.includes(Tags.CANISTER) &&
 						node.tags.includes(Tags.STOP),
 				)) as Array<{ node: Task; path: string[] }>
-				yield* runTasks(
-					tasksWithPath.map(({ node }) => node),
-					(update) => {
-						if (update.status === "starting") {
-							s.message(`Running ${update.taskPath}`)
-						}
-						if (update.status === "completed") {
-							s.message(`Completed ${update.taskPath}`)
-						}
-					},
+				const tasks = tasksWithPath.map(({ node }) => node)
+				yield* Effect.all(
+					tasks.map((task) =>
+						runTask(task, {}, (update) => {
+							if (update.status === "starting") {
+								s.message(`Running ${update.taskPath}`)
+							}
+							if (update.status === "completed") {
+								s.message(`Completed ${update.taskPath}`)
+							}
+						}),
+					),
 				)
 
 				// // TODO: runTask?
@@ -653,6 +674,8 @@ const canisterCommand = defineCommand({
 					s.start(`Running ${canister}:${action}`)
 					const result = yield* runTaskByPath(
 						`${canister.trimStart().trimEnd()}:${action.trimStart().trimEnd()}`,
+						// TODO: args?
+						{},
 						(update) => {
 							if (update.status === "starting") {
 								s.message(`Running ${update.taskPath}`)
@@ -727,6 +750,8 @@ const taskCommand = defineCommand({
 					s.start(`Running ${task}`)
 					const result = yield* runTaskByPath(
 						`${task.trimStart().trimEnd()}`,
+						// TODO: args?
+						{},
 						(update) => {
 							if (update.status === "starting") {
 								s.message(`Running ${update.taskPath}`)
@@ -791,7 +816,6 @@ const main = defineCommand({
 		// w: watchCommand,
 	},
 })
-
 
 // TODO: can we load the iceConfig before running the cli?
 // Prepare and run the CLI application
