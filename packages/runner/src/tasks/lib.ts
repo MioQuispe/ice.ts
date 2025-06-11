@@ -5,8 +5,10 @@ import {
 	Data,
 	Deferred,
 	Effect,
+	ManagedRuntime,
 	Match,
 	Option,
+	Runtime,
 } from "effect"
 import { ICEConfigService } from "../services/iceConfig.js"
 import type {
@@ -27,7 +29,6 @@ import { makeRuntime } from "../index.js"
 import { type ReplicaService } from "../services/replica.js"
 import { DefaultConfig } from "../services/defaultConfig.js"
 import { CLIFlags } from "../services/cliFlags.js"
-import { TaskRuntime } from "../services/taskRuntime.js"
 import mri from "mri"
 import { StandardSchemaV1 } from "@standard-schema/spec"
 
@@ -83,7 +84,7 @@ export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
 	readonly replica: ReplicaService
 	readonly runTask: <T extends Task>(
 		task: T,
-		args: TaskParamsToArgs<T>,
+		args?: TaskParamsToArgs<T>,
 	) => Promise<Effect.Effect.Success<T["effect"]>>
 	readonly currentNetwork: string
 	readonly networks: {
@@ -125,7 +126,7 @@ export const getTaskPathById = (id: Symbol) =>
 export const collectDependencies = (
 	rootTasks: Task[],
 	collected: Map<symbol, Task> = new Map(),
-): Map<symbol, Task> => {
+): Map<symbol, Task | (Task & { args: Record<string, unknown> })> => {
 	for (const rootTask of rootTasks) {
 		if (collected.has(rootTask.id)) continue
 		collected.set(rootTask.id, rootTask)
@@ -148,7 +149,7 @@ const resolveArg = <T = unknown>(
 ): Effect.Effect<T | undefined, TaskArgsParseError> => {
 	// TODO: arg might be undefined
 	if (arg === undefined && param.isOptional) {
-		return Effect.succeed(undefined)
+		return Effect.succeed(param.default)
 	}
 	const value = param.parse(arg) ?? param.default
 	const outputType = param.type["~standard"].types?.output
@@ -294,11 +295,10 @@ export type ProgressUpdate<A> = {
 }
 
 export const executeTasks = (
-	tasks: Task[],
+	tasks: (Task | (Task & { args: Record<string, unknown> }))[],
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) =>
 	Effect.gen(function* () {
-		const taskRuntime = yield* TaskRuntime
 		const defaultConfig = yield* DefaultConfig
 		const { config } = yield* ICEConfigService
 		const cliFlags = yield* CLIFlags
@@ -337,23 +337,45 @@ export const executeTasks = (
 						dependencyResults[dependencyName] = depResult
 					}
 				}
-				console.log("in task execution:", task)
 				const taskPath = yield* getTaskPathById(task.id)
 				progressCb({ taskId: task.id, taskPath, status: "starting" })
 
 				// TODO: also handle dynamic calls from other tasks
 				// this is purely for the cli
-				const resolvedTaskArgs = yield* resolveTaskArgs(task, taskArgs)
-				const argsMap: Record<string, unknown> = Object.fromEntries([
-					...Object.entries(resolvedTaskArgs.named).map(([name, arg]) => [
-						arg.param.name,
-						arg.arg,
-					]),
-					...Object.entries(resolvedTaskArgs.positional).map(([index, arg]) => [
-						index,
-						arg.arg,
-					]),
-				])
+				let argsMap: Record<string, unknown>
+				if ("args" in task && Object.keys(task.args).length > 0) {
+					argsMap = task.args
+				} else {
+					const resolvedTaskArgs = yield* resolveTaskArgs(task, taskArgs)
+					argsMap = Object.fromEntries([
+						...Object.entries(resolvedTaskArgs.named).map(([name, arg]) => [
+							arg.param.name,
+							arg.arg,
+						]),
+						...Object.entries(resolvedTaskArgs.positional).map(
+							([index, arg]) => [index, arg.arg],
+						),
+					])
+				}
+
+				const currentContext =
+					yield* Effect.context<
+						ManagedRuntime.ManagedRuntime.Context<
+							ReturnType<typeof makeRuntime>
+						>
+					>()
+				// We have to reuse the service or task references will be different
+				// as the task tree gets recreated each time
+				const iceConfigService = Context.get(currentContext, ICEConfigService)
+				const iceConfigServiceLayer = Layer.succeed(
+					ICEConfigService,
+					iceConfigService,
+				)
+				const runtime = makeRuntime({
+					globalArgs,
+					taskArgs,
+					iceConfigServiceLayer,
+				})
 
 				const taskLayer = Layer.mergeAll(
 					Layer.succeed(TaskInfo, {
@@ -366,12 +388,13 @@ export const executeTasks = (
 						// runTask: asyncRunTask,
 						runTask: async <A extends Task>(
 							task: A,
-							args: TaskParamsToArgs<A>,
+							args?: TaskParamsToArgs<A>,
 						): Promise<Effect.Effect.Success<A["effect"]>> => {
-							// TODO: reuse the runtime
-							const result = taskRuntime
+							const result = runtime.runPromise(
+								// TODO: type runTask explicitly?
 								// @ts-ignore
-								.runPromise(runTask(task, args, progressCb))
+								runTask(task, args, progressCb),
+							)
 							return result as Promise<Effect.Effect.Success<A["effect"]>>
 						},
 						replica: currentReplica,
@@ -413,6 +436,7 @@ export const executeTasks = (
 			}),
 		)
 		yield* Effect.all(taskEffects, { concurrency: "unbounded" })
+
 		return results
 	})
 

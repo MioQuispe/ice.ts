@@ -21,7 +21,6 @@ import type { Task } from "../types/types.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
 import { DefaultReplica } from "../services/replica.js"
 import { Ed25519KeyIdentity } from "@dfinity/identity"
-import { TaskRuntime } from "../services/taskRuntime.js"
 import mri from "mri"
 
 function moduleHashToHexString(moduleHash: [] | [number[]]): string {
@@ -67,7 +66,7 @@ const runCommand = defineCommand({
 		// TODO: fix. these get overridden by later args
 		...globalArgs,
 	},
-	run: async ({ args, rawArgs }) => {
+	run: async ({ args: globalArgs, rawArgs }) => {
 		const taskArgs = rawArgs.slice(1)
 		// TODO: parse args here with mri
 		const parsedArgs = mri(taskArgs)
@@ -81,23 +80,22 @@ const runCommand = defineCommand({
 		// 	// maybe we dont convert them?
 		// }
 		const s = p.spinner()
-		s.start(`Running task... ${color.green(color.underline(args.taskPath))}`)
+		s.start(
+			`Running task... ${color.green(color.underline(globalArgs.taskPath))}`,
+		)
 		await makeRuntime({
-			globalArgs: {
-				network: args.network,
-				logLevel: args.logLevel,
-			},
+			globalArgs,
 			taskArgs: {
 				positionalArgs,
 				namedArgs,
 			},
 		}).runPromise(
 			// @ts-ignore
-			Effect.gen(function* () {
-				yield* runTaskByPath(args.taskPath)
-			}),
+			runTaskByPath(globalArgs.taskPath),
 		)
-		s.stop(`Finished task: ${color.green(color.underline(args.taskPath))}`)
+		s.stop(
+			`Finished task: ${color.green(color.underline(globalArgs.taskPath))}`,
+		)
 	},
 })
 
@@ -123,13 +121,6 @@ const deployRun = async ({
 }: { network: string; logLevel: string }) => {
 	const s = p.spinner()
 	s.start("Deploying all canisters...")
-	// TODO: remove makeRuntime?
-	const TaskRuntimeLayer = TaskRuntime.Live({
-		globalArgs: {
-			network,
-			logLevel,
-		},
-	})
 	await makeRuntime({
 		globalArgs: {
 			network,

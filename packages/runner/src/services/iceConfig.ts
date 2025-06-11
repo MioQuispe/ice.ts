@@ -55,6 +55,68 @@ export class ConfigError extends Data.TaggedError("ConfigError")<{
 	message: string
 }> {}
 
+const createService = Effect.gen(function* () {
+	const path = yield* Path.Path
+	const fs = yield* FileSystem.FileSystem
+	const appDirectory = yield* fs.realPath(process.cwd())
+	// TODO: make this configurable if needed
+	const configPath = "ice.config.ts"
+	yield* Effect.logDebug("Loading config...", {
+		configPath,
+		appDirectory,
+	})
+
+	// Wrap tsImport in a console.log monkey patch.
+	const mod = yield* Effect.tryPromise({
+		try: () =>
+			tsImport(
+				path.resolve(appDirectory, configPath),
+				import.meta.url,
+			) as Promise<ICEConfigFile>,
+		catch: (error) =>
+			new ConfigError({
+				message: `Failed to get ICE config: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+			}),
+	})
+
+	const taskTree = Object.fromEntries(
+		Object.entries(mod).filter(([key]) => key !== "default"),
+	) as TaskTree
+	const transformedTaskTree = yield* applyPlugins(taskTree)
+	const {
+		globalArgs: { network },
+	} = yield* CLIFlags
+	const iceCtx = { network }
+	let config: Partial<ICEConfig>
+	const d = mod.default
+	if (typeof d === "function") {
+		// TODO: both sync and async in type signature
+		config = yield* Effect.tryPromise({
+			try: () => {
+				const callResult = d(iceCtx)
+				if (callResult instanceof Promise) {
+					return callResult
+				} else {
+					return Promise.resolve(callResult)
+				}
+			},
+			catch: (error) => {
+				return new ConfigError({
+					message: `Failed to get ICE config: ${error instanceof Error ? error.message : String(error)}`,
+				})
+			},
+		})
+	} else {
+		config = d
+	}
+	return {
+		taskTree: transformedTaskTree,
+		config,
+	}
+})
+
 /**
  * Service to load and process the ICE configuration.
  */
@@ -67,64 +129,6 @@ export class ICEConfigService extends Context.Tag("ICEConfigService")<
 >() {
 	static readonly Live = Layer.effect(
 		ICEConfigService,
-		Effect.gen(function* () {
-			const path = yield* Path.Path
-			const fs = yield* FileSystem.FileSystem
-			const appDirectory = yield* fs.realPath(process.cwd())
-			// TODO: make this configurable if needed
-			const configPath = "ice.config.ts"
-			yield* Effect.logDebug("Loading config...", {
-				configPath,
-				appDirectory,
-			})
-
-			// Wrap tsImport in a console.log monkey patch.
-			const mod = yield* Effect.tryPromise({
-				try: () =>
-					tsImport(
-						path.resolve(appDirectory, configPath),
-						import.meta.url,
-					) as Promise<ICEConfigFile>,
-				catch: (error) =>
-					new ConfigError({
-						message: `Failed to get ICE config: ${
-							error instanceof Error ? error.message : String(error)
-						}`,
-					}),
-			})
-
-			const taskTree = Object.fromEntries(
-				Object.entries(mod).filter(([key]) => key !== "default"),
-			) as TaskTree
-			const transformedTaskTree = yield* applyPlugins(taskTree)
-			const { globalArgs: { network } } = yield* CLIFlags
-			const iceCtx = { network }
-			let config: Partial<ICEConfig>
-			const d = mod.default
-			if (typeof d === "function") {
-				// TODO: both sync and async in type signature
-				config = yield* Effect.tryPromise({
-					try: () => {
-						const callResult = d(iceCtx)
-						if (callResult instanceof Promise) {
-							return callResult
-						} else {
-							return Promise.resolve(callResult)
-						}
-					},
-					catch: (error) => {
-						return new ConfigError({
-							message: `Failed to get ICE config: ${error instanceof Error ? error.message : String(error)}`,
-						})
-					}
-				})
-			} else {
-				config = d
-			}
-			return {
-				taskTree: transformedTaskTree,
-				config,
-			}
-		}),
+		createService,
 	)
 }

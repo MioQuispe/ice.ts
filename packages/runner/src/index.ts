@@ -7,6 +7,7 @@ import {
 	ConfigProvider,
 	LogLevel,
 	Effect,
+	Context,
 } from "effect"
 import { NodeContext } from "@effect/platform-node"
 import { DfxDefaultReplica, DfxReplica } from "./services/dfx.js"
@@ -93,10 +94,6 @@ const GlobalArgs = type({
 	logLevel: "'debug' | 'info' | 'error'",
 }) satisfies StandardSchemaV1<Record<string, unknown>>
 
-// Flags.
-
-// Flags["~standard"].validate
-
 const logLevelMap = {
 	debug: LogLevel.Debug,
 	info: LogLevel.Info,
@@ -109,13 +106,16 @@ type MakeRuntimeArgs = {
 		positionalArgs: string[]
 		namedArgs: Record<string, string>
 	}
+	iceConfigServiceLayer?: Layer.Layer<
+		ICEConfigService,
+		Layer.Layer.Error<typeof ICEConfigService.Live>
+	>
 }
 
-// TODO: make just once
 export const makeRuntime = ({
 	globalArgs: rawGlobalArgs,
-	// These are not used
 	taskArgs = { positionalArgs: [], namedArgs: {} },
+	iceConfigServiceLayer,
 }: MakeRuntimeArgs) => {
 	const globalArgs = GlobalArgs(rawGlobalArgs)
 	if (globalArgs instanceof type.errors) {
@@ -124,17 +124,18 @@ export const makeRuntime = ({
 	return ManagedRuntime.make(
 		Layer.mergeAll(
 			DefaultsLayer,
-			// TODO: this has to be instantiated once for the whole program
-			// otherwise symbols wont match
-			ICEConfigService.Live.pipe(
-				Layer.provide(NodeContext.layer),
-				Layer.provide(
-					Layer.succeed(CLIFlags, {
-						globalArgs,
-						taskArgs,
-					}),
+			// iceConfigService,
+			// Layer.succeed(ICEConfigService, iceConfigService),
+			iceConfigServiceLayer ??
+				ICEConfigService.Live.pipe(
+					Layer.provide(NodeContext.layer),
+					Layer.provide(
+						Layer.succeed(CLIFlags, {
+							globalArgs,
+							taskArgs,
+						}),
+					),
 				),
-			),
 			Layer.succeed(CLIFlags, {
 				globalArgs,
 				taskArgs,

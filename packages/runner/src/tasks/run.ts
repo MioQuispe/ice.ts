@@ -42,7 +42,7 @@ export interface RunTaskOptions {
 
 export const runTaskByPath = (
 	taskPath: string,
-	args: TaskParamsToArgs<Task>,
+	args: TaskParamsToArgs<Task> = {},
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) =>
 	Effect.gen(function* () {
@@ -56,11 +56,13 @@ export const runTask = (
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) =>
 	Effect.gen(function* () {
-		// TODO: it fails already here. task is passed in by reference
 		const path = yield* getTaskPathById(task.id)
-		console.log("path:", path)
-		// @ts-ignore
+		const taskWithArgs = {
+			...task,
+			args,
+		}
 		const collectedTasks = collectDependencies([task])
+		collectedTasks.set(task.id, taskWithArgs)
 		const sortedTasks = topologicalSortTasks(collectedTasks)
 		const results = yield* executeTasks(sortedTasks, progressCb)
 		return results.get(task.id)
