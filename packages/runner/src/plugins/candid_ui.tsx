@@ -98,7 +98,7 @@ const transformScopes = (
       return {
         ...builder,
         // TODO: remove _scope
-        _scope: transformScopes(builder.done(), fn),
+        _scope: transformScopes(builder.make(), fn),
       } as BuilderResult
     }),
     Match.tag("task", (task) => task),

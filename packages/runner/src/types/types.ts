@@ -179,7 +179,7 @@ export type Scope = {
 
 export type BuilderResult = {
 	_tag: "builder"
-	done: () => Task | Scope
+	make: () => Task | Scope
 	[key: string]: any
 }
 

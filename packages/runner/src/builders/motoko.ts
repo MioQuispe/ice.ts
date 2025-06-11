@@ -313,7 +313,7 @@ export const makeMotokoBuilder = <
 		},
 
 
-		done: () => {
+		make: () => {
 			return scope as unknown as UniformScopeCheck<S>
 		},
 
@@ -507,7 +507,7 @@ const providedTestScope = {
 //   asd: test._scope.children.create,
 //   // TODO: extras also cause errors? should it be allowed?
 //   // asd2: test._scope.children.create,
-// }).done()
+// }).make()
 // t.children.install.computeCacheKey
 // // t.children.install.dependencies
 
@@ -521,4 +521,4 @@ const providedTestScope = {
 // .installArgs(async ({ ctx, mode, deps }) => {
 //   deps.providedTask
 // })
-// .done()
+// .make()

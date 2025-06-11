@@ -722,15 +722,15 @@ NNSLifeline.id = NNSLifelineIds
 // TODO: init args
 // Define an overall scope that groups these NNS tasks
 export const NNS = () => scope("NNS tasks", {
-  NNSDapp: NNSDapp().done(),
-  NNSSNSWasm: NNSSNSWasm().done(),
-  NNSRoot: NNSRoot().done(),
-  NNSRegistry: NNSRegistry().done(),
-  NNSGovernance: NNSGovernance().done(),
+  NNSDapp: NNSDapp().make(),
+  NNSSNSWasm: NNSSNSWasm().make(),
+  NNSRoot: NNSRoot().make(),
+  NNSRegistry: NNSRegistry().make(),
+  NNSGovernance: NNSGovernance().make(),
   // NNSLedger: NNSLedger(),
-  NNSGenesisToken: NNSGenesisToken().done(),
-  NNSCyclesMinting: NNSCyclesMinting().done(),
-  NNSLifeline: NNSLifeline().done(),
+  NNSGenesisToken: NNSGenesisToken().make(),
+  NNSCyclesMinting: NNSCyclesMinting().make(),
+  NNSLifeline: NNSLifeline().make(),
 })
 
 // nns-registry          rwlgt-iiaaa-aaaaa-aaaaa-cai

@@ -247,8 +247,8 @@ export interface CanisterBuilder<
 		ExtractProvidedDeps<NP>,
 		Config
 	>
-	// done: () => UniformScopeCheck<S extends CanisterScope ? S : never>
-	// done: () => S
+	// make: () => UniformScopeCheck<S extends CanisterScope ? S : never>
+	// make: () => S
 	/**
 	 * Finalizes the builder state.
 	 *
@@ -258,7 +258,7 @@ export interface CanisterBuilder<
 	 *
 	 * @returns The finalized builder state if valid.
 	 */
-	done(
+	make(
 		this: IsValid<S> extends true
 			? CanisterBuilder<I, S, D, P, Config>
 			: DependencyMismatchError<S>,
@@ -475,7 +475,7 @@ const providedTestScope = {
 //     ctx.dependencies.Canister
 //     ctx.dependencies.testTask
 //   })
-//   .done()
+//   .make()
 
 // // t.children.install.effect
 

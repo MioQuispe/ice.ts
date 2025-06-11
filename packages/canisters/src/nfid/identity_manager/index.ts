@@ -43,7 +43,7 @@ export const NFIDIdentityManager = (
   })
 }
 
-NFIDIdentityManager.provides = NFIDIdentityManager().done().children.install
+NFIDIdentityManager.provides = NFIDIdentityManager().make().children.install
 
 // TODO: initialize
 // dfx canister call identity_manager configure '(record {env = opt "test"})'

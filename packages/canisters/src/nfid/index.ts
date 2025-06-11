@@ -16,26 +16,26 @@ export { NFIDSignerIc } from "./signer_ic/index.js"
 export { NFIDSwapTrsStorage } from "./swap_trs_storage/index.js"
 
 export const NFID = () => {
-  const identityManager = NFIDIdentityManager().done()
+  const identityManager = NFIDIdentityManager().make()
   // TODO: feed in IdentityManager to all others
   const delegationFactory = NFIDDelegationFactory().deps({
     NFIDIdentityManager: identityManager.children.install,
-  })
+  }).make()
   const icrc1Oracle = NFIDIcrc1Oracle().deps({
     NFIDIdentityManager: identityManager.children.install,
-  })
+  }).make()
   const icrc1Registry = NFIDIcrc1Registry().deps({
     NFIDIdentityManager: identityManager.children.install,
-  })
+  }).make()
   const storage = NFIDStorage().deps({
     NFIDIdentityManager: identityManager.children.install,
-  })
+  }).make()
   const signerIc = NFIDSignerIc().deps({
     NFIDIdentityManager: identityManager.children.install,
-  })
+  }).make()
   const swapTrsStorage = NFIDSwapTrsStorage().deps({
     NFIDIdentityManager: identityManager.children.install,
-  })
+  }).make()
 
   return scope("NFID tasks", {
     identityManager,

@@ -159,7 +159,7 @@ export const CapRouter = (
 
 
 // export type CapRouterBuilder = ReturnType<typeof customCanister<[], CAP_ROUTER_SERVICE>>
-CapRouter.provides = capRouter.done().children.install
+CapRouter.provides = capRouter.make().children.install
 CapRouter._tag = "canister-constructor"
 
 

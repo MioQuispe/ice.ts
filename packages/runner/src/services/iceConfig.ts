@@ -16,7 +16,7 @@ export const removeBuilders = (
 	taskTree: TaskTree | TaskTreeNode,
 ): TaskTree | TaskTreeNode => {
 	if ("_tag" in taskTree && taskTree._tag === "builder") {
-		return removeBuilders(taskTree.done())
+		return removeBuilders(taskTree.make())
 	}
 	if ("_tag" in taskTree && taskTree._tag === "scope") {
 		return {

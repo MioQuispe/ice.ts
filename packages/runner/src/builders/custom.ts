@@ -405,7 +405,7 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 		| CreateConfig,
 	tags: string[] = [],
 ) => {
-	// TODO: move to .done() / .make()
+	// TODO: move to .make()
 	// this will allow us to branch builders
 	const id = Symbol("canister/create")
 	return {
@@ -656,7 +656,7 @@ const makeCustomCanisterBuilder = <
 			>(updatedScope)
 		},
 
-		done: () => {
+		make: () => {
 			return scope as unknown as UniformScopeCheck<S>
 		},
 
@@ -919,10 +919,10 @@ const test = customCanister(async () => ({
 
 const t = test
 	.dependsOn({
-		asd: test.done().children.install,
+		asd: test.make().children.install,
 	})
 	.deps({
-		asd: test.done().children.install,
+		asd: test.make().children.install,
 		// TODO: extras also cause errors? should it be allowed?
 		// asd2: test._scope.children.install,
 	})
@@ -935,7 +935,7 @@ const t = test
 		// ctx.dependencies.asd.actor
 		deps.asd.actor
 	})
-	.done()
+	.make()
 // t.children.install.computeCacheKey
 // // t.children.install.dependencies
 

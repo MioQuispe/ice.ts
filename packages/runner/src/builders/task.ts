@@ -192,59 +192,59 @@ type CanonKey<S extends BuilderMethods> =
 
 type NextMap = {
 	/* Start ─────────────────────────────────────────────────────── */
-	"P0-Dep0-D0-R0": "params" | "dependsOn" | "deps" | "run" | "done"
+	"P0-Dep0-D0-R0": "params" | "dependsOn" | "deps" | "run" | "make"
 
 	/* DO (DependsOn only) ---------------------------------------- */
 	"P0-Dep1-D0-R0": "deps" | "run" | "params"
 
 	/* DOD  (DependsOn  ➜ Deps) ----------------------------------- */
-	"P0-Dep1-D1-R0": "params" | "run" | "done"
+	"P0-Dep1-D1-R0": "params" | "run" | "make"
 
 	/* DODR  (DependsOn  ➜ Deps ➜ Run) ---------------------------- */
-	"P0-Dep1-D1-R1": "done"
+	"P0-Dep1-D1-R1": "make"
 
 	/* DOR  (DependsOn  ➜ Run) ------------------------------------ */
 	"P0-Dep1-D0-R1": "deps"
 
 	/* DR   (Deps ➜ Run) ------------------------------------------ */
-	"P0-Dep0-D1-R1": "done"
+	"P0-Dep0-D1-R1": "make"
 
 	/* D    (Deps only) ------------------------------------------- */
-	"P0-Dep0-D1-R0": "run" | "done" | "params"
+	"P0-Dep0-D1-R0": "run" | "make" | "params"
 
 	/* P    (Params only) ----------------------------------------- */
-	"P1-Dep0-D0-R0": "dependsOn" | "deps" | "run" | "done"
+	"P1-Dep0-D0-R0": "dependsOn" | "deps" | "run" | "make"
 
 	/* PD   (Params ➜ Deps) --------------------------------------- */
-	"P1-Dep0-D1-R0": "run" | "done"
+	"P1-Dep0-D1-R0": "run" | "make"
 
 	/* PDR  (Params ➜ Deps ➜ Run) --------------------------------- */
-	"P1-Dep0-D1-R1": "done"
+	"P1-Dep0-D1-R1": "make"
 
 	/* PDO  (Params ➜ DependsOn) ---------------------------------- */
 	"P1-Dep1-D0-R0": "deps" | "run"
 
 	/* PDOD (Params ➜ DependsOn ➜ Deps) --------------------------- */
-	"P1-Dep1-D1-R0": "run" | "done"
+	"P1-Dep1-D1-R0": "run" | "make"
 
 	/* PDODR (… ➜ Run) -------------------------------------------- */
-	"P1-Dep1-D1-R1": "done"
+	"P1-Dep1-D1-R1": "make"
 
 	/* PDOR  (Params ➜ DependsOn ➜ Run) --------------------------- */
 	"P1-Dep1-D0-R1": "deps"
 
 	/* PR   (Params ➜ Run) ---------------------------------------- */
-	"P1-Dep0-D0-R1": "done"
+	"P1-Dep0-D0-R1": "make"
 
 	/* R    (Run only) -------------------------------------------- */
-	"P0-Dep0-D0-R1": "done"
+	"P0-Dep0-D0-R1": "make"
 }
 type Start = never
 type Next<S extends BuilderMethods> = NextMap[CanonKey<S> extends keyof NextMap
 	? CanonKey<S>
 	: never]
 
-type BuilderMethods = "start" | "params" | "dependsOn" | "deps" | "run" | "done"
+type BuilderMethods = "start" | "params" | "dependsOn" | "deps" | "run" | "make"
 
 type TaskBuilderOmit<
 	S extends BuilderMethods,
@@ -384,7 +384,7 @@ class TaskBuilderClass<
 		>
 	}
 
-	done() {
+	make() {
 		return this.task
 	}
 }
@@ -411,7 +411,7 @@ export function task(description = "") {
 // Test Cases
 //
 
-/** Example A: task -> deps -> provide -> run -> done */
+/** Example A: task -> deps -> provide -> run -> make */
 const numberTask = task()
 	// .run
 	// .deps()
@@ -423,7 +423,7 @@ const numberTask = task()
 		// returns a number
 		return 12
 	})
-	.done()
+	.make()
 
 type S = ExtractTaskEffectSuccess<{ numberTask: typeof numberTask }>
 
@@ -443,7 +443,7 @@ const stringTask = task()
 		// returns a string
 		return "hello"
 	})
-	.done()
+	.make()
 
 const objTask = task()
 	.run(async (ctx) => {
@@ -452,7 +452,7 @@ const objTask = task()
 		})
 		return { a: 1, b: 2 }
 	})
-	.done()
+	.make()
 
 const canScope = {
 	_tag: "scope",
@@ -464,7 +464,7 @@ const canScope = {
 	},
 } satisfies CanisterScope
 
-/** Example B: task -> deps -> provide -> run -> done */
+/** Example B: task -> deps -> provide -> run -> make */
 const task2 = task("description of task2")
 	.dependsOn({
 		depB: numberTask,
@@ -483,7 +483,7 @@ const task2 = task("description of task2")
 		deps.depC
 		return "hello"
 	})
-	.done()
+	.make()
 
 // task().run(async () => {}).
 
@@ -522,7 +522,7 @@ const paramTask = task()
 	.run(async ({ args }) => {
 		return args.amount
 	})
-	.done()
+	.make()
 // TODO: not working
 // paramTask.params.amount
 
