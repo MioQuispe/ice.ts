@@ -4,6 +4,7 @@ import { Option } from "effect"
 export const scope = <T extends TaskTree>(description: string, children: T) => {
   return {
     _tag: "scope",
+    id: Symbol("scope"),
     tags: [],
     description,
     children,

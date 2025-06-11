@@ -1,4 +1,4 @@
-import { Effect, Context, Data, Config, Match, Option } from "effect"
+import { Effect, Context, Data, Config, Match, Option, Record } from "effect"
 import type { Scope, Task, TaskTree } from "../types/types.js"
 // import mo from "motoko"
 import { Path, FileSystem } from "@effect/platform"
@@ -657,7 +657,14 @@ const makeCustomCanisterBuilder = <
 		},
 
 		make: () => {
-			return scope as unknown as UniformScopeCheck<S>
+			return {
+				...scope,
+				id: Symbol("scope"),
+				children: Record.map(scope.children, (value) => ({
+					...value,
+					id: Symbol("task"),
+				})),
+			} satisfies CanisterScope as unknown as UniformScopeCheck<S>
 		},
 
 		_tag: "builder",
@@ -674,6 +681,7 @@ export const customCanister = <I = unknown, _SERVICE = unknown>(
 ) => {
 	const initialScope = {
 		_tag: "scope",
+		id: Symbol("scope"),
 		tags: [Tags.CANISTER, Tags.CUSTOM],
 		description: "some description",
 		defaultTask: Option.some("deploy"),
@@ -764,6 +772,7 @@ export const canisterBuildGuard = Effect.gen(function* () {
 const scope = <T extends TaskTree>(description: string, children: T) => {
 	return {
 		_tag: "scope",
+		id: Symbol("scope"),
 		tags: [],
 		description,
 		defaultTask: Option.none(),
@@ -870,6 +879,7 @@ const unProvidedTask2 = {
 
 const testScope = {
 	_tag: "scope",
+	id: Symbol("scope"),
 	tags: [Tags.CANISTER],
 	description: "",
 	defaultTask: Option.none(),
@@ -881,6 +891,7 @@ const testScope = {
 
 const testScope2 = {
 	_tag: "scope",
+	id: Symbol("scope"),
 	tags: [Tags.CANISTER],
 	description: "",
 	defaultTask: Option.none(),
@@ -891,6 +902,7 @@ const testScope2 = {
 
 const providedTestScope = {
 	_tag: "scope",
+	id: Symbol("scope"),
 	tags: [Tags.CANISTER],
 	description: "",
 	defaultTask: Option.none(),

@@ -180,6 +180,7 @@ export type IsValid<S extends CanisterScope> =
 
 export type CanisterScope = {
 	_tag: "scope"
+    id: symbol,
 	tags: Array<string | symbol>
 	description: string
 	defaultTask: Option.Option<string>
@@ -397,6 +398,7 @@ const testScope = {
 	tags: [Tags.CANISTER],
 	description: "",
 	defaultTask: Option.none(),
+	id: Symbol("scope"),
 	children: {
 		providedTask,
 		unProvidedTask,
@@ -408,6 +410,7 @@ const testScope2 = {
 	tags: [Tags.CANISTER],
 	description: "",
 	defaultTask: Option.none(),
+	id: Symbol("scope"),
 	children: {
 		unProvidedTask2,
 	},
@@ -418,6 +421,7 @@ const providedTestScope = {
 	tags: [Tags.CANISTER],
 	description: "",
 	defaultTask: Option.none(),
+	id: Symbol("scope"),
 	children: {
 		providedTask,
 	},

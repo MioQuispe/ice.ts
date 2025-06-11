@@ -124,8 +124,6 @@ export const makeRuntime = ({
 	return ManagedRuntime.make(
 		Layer.mergeAll(
 			DefaultsLayer,
-			// iceConfigService,
-			// Layer.succeed(ICEConfigService, iceConfigService),
 			iceConfigServiceLayer ??
 				ICEConfigService.Live.pipe(
 					Layer.provide(NodeContext.layer),

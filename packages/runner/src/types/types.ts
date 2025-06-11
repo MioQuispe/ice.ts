@@ -169,6 +169,7 @@ export interface Task<A = unknown, E = unknown, R = unknown, I = unknown> {
 
 export type Scope = {
 	_tag: "scope"
+	readonly id: symbol
 	// TODO: hmm do we need this?
 	tags: Array<string | symbol>
 	description: string

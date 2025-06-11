@@ -60,10 +60,7 @@ export const DIP20 = (
       candid: path.resolve(__dirname, `./${canisterName}/${canisterName}.did`),
     }
   })
-  // TODO: support passing in CanisterScopes
   .dependsOn({ CapRouter })
-  // .deps({ capRouter: CapRouter.shape })
-  // TODO: install ctx should receive the dependencies in its type
   .installArgs(async ({ ctx, mode, deps }) => {
     let initArgs: InitArgs
     const initResult =
@@ -86,9 +83,6 @@ export const DIP20 = (
       Principal.from(CapRouter.canisterId),
     ]
   })
-  // // tests:
-  // .deps({ CapRouter })
-  // .make()
   return result
 }
 

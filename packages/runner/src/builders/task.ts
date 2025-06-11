@@ -300,13 +300,14 @@ class TaskBuilderClass<
 		>
 	}
 
-
-		// deps<NP extends Record<string, AllowedDep>>(
-		// 	providedDeps: ValidProvidedDeps<D, NP>,
-		// ): TaskBuilderProvide<
+	// deps<NP extends Record<string, AllowedDep>>(
+	// 	providedDeps: ValidProvidedDeps<D, NP>,
+	// ): TaskBuilderProvide<
 
 	// deps<NP extends Record<string, AllowedDep>>(providedDeps: NP) {
-	deps<NP extends Record<string, AllowedDep>>(providedDeps: ValidProvidedDeps<D, NP>) {
+	deps<NP extends Record<string, AllowedDep>>(
+		providedDeps: ValidProvidedDeps<D, NP>,
+	) {
 		const finalDeps = normalizeDepsMap(providedDeps) as NormalizeDeps<NP>
 		const updatedTask = {
 			...this.task,
@@ -385,7 +386,10 @@ class TaskBuilderClass<
 	}
 
 	make() {
-		return this.task
+		return {
+			...this.task,
+			id: Symbol("task"),
+		} satisfies Task
 	}
 }
 
@@ -456,6 +460,7 @@ const objTask = task()
 
 const canScope = {
 	_tag: "scope",
+	id: Symbol("scope"),
 	tags: [],
 	description: "canScope",
 	defaultTask: Option.none(),

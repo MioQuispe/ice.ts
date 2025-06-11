@@ -1,4 +1,4 @@
-import { Effect, Context, Config, Option } from "effect"
+import { Effect, Context, Config, Option, Record } from "effect"
 import type { Task } from "../types/types.js"
 // import mo from "motoko"
 import { Path, FileSystem } from "@effect/platform"
@@ -11,10 +11,7 @@ import {
 	iceDirName,
 } from "./custom.js"
 import { TaskInfo } from "../tasks/run.js"
-import {
-	generateDIDJS,
-	compileMotokoCanister,
-} from "../canister.js"
+import { generateDIDJS, compileMotokoCanister } from "../canister.js"
 import type {
 	CanisterBuilder,
 	CanisterScope,
@@ -23,7 +20,7 @@ import type {
 	MergeScopeProvide,
 	ExtractProvidedDeps,
 	ExtractTaskEffectSuccess,
-  TaskCtxShape,
+	TaskCtxShape,
 } from "./types.js"
 import { Tags } from "./types.js"
 import { makeCanisterStatusTask, makeDeployTask } from "./lib.js"
@@ -51,13 +48,15 @@ export const makeMotokoBindingsTask = () => {
 				`Bindings build guard check passed for ${canisterName}`,
 			)
 
-			const isGzipped = yield* fs.exists(path.join(
-				appDir,
-				iceDirName,
-				"canisters",
-				canisterName,
-				`${canisterName}.wasm.gz`,
-			))
+			const isGzipped = yield* fs.exists(
+				path.join(
+					appDir,
+					iceDirName,
+					"canisters",
+					canisterName,
+					`${canisterName}.wasm.gz`,
+				),
+			)
 			const wasmPath = path.join(
 				appDir,
 				iceDirName,
@@ -113,13 +112,15 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 			const { taskPath } = yield* TaskInfo
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
-			const isGzipped = yield* fs.exists(path.join(
-				appDir,
-				iceDirName,
-				"canisters",
-				canisterName,
-				`${canisterName}.wasm.gz`,
-			))
+			const isGzipped = yield* fs.exists(
+				path.join(
+					appDir,
+					iceDirName,
+					"canisters",
+					canisterName,
+					`${canisterName}.wasm.gz`,
+				),
+			)
 			const wasmOutputFilePath = path.join(
 				appDir,
 				iceDirName,
@@ -312,9 +313,15 @@ export const makeMotokoBuilder = <
 			>(updatedScope)
 		},
 
-
 		make: () => {
-			return scope as unknown as UniformScopeCheck<S>
+			return {
+				...scope,
+				id: Symbol("scope"),
+				children: Record.map(scope.children, (value) => ({
+					...value,
+					id: Symbol("task"),
+				})),
+			} satisfies CanisterScope as unknown as UniformScopeCheck<S>
 		},
 
 		// Add scope property to the initial builder
@@ -322,7 +329,11 @@ export const makeMotokoBuilder = <
 	}
 }
 
-export const motokoCanister = <I = unknown, _SERVICE = unknown, P extends Record<string, unknown> = Record<string, unknown>>(
+export const motokoCanister = <
+	I = unknown,
+	_SERVICE = unknown,
+	P extends Record<string, unknown> = Record<string, unknown>,
+>(
 	canisterConfigOrFn:
 		| MotokoCanisterConfig
 		| ((args: { ctx: TaskCtxShape; deps: P }) => MotokoCanisterConfig)
@@ -330,6 +341,7 @@ export const motokoCanister = <I = unknown, _SERVICE = unknown, P extends Record
 ) => {
 	const initialScope = {
 		_tag: "scope",
+		id: Symbol("scope"),
 		tags: [Tags.CANISTER, Tags.MOTOKO],
 		description: "some description",
 		defaultTask: Option.none(),
@@ -457,6 +469,7 @@ const unProvidedTask2 = {
 const testScope = {
 	_tag: "scope",
 	tags: [Tags.CANISTER],
+	id: Symbol("scope"),
 	description: "",
 	defaultTask: Option.none(),
 	children: {
@@ -467,6 +480,7 @@ const testScope = {
 
 const testScope2 = {
 	_tag: "scope",
+	id: Symbol("scope"),
 	tags: [Tags.CANISTER],
 	description: "",
 	defaultTask: Option.none(),
@@ -477,6 +491,7 @@ const testScope2 = {
 
 const providedTestScope = {
 	_tag: "scope",
+	id: Symbol("scope"),
 	tags: [Tags.CANISTER],
 	description: "",
 	defaultTask: Option.none(),
