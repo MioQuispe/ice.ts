@@ -8,12 +8,6 @@ import type { TaskCtxShape } from "../tasks/lib.js"
 import type { ActorSubclass } from "../types/actor.js"
 export type { TaskCtxShape }
 
-export type CompareTaskReturnValues<T extends Task> = T extends {
-	effect: Effect.Effect<infer S, any, any>
-}
-	? S
-	: never
-
 export type MergeTaskDependsOn<T extends Task, ND extends Record<string, Task>> = {
 	[K in keyof T]: K extends "dependsOn" ? T[K] & ND : T[K]
 }
@@ -182,6 +176,58 @@ export type ValidProvidedDeps<
 > = CompareTaskEffects<NormalizeDeps<D>, NormalizeDeps<NP>> extends never
 	? never
 	: NP
+
+export type CompareTaskReturnValues<T extends Task> = T extends {
+	effect: Effect.Effect<infer S, any, any>
+}
+	? S
+	: never
+
+type DependenciesOf<T> = T extends { dependsOn: infer D } ? D : never
+type ProvideOf<T> = T extends { dependencies: infer P } ? P : never
+
+type DependencyReturnValues<T> = DependenciesOf<T> extends Record<string, Task>
+	? {
+			[K in keyof DependenciesOf<T>]: CompareTaskReturnValues<
+				DependenciesOf<T>[K]
+			>
+		}
+	: never
+
+type ProvideReturnValues<T> = ProvideOf<T> extends Record<string, Task>
+	? { [K in keyof ProvideOf<T>]: CompareTaskReturnValues<ProvideOf<T>[K]> }
+	: never
+
+export type DepBuilder<T> = Exclude<
+	Extract<keyof DependencyReturnValues<T>, string>,
+	keyof ProvideReturnValues<T>
+> extends never
+	? DependencyReturnValues<T> extends Pick<
+			ProvideReturnValues<T>,
+			Extract<keyof DependencyReturnValues<T>, string>
+		>
+		? T
+		: never
+	: never
+
+export type DependencyMismatchError<S extends CanisterScope> = {
+	// This property key is your custom error message.
+	"[ICE-ERROR: Dependency mismatch. Please provide all required dependencies.]": true
+}
+
+export type UniformScopeCheck<S extends CanisterScope> = S extends {
+	children: {
+		install: infer C
+	}
+}
+	? C extends DepBuilder<C>
+		? S
+		: DependencyMismatchError<S>
+	: DependencyMismatchError<S>
+
+// Compute a boolean flag from our check.
+export type IsValid<S extends CanisterScope> =
+	UniformScopeCheck<S> extends DependencyMismatchError<S> ? false : true
 
 
 //

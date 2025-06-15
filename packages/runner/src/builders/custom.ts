@@ -4,7 +4,9 @@ import type { Scope, Task, TaskTree } from "../types/types.js"
 import { Path, FileSystem } from "@effect/platform"
 import type {
 	CanisterScope,
+	DependencyMismatchError,
 	ExtractTaskEffectSuccess,
+	IsValid,
 	TaskCtxShape,
 } from "./lib.js"
 import { Tags } from "./lib.js"
@@ -23,62 +25,6 @@ import {
 	ValidProvidedDeps,
 } from "./lib.js"
 import { ActorSubclass } from "../types/actor.js"
-
-export type CompareTaskReturnValues<T extends Task> = T extends {
-	effect: Effect.Effect<infer S, any, any>
-}
-	? S
-	: never
-
-type DependenciesOf<T> = T extends { dependsOn: infer D } ? D : never
-type ProvideOf<T> = T extends { dependencies: infer P } ? P : never
-
-type DependencyReturnValues<T> = DependenciesOf<T> extends Record<string, Task>
-	? {
-			[K in keyof DependenciesOf<T>]: CompareTaskReturnValues<
-				DependenciesOf<T>[K]
-			>
-		}
-	: never
-
-type ProvideReturnValues<T> = ProvideOf<T> extends Record<string, Task>
-	? { [K in keyof ProvideOf<T>]: CompareTaskReturnValues<ProvideOf<T>[K]> }
-	: never
-
-export type DepBuilder<T> = Exclude<
-	Extract<keyof DependencyReturnValues<T>, string>,
-	keyof ProvideReturnValues<T>
-> extends never
-	? DependencyReturnValues<T> extends Pick<
-			ProvideReturnValues<T>,
-			Extract<keyof DependencyReturnValues<T>, string>
-		>
-		? T
-		: never
-	: never
-
-export type DependencyMismatchError<S extends CanisterScope> = {
-	// This property key is your custom error message.
-	"[ICE-ERROR: Dependency mismatch. Please provide all required dependencies.]": true
-}
-
-// export type UniformScopeCheck<S extends CanisterScope> = S extends {
-// 	children: infer C
-// }
-// 	? C extends { [K in keyof C]: DepBuilder<C[K]> }
-// 		? S
-// 		: DependencyMismatchError<S>
-// 	: DependencyMismatchError<S>
-
-export type UniformScopeCheck<S extends CanisterScope> = S extends {
-	children: {
-		install: infer C
-	}
-}
-	? C extends DepBuilder<C>
-		? S
-		: DependencyMismatchError<S>
-	: DependencyMismatchError<S>
 
 type CustomCanisterConfig = {
 	wasm: string
@@ -467,8 +413,6 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 		| CreateConfig,
 	tags: string[] = [],
 ): Task<string> => {
-	// TODO: move to .make()
-	// this will allow us to branch builders
 	const id = Symbol("canister/create")
 	return {
 		_tag: "task",
@@ -531,21 +475,6 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 		params: {},
 	} satisfies Task<string>
 }
-
-type MergeInstallTask<S extends CanisterScope, _SERVICE = unknown> = S & {
-	children: {
-		install: Task<{
-			// TODO: as const so the actual id & name are visible?
-			canisterId: string
-			canisterName: string
-			actor: ActorSubclass<_SERVICE>
-		}>
-	}
-}
-
-// Compute a boolean flag from our check.
-export type IsValid<S extends CanisterScope> =
-	UniformScopeCheck<S> extends DependencyMismatchError<S> ? false : true
 
 class CustomCanisterBuilder<
 	I,
@@ -652,7 +581,6 @@ class CustomCanisterBuilder<
 		I,
 		CanisterScope<_SERVICE, D, NP>,
 		D,
-		// TODO: now this is the final problem! NormalizeDeps
 		NP,
 		Config,
 		_SERVICE
@@ -714,8 +642,6 @@ class CustomCanisterBuilder<
 		return new CustomCanisterBuilder(updatedScope)
 	}
 
-	// TODO: validate deps
-	// UniformScopeCheck and other old stuff?
 	make(
 		this: IsValid<S> extends true
 			? CustomCanisterBuilder<I, S, D, P, Config, _SERVICE>

@@ -14,11 +14,18 @@ import {
 import { TaskInfo } from "../tasks/run.js"
 import { generateDIDJS, compileMotokoCanister } from "../canister.js"
 import type {
+	AllowedDep,
 	CanisterScope,
+	DependencyMismatchError,
+	ExtractTaskEffectSuccess,
+	IsValid,
+	NormalizeDeps,
 	TaskCtxShape,
+	ValidProvidedDeps,
 } from "./lib.js"
-import { Tags } from "./lib.js"
+import { normalizeDepsMap, Tags } from "./lib.js"
 import { makeCanisterStatusTask, makeDeployTask } from "./lib.js"
+import type { ActorSubclass } from "../types/actor.js"
 
 type MotokoCanisterConfig = {
 	src: string
@@ -83,9 +90,6 @@ export const makeMotokoBindingsTask = () => {
 		params: {},
 	} satisfies Task
 }
-
-// const plugins = <T extends TaskTreeNode>(taskTree: T) =>
-//   deployTaskPlugin(taskTree)
 
 const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 	canisterConfigOrFn:
@@ -160,182 +164,187 @@ const makeMotokoRemoveTask = (): Task => {
 	}
 }
 
-// export const makeMotokoBuilder = <
-// 	I,
-// 	S extends CanisterScope,
-// 	D extends Record<string, Task>,
-// 	P extends Record<string, Task>,
-// 	Config extends MotokoCanisterConfig,
-// 	_SERVICE = unknown,
-// >(
-// 	scope: S,
-// ): CanisterBuilder<I, S, D, P, Config> => {
-// 	return {
-// 		create: (canisterConfigOrFn) => {
-// 			const updatedScope = {
-// 				...scope,
-// 				children: {
-// 					...scope.children,
-// 					create: makeCreateTask(canisterConfigOrFn, [Tags.MOTOKO]),
-// 				},
-// 			} satisfies CanisterScope
-// 			return makeMotokoBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(
-// 				updatedScope,
-// 			)
-// 		},
-
-// 		installArgs: (installArgsFn) => {
-// 			// TODO: is this a flag, arg, or what?
-// 			const mode = "install"
-// 			// we need to inject dependencies again! or they can be overwritten
-// 			const dependencies = scope.children.install.dependencies
-// 			const provide = scope.children.install.provide
-// 			const installTask = makeInstallTask<
-// 				I,
-// 				ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>,
-// 				_SERVICE
-// 			>(installArgsFn)
-// 			const updatedScope = {
-// 				...scope,
-// 				children: {
-// 					...scope.children,
-// 					install: {
-// 						...installTask,
-// 						dependencies,
-// 						provide,
-// 					},
-// 				},
-// 			} satisfies CanisterScope
-// 			return makeMotokoBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(
-// 				updatedScope,
-// 			)
-// 		},
-
-// 		build: (canisterConfigOrFn) => {
-// 			const updatedScope = {
-// 				...scope,
-// 				children: {
-// 					...scope.children,
-// 					build: makeMotokoBuildTask(canisterConfigOrFn),
-// 				},
-// 			} satisfies CanisterScope
-// 			return makeMotokoBuilder<I, typeof updatedScope, D, P, Config, _SERVICE>(
-// 				updatedScope,
-// 			)
-// 		},
-
-// 		dependsOn: (dependencies) => {
-// 			// TODO: check that its a canister builder
-// 			const finalDeps = Object.fromEntries(
-// 				Object.entries(dependencies).map(([key, dep]) => {
-// 					// if (dep._tag === "builder") {
-// 					//   return dep._scope.children.deploy
-// 					// }
-// 					// if (dep._tag === "scope" && dep.children.deploy) {
-// 					//   return [key, dep.children.deploy]
-// 					// }
-// 					if ("provides" in dep) {
-// 						return [key, dep.provides]
-// 					}
-// 					return [key, dep satisfies Task]
-// 				}),
-// 			) satisfies Record<string, Task>
-
-// 			const updatedScope = {
-// 				...scope,
-// 				children: {
-// 					...scope.children,
-// 					install: {
-// 						...scope.children.install,
-// 						dependencies: finalDeps,
-// 					},
-// 				},
-// 			} satisfies CanisterScope as MergeScopeDependencies<
-// 				S,
-// 				ExtractProvidedDeps<typeof dependencies>
-// 			>
-
-// 			return makeMotokoBuilder<
-// 				I,
-// 				typeof updatedScope,
-// 				// TODO: update type?
-// 				ExtractProvidedDeps<typeof dependencies>,
-// 				P,
-// 				Config
-// 			>(updatedScope)
-// 		},
-
-// 		deps: (providedDeps) => {
-// 			// TODO: do we transform here?
-// 			// TODO: do we type check here?
-// 			const finalDeps = Object.fromEntries(
-// 				Object.entries(providedDeps).map(([key, dep]) => {
-// 					// if (dep._tag === "builder") {
-// 					//   return dep._scope.children.deploy
-// 					// }
-// 					// if (dep._tag === "scope" && dep.children.deploy) {
-// 					//   return [key, dep.children.deploy]
-// 					// }
-// 					if ("provides" in dep) {
-// 						return [key, dep.provides]
-// 					}
-// 					return [key, dep satisfies Task]
-// 				}),
-// 			) satisfies Record<string, Task>
-
-// 			// TODO: do we need to pass in to create as well?
-// 			const updatedScope = {
-// 				...scope,
-// 				children: {
-// 					...scope.children,
-// 					install: {
-// 						...scope.children.install,
-// 						provide: finalDeps,
-// 					},
-// 				},
-// 			} satisfies CanisterScope as MergeScopeProvide<
-// 				S,
-// 				ExtractProvidedDeps<typeof providedDeps>
-// 			>
-
-// 			return makeMotokoBuilder<
-// 				I,
-// 				typeof updatedScope,
-// 				D,
-// 				// TODO: update type?
-// 				ExtractProvidedDeps<typeof providedDeps>,
-// 				Config
-// 			>(updatedScope)
-// 		},
-
-// 		make: () => {
-// 			return {
-// 				...scope,
-// 				id: Symbol("scope"),
-// 				children: Record.map(scope.children, (value) => ({
-// 					...value,
-// 					id: Symbol("task"),
-// 				})),
-// 			} satisfies CanisterScope as unknown as UniformScopeCheck<S>
-// 		},
-
-// 		// Add scope property to the initial builder
-// 		_tag: "builder",
-// 	}
-// }
-
 class MotokoCanisterBuilder<
 	I,
-	S extends CanisterScope,
+	S extends CanisterScope<_SERVICE, D, P>,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
 	Config extends MotokoCanisterConfig,
+	_SERVICE = unknown,
 > {
+	#scope: S
 	constructor(scope: S) {
 		this.#scope = scope
 	}
+	create(
+		canisterConfigOrFn:
+			| Config
+			| ((args: { ctx: TaskCtxShape; deps: P }) => Config)
+			| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<Config>),
+	): MotokoCanisterBuilder<
+		I,
+		CanisterScope<_SERVICE, D, P>,
+		D,
+		P,
+		Config,
+		_SERVICE
+	> {
+		const updatedScope = {
+			...this.#scope,
+			children: {
+				...this.#scope.children,
+				create: makeCreateTask<P>(canisterConfigOrFn, [Tags.MOTOKO]),
+			},
+		} satisfies CanisterScope<_SERVICE, D, P>
+		return new MotokoCanisterBuilder(updatedScope)
+	}
 
-	#scope: S
+	build(
+		canisterConfigOrFn:
+			| Config
+			| ((args: { ctx: TaskCtxShape; deps: P }) => Config)
+			| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<Config>),
+	): MotokoCanisterBuilder<
+		I,
+		CanisterScope<_SERVICE, D, P>,
+		D,
+		P,
+		Config,
+		_SERVICE
+	> {
+		const updatedScope = {
+			...this.#scope,
+			children: {
+				...this.#scope.children,
+				build: makeMotokoBuildTask<P>(canisterConfigOrFn),
+			},
+		} satisfies CanisterScope<_SERVICE, D, P>
+		return new MotokoCanisterBuilder(updatedScope)
+	}
+
+	installArgs(
+		installArgsFn: (args: {
+			ctx: TaskCtxShape
+			deps: ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>
+			mode: string
+		}) => I | Promise<I>,
+	): MotokoCanisterBuilder<
+		I,
+		CanisterScope<_SERVICE, D, P>,
+		D,
+		P,
+		Config,
+		_SERVICE
+	> {
+		// TODO: is this a flag, arg, or what?
+		const mode = "install"
+		// TODO: passing in I makes the return type: any
+		// TODO: we need to inject dependencies again! or they can be overwritten
+		const dependencies = this.#scope.children.install.dependsOn
+		const provide = this.#scope.children.install.dependencies
+		const installTask = makeInstallTask<
+			I,
+			ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>,
+			_SERVICE
+		>(installArgsFn)
+		const updatedScope = {
+			...this.#scope,
+			children: {
+				...this.#scope.children,
+				install: {
+					...installTask,
+					dependsOn: dependencies,
+					dependencies: provide,
+				},
+			},
+		} satisfies CanisterScope<_SERVICE, D, P>
+
+		return new MotokoCanisterBuilder(updatedScope)
+	}
+
+	deps<UP extends Record<string, AllowedDep>, NP extends NormalizeDeps<UP>>(
+		providedDeps: ValidProvidedDeps<D, UP>,
+	): MotokoCanisterBuilder<
+		I,
+		CanisterScope<_SERVICE, D, NP>,
+		D,
+		NP,
+		Config,
+		_SERVICE
+	> {
+		const finalDeps = normalizeDepsMap(providedDeps) as NP
+		const updatedScope = {
+			...this.#scope,
+			children: {
+				...this.#scope.children,
+				install: {
+					...this.#scope.children.install,
+					dependencies: finalDeps,
+				} as Task<
+					{
+						canisterId: string
+						canisterName: string
+						actor: ActorSubclass<_SERVICE>
+					},
+					D,
+					NP
+				>,
+			},
+		} satisfies CanisterScope<_SERVICE, D, NP>
+		return new MotokoCanisterBuilder(updatedScope)
+	}
+
+	dependsOn<
+		UD extends Record<string, AllowedDep>,
+		ND extends NormalizeDeps<UD>,
+	>(
+		dependencies: UD,
+	): MotokoCanisterBuilder<
+		I,
+		CanisterScope<_SERVICE, ND, P>,
+		ND,
+		P,
+		Config,
+		_SERVICE
+	> {
+		const updatedDeps = normalizeDepsMap(dependencies) as ND
+		const updatedScope = {
+			...this.#scope,
+			children: {
+				...this.#scope.children,
+				install: {
+					...this.#scope.children.install,
+					dependsOn: updatedDeps,
+				} as Task<
+					{
+						canisterId: string
+						canisterName: string
+						actor: ActorSubclass<_SERVICE>
+					},
+					ND,
+					P
+				>,
+			},
+		} satisfies CanisterScope<_SERVICE, ND, P>
+		return new MotokoCanisterBuilder(updatedScope)
+	}
+
+	make(
+		this: IsValid<S> extends true
+			? MotokoCanisterBuilder<I, S, D, P, Config, _SERVICE>
+			: DependencyMismatchError<S>,
+	): S {
+		// Otherwise we get a type error
+		const self = this as MotokoCanisterBuilder<I, S, D, P, Config, _SERVICE>
+		return {
+			...self.#scope,
+			id: Symbol("scope"),
+			children: Record.map(self.#scope.children, (value) => ({
+				...value,
+				id: Symbol("task"),
+			})),
+		} satisfies CanisterScope<_SERVICE, D, P>
+	}
 }
 
 export const motokoCanister = <
@@ -367,14 +376,6 @@ export const motokoCanister = <
 	} satisfies CanisterScope
 
 	return new MotokoCanisterBuilder(initialScope)
-	// return makeMotokoBuilder<
-	// 	I,
-	// 	typeof initialScope,
-	// 	Record<string, Task>,
-	// 	Record<string, Task>,
-	// 	MotokoCanisterConfig,
-	// 	_SERVICE
-	// >(initialScope)
 }
 
 const testTask = {
