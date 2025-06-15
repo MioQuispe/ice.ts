@@ -1,25 +1,26 @@
 import type {
-	CanisterConstructor,
 	InputNamedParam,
 	InputPositionalParam,
 	Task,
-	TaskParam,
 } from "../types/types.js"
 import { Effect, Option, Record } from "effect"
 import type {
 	ExtractTaskEffectSuccess,
-	MergeTaskDeps,
-	MergeTaskProvide,
+	MergeTaskDependsOn,
+	MergeTaskDependencies,
 	CanisterScope,
-} from "./types.js"
+} from "./lib.js"
 import { TaskCtx } from "../tasks/lib.js"
 import { TaskInfo } from "../tasks/run.js"
 import { DependencyResults } from "../tasks/run.js"
 import { patchGlobals } from "../utils/extension.js"
-import { Tags, type TaskCtxShape } from "./types.js"
+import { Tags, type TaskCtxShape } from "./lib.js"
 import { NamedParam, PositionalParam } from "../types/types.js"
 import { match, type } from "arktype"
 import { StandardSchemaV1 } from "@standard-schema/spec"
+import type { ActorSubclass } from "../types/actor.js"
+import { AllowedDep, makeCanisterStatusTask, NormalizeDeps, ValidProvidedDeps } from "./lib.js"
+import { normalizeDepsMap } from "./lib.js"
 
 type MergeTaskParams<
 	T extends Task,
@@ -44,70 +45,6 @@ export type ExtractArgsFromTaskParams<TP extends TaskParams> = {
 	[K in keyof TP]: StandardSchemaV1.InferOutput<TP[K]["type"]>
 }
 
-// TODO: arktype match?
-function normalizeDep(dep: Task | CanisterScope | CanisterConstructor): Task {
-	if ("_tag" in dep && dep._tag === "task") return dep
-	if ("provides" in dep) return dep.provides as Task
-	if ("_tag" in dep && dep._tag === "scope" && dep.children?.install)
-		return dep.children.install as Task
-	throw new Error("Invalid dependency type provided to normalizeDep")
-}
-
-type AllowedDep = Task | CanisterScope | CanisterConstructor
-
-/**
- * If T is already a Task, it stays the same.
- * If T is a CanisterScope, returns its provided Task (assumed to be under the "provides" property).
- */
-type NormalizeDep<T> = T extends Task
-	? T
-	: T extends CanisterConstructor
-		? T["provides"] extends Task
-			? T["provides"]
-			: never
-		: T extends CanisterScope
-			? T["children"]["install"] extends Task
-				? T["children"]["install"]
-				: never
-			: never
-
-/**
- * Normalizes a record of dependencies.
- */
-type NormalizeDeps<Deps extends Record<string, AllowedDep>> = {
-	[K in keyof Deps]: NormalizeDep<Deps[K]> extends Task
-		? NormalizeDep<Deps[K]>
-		: never
-}
-
-type ValidProvidedDeps<
-	D extends Record<string, AllowedDep>,
-	NP extends Record<string, AllowedDep>,
-> = CompareTaskEffects<NormalizeDeps<D>, NormalizeDeps<NP>> extends never
-	? never
-	: NP
-
-type TaskReturnValue<T extends Task> = T extends {
-	effect: Effect.Effect<infer S, any, any>
-}
-	? S
-	: never
-
-type CompareTaskEffects<
-	D extends Record<string, Task>,
-	P extends Record<string, Task>,
-> = (keyof D extends keyof P ? true : false) extends true
-	? {
-			[K in keyof D & keyof P]: TaskReturnValue<D[K]> extends TaskReturnValue<
-				P[K]
-			>
-				? never
-				: K
-		}[keyof D & keyof P] extends never
-		? P
-		: never
-	: never
-
 type AddNameToParams<T extends InputParams> = {
 	[K in keyof T]: T[K] & {
 		name: K
@@ -125,21 +62,6 @@ type ValidateInputParams<T extends InputParams> = {
 				? InputNamedParam<StandardSchemaV1.InferOutput<U["type"]>>
 				: never
 		: never
-}
-
-//
-// Helper Functions
-//
-
-/**
- * Normalizes a record of dependencies.
- */
-function normalizeDepsMap(
-	dependencies: Record<string, AllowedDep>,
-): Record<string, Task> {
-	return Object.fromEntries(
-		Object.entries(dependencies).map(([key, dep]) => [key, normalizeDep(dep)]),
-	)
 }
 
 const matchParam = match
@@ -261,7 +183,10 @@ class TaskBuilderClass<
 	P extends Record<string, Task>,
 	TP extends AddNameToParams<InputParams>,
 > {
-	constructor(private task: T) {}
+	#task: T
+	constructor(task: T) {
+		this.#task = task
+	}
 
 	params<const IP extends ValidateInputParams<IP>>(inputParams: IP) {
 		const updatedParams = Record.map(inputParams as InputParams, (v, k) => ({
@@ -286,11 +211,11 @@ class TaskBuilderClass<
 			}
 		}
 		const updatedTask = {
-			...this.task,
+			...this.#task,
 			namedParams,
 			positionalParams,
 			params: updatedParams,
-		} satisfies Task as MergeTaskParams<typeof this.task, typeof updatedParams>
+		} satisfies Task as MergeTaskParams<T, typeof updatedParams>
 		return new TaskBuilderClass(updatedTask) as unknown as TaskBuilderOmit<
 			S | "params",
 			typeof updatedTask,
@@ -300,20 +225,15 @@ class TaskBuilderClass<
 		>
 	}
 
-	// deps<NP extends Record<string, AllowedDep>>(
-	// 	providedDeps: ValidProvidedDeps<D, NP>,
-	// ): TaskBuilderProvide<
-
-	// deps<NP extends Record<string, AllowedDep>>(providedDeps: NP) {
 	deps<NP extends Record<string, AllowedDep>>(
 		providedDeps: ValidProvidedDeps<D, NP>,
 	) {
 		const finalDeps = normalizeDepsMap(providedDeps) as NormalizeDeps<NP>
 		const updatedTask = {
-			...this.task,
-			provide: finalDeps,
-		} satisfies Task as MergeTaskProvide<
-			typeof this.task,
+			...this.#task,
+			dependencies: finalDeps,
+		} satisfies Task as MergeTaskDependencies<
+			T,
 			NormalizeDeps<ValidProvidedDeps<D, NP>>
 		>
 		return new TaskBuilderClass(updatedTask) as TaskBuilderOmit<
@@ -325,12 +245,17 @@ class TaskBuilderClass<
 		>
 	}
 
-	dependsOn<ND extends Record<string, AllowedDep>>(dependencies: ND) {
-		const updatedDeps = normalizeDepsMap(dependencies) as NormalizeDeps<ND>
+	dependsOn<
+		UD extends Record<string, AllowedDep>,
+		ND extends NormalizeDeps<UD>,
+	>(
+		dependencies: UD,
+	): TaskBuilderOmit<S | "dependsOn", MergeTaskDependsOn<T, ND>, ND, P, TP> {
+		const updatedDeps = normalizeDepsMap(dependencies) as ND
 		const updatedTask = {
-			...this.task,
-			dependencies: updatedDeps,
-		} satisfies Task as MergeTaskDeps<T, typeof updatedDeps>
+			...this.#task,
+			dependsOn: updatedDeps,
+		} satisfies Task as MergeTaskDependsOn<T, ND>
 		return new TaskBuilderClass(updatedTask) as TaskBuilderOmit<
 			S | "dependsOn",
 			typeof updatedTask,
@@ -348,7 +273,7 @@ class TaskBuilderClass<
 		}) => Promise<Output>,
 	) {
 		const newTask = {
-			...this.task,
+			...this.#task,
 			effect: Effect.gen(function* () {
 				const taskCtx = yield* TaskCtx
 				const taskInfo = yield* TaskInfo
@@ -357,7 +282,6 @@ class TaskBuilderClass<
 					try: () =>
 						patchGlobals(() =>
 							fn({
-								// TODO: get args how?
 								args: taskCtx.args as ExtractArgsFromTaskParams<TP>,
 								ctx: taskCtx as TaskCtxShape<ExtractArgsFromTaskParams<TP>>,
 								deps: dependencies as ExtractTaskEffectSuccess<P> &
@@ -373,7 +297,7 @@ class TaskBuilderClass<
 			}),
 		} satisfies Task
 
-		// TODO: unknown params
+		// TODO: unknown params?
 		// newTask.params
 
 		return new TaskBuilderClass(newTask) as TaskBuilderOmit<
@@ -387,7 +311,7 @@ class TaskBuilderClass<
 
 	make() {
 		return {
-			...this.task,
+			...this.#task,
 			id: Symbol("task"),
 		} satisfies Task
 	}
@@ -400,8 +324,8 @@ export function task(description = "") {
 		description,
 		computeCacheKey: Option.none(),
 		input: Option.none(),
+		dependsOn: {},
 		dependencies: {},
-		provide: {},
 		tags: [],
 		params: {},
 		namedParams: {},
@@ -454,7 +378,11 @@ const objTask = task()
 		const result = await ctx.ctx.runTask(stringTask, {
 			amount: "100",
 		})
-		return { a: 1, b: 2 }
+		return {
+			canisterId: "123",
+			canisterName: "stringTask",
+			actor: {} as ActorSubclass<unknown>,
+		}
 	})
 	.make()
 
@@ -466,6 +394,13 @@ const canScope = {
 	defaultTask: Option.none(),
 	children: {
 		install: objTask,
+		create: stringTask,
+		bindings: objTask,
+		build: objTask,
+		stop: objTask,
+		remove: objTask,
+		deploy: objTask,
+		status: makeCanisterStatusTask([]),
 	},
 } satisfies CanisterScope
 
@@ -498,8 +433,8 @@ const baseTask2: Task = {
 	description: "description",
 	computeCacheKey: Option.none(),
 	input: Option.none(),
+	dependsOn: {},
 	dependencies: {},
-	provide: {},
 	tags: [],
 	params: {},
 	namedParams: {},

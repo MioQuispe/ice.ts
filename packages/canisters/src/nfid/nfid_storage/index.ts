@@ -32,7 +32,7 @@ export const NFIDStorage = (
       candid: path.resolve(__dirname, `./nfid/${canisterName}/${canisterName}.did`),
     }
   })
-    .dependsOn({ NFIDIdentityManager })
+    .dependsOn({ NFIDIdentityManager: NFIDIdentityManager.provides })
     .installArgs(async ({ ctx, mode, deps }) => {
       // TODO: Add installation logic if needed.
       const initArgs =

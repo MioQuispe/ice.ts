@@ -7,7 +7,7 @@ import type {
 } from "../types/types.js"
 import { TaskCtx } from "../tasks/lib.js"
 import { TaskInfo, runTask } from "../tasks/run.js"
-import { Tags, type CanisterScope } from "../builders/types.js"
+import { Tags, type CanisterScope } from "../builders/lib.js"
 
 // /**
 //  * Recursively adds a `deploy` task to every scope node.
@@ -37,12 +37,12 @@ const makeDeployTask = (scope: CanisterScope): Task => {
     _tag: "task",
     // TODO: hmmm?
     id: Symbol("canister/deploy"),
-    dependencies: {},
+    dependsOn: {},
     computeCacheKey: Option.none(),
     input: Option.none(),
     // TODO: we only want to warn at a type level?
     // TODO: type Task
-    provide: {},
+    dependencies: {},
     effect: Effect.gen(function* () {
       const { taskPath } = yield* TaskInfo
       const canisterName = taskPath.split(":").slice(0, -1).join(":")

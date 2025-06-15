@@ -9,7 +9,7 @@ import {
 } from "effect"
 import { ICEConfigService } from "../services/iceConfig.js"
 import { configMap } from "../index.js"
-import { Tags } from "../builders/types.js"
+import { Tags } from "../builders/lib.js"
 import type { Task } from "../types/types.js"
 import { TaskRegistry } from "../services/taskRegistry.js"
 import {
@@ -51,7 +51,7 @@ export const runTaskByPath = (
 	})
 
 export const runTask = (
-	task: Task,
+	task: Task<any>,
 	args: TaskParamsToArgs<Task> = {},
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) =>

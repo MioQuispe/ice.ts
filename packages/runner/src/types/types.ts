@@ -148,15 +148,22 @@ export interface PositionalParam<T = unknown> extends TaskParam<T> {
 // })
 // export const positionalParamSchema = type.and(taskParamSchema)
 
-export interface Task<A = unknown, E = unknown, R = unknown, I = unknown> {
+export interface Task<
+	A = unknown,
+	D extends Record<string, Task> = {},
+	P extends Record<string, Task> = {},
+	E = unknown,
+	R = unknown,
+	I = unknown,
+> {
 	_tag: "task"
 	readonly id: symbol // assigned by the builder
 	effect: Effect.Effect<A, E, R>
 	description: string
 	tags: Array<string | symbol>
 	// TODO: we only want the shape of the task here
-	dependencies: Record<string, Task>
-	provide: Record<string, Task>
+	dependsOn: D
+	dependencies: P
 	namedParams: Record<string, NamedParam>
 	positionalParams: Array<PositionalParam>
 	params: Record<string, NamedParam | PositionalParam>
@@ -164,7 +171,8 @@ export interface Task<A = unknown, E = unknown, R = unknown, I = unknown> {
 	input: Option.Option<I> // optional input
 	// TODO: causes type issues in builders
 	// computeCacheKey?: (task: Task<A, E, R, I>) => string
-	computeCacheKey: Option.Option<(task: Task<A, E, R, I>) => string>
+	// TODO:
+	computeCacheKey: Option.Option<(task: Task) => string>
 }
 
 export type Scope = {
@@ -188,12 +196,6 @@ export type TaskTreeNode = Task | Scope | BuilderResult
 
 export type TaskTree = Record<string, TaskTreeNode>
 
-// export type Plugin = {
-//   _tag: "plugin"
-//   transform: (ctx: ICEContext) => PreTaskTree;
-//   children: PreTaskTree | ((args: any) => PreTaskTree)
-// }
-
 // TODO: come up with a better name
 export type ICECtx = {
 	network: string
@@ -205,19 +207,4 @@ export type ICEConfigFile = {
 		| ((ctx: ICECtx) => Promise<Partial<ICEConfig>> | Partial<ICEConfig>)
 } & {
 	[key: string]: TaskTreeNode
-}
-
-export type CanisterConstructor = {
-	// _tag: "canister-constructor"
-	provides: Task
-}
-
-// TODO: fix?
-export type CanisterScope = {
-	_tag: "scope"
-	tags: Array<string | symbol>
-	description: string
-	defaultTask: Option.Option<string>
-	// only limited to tasks
-	children: Record<string, Task>
 }

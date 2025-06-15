@@ -42,7 +42,7 @@ export const NFIDIcrc1Oracle = (
       candid: path.resolve(__dirname, `./nfid/${canisterName}/${canisterName}.did`),
     }
   })
-    .dependsOn({ NFIDIdentityManager })
+    .dependsOn({ NFIDIdentityManager: NFIDIdentityManager.provides })
     .installArgs(async ({ ctx, mode, deps }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn

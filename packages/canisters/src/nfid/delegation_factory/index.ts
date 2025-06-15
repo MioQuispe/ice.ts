@@ -42,7 +42,7 @@ export const NFIDDelegationFactory = (
     }
   })
     .dependsOn({
-      NFIDIdentityManager,
+      NFIDIdentityManager: NFIDIdentityManager.provides,
     })
     .installArgs(async ({ ctx, mode, deps }) => {
       // TODO: optional cap canister?

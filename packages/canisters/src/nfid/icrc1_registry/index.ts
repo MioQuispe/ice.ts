@@ -42,7 +42,7 @@ export const NFIDIcrc1Registry = (
       ),
     }
   })
-    .dependsOn({ NFIDIdentityManager })
+    .dependsOn({ NFIDIdentityManager: NFIDIdentityManager.provides })
     .installArgs(async ({ ctx, mode, deps }) => {
       // TODO: Add installation logic if needed.
       const initArgs =

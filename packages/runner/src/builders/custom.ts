@@ -3,28 +3,82 @@ import type { Scope, Task, TaskTree } from "../types/types.js"
 // import mo from "motoko"
 import { Path, FileSystem } from "@effect/platform"
 import type {
-	CanisterBuilder,
 	CanisterScope,
-	UniformScopeCheck,
-	MergeScopeDependencies,
-	MergeScopeProvide,
 	ExtractTaskEffectSuccess,
-	ExtractProvidedDeps,
 	TaskCtxShape,
-} from "./types.js"
-import { Tags } from "./types.js"
+} from "./lib.js"
+import { Tags } from "./lib.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
 import { proxyActor } from "../utils/extension.js"
 import { TaskInfo } from "../tasks/run.js"
 import { TaskCtx } from "../tasks/lib.js"
 import { DependencyResults } from "../tasks/run.js"
 import { generateDIDJS, encodeArgs } from "../canister.js"
-import { makeCanisterStatusTask, makeDeployTask } from "./lib.js"
+import {
+	AllowedDep,
+	makeCanisterStatusTask,
+	makeDeployTask,
+	NormalizeDeps,
+	normalizeDepsMap,
+	ValidProvidedDeps,
+} from "./lib.js"
+import { ActorSubclass } from "../types/actor.js"
 
-// TODO: later
-// candidUITaskPlugin()
-// const plugins = <T extends TaskTreeNode>(taskTree: T) =>
-//   deployTaskPlugin(taskTree)
+export type CompareTaskReturnValues<T extends Task> = T extends {
+	effect: Effect.Effect<infer S, any, any>
+}
+	? S
+	: never
+
+type DependenciesOf<T> = T extends { dependsOn: infer D } ? D : never
+type ProvideOf<T> = T extends { dependencies: infer P } ? P : never
+
+type DependencyReturnValues<T> = DependenciesOf<T> extends Record<string, Task>
+	? {
+			[K in keyof DependenciesOf<T>]: CompareTaskReturnValues<
+				DependenciesOf<T>[K]
+			>
+		}
+	: never
+
+type ProvideReturnValues<T> = ProvideOf<T> extends Record<string, Task>
+	? { [K in keyof ProvideOf<T>]: CompareTaskReturnValues<ProvideOf<T>[K]> }
+	: never
+
+export type DepBuilder<T> = Exclude<
+	Extract<keyof DependencyReturnValues<T>, string>,
+	keyof ProvideReturnValues<T>
+> extends never
+	? DependencyReturnValues<T> extends Pick<
+			ProvideReturnValues<T>,
+			Extract<keyof DependencyReturnValues<T>, string>
+		>
+		? T
+		: never
+	: never
+
+export type DependencyMismatchError<S extends CanisterScope> = {
+	// This property key is your custom error message.
+	"[ICE-ERROR: Dependency mismatch. Please provide all required dependencies.]": true
+}
+
+// export type UniformScopeCheck<S extends CanisterScope> = S extends {
+// 	children: infer C
+// }
+// 	? C extends { [K in keyof C]: DepBuilder<C[K]> }
+// 		? S
+// 		: DependencyMismatchError<S>
+// 	: DependencyMismatchError<S>
+
+export type UniformScopeCheck<S extends CanisterScope> = S extends {
+	children: {
+		install: infer C
+	}
+}
+	? C extends DepBuilder<C>
+		? S
+		: DependencyMismatchError<S>
+	: DependencyMismatchError<S>
 
 type CustomCanisterConfig = {
 	wasm: string
@@ -34,12 +88,12 @@ type CustomCanisterConfig = {
 
 export const iceDirName = ".ice"
 
-export const makeStopTask = () => {
+export const makeStopTask = (): Task<void> => {
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/stop"),
+		dependsOn: {},
 		dependencies: {},
-		provide: {},
 		// TODO: do we allow a fn as args here?
 		effect: Effect.gen(function* () {
 			const path = yield* Path.Path
@@ -69,15 +123,15 @@ export const makeStopTask = () => {
 		namedParams: {},
 		positionalParams: [],
 		params: {},
-	} satisfies Task
+	} satisfies Task<void>
 }
 
-export const makeRemoveTask = () => {
+export const makeRemoveTask = (): Task<void> => {
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/remove"),
+		dependsOn: {},
 		dependencies: {},
-		provide: {},
 		// TODO: do we allow a fn as args here?
 		effect: Effect.gen(function* () {
 			const path = yield* Path.Path
@@ -109,7 +163,7 @@ export const makeRemoveTask = () => {
 		namedParams: {},
 		positionalParams: [],
 		params: {},
-	} satisfies Task
+	} satisfies Task<void>
 }
 
 export const makeCustomBindingsTask = (
@@ -117,12 +171,12 @@ export const makeCustomBindingsTask = (
 		| ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)
 		| ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)
 		| CustomCanisterConfig,
-) => {
+): Task<void> => {
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/bindings"),
+		dependsOn: {},
 		dependencies: {},
-		provide: {},
 		// TODO: do we allow a fn as args here?
 		effect: Effect.gen(function* () {
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
@@ -154,12 +208,16 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 		mode: string
 		deps: P
 	}) => Promise<I> | I,
-) => {
+): Task<{
+	canisterId: string
+	canisterName: string
+	actor: ActorSubclass<_SERVICE>
+}> => {
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/install"),
+		dependsOn: {},
 		dependencies: {},
-		provide: {},
 		computeCacheKey: Option.none(),
 		input: Option.none(),
 		effect: Effect.gen(function* () {
@@ -294,7 +352,11 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 		namedParams: {},
 		positionalParams: [],
 		params: {},
-	} satisfies Task
+	} satisfies Task<{
+		canisterId: string
+		canisterName: string
+		actor: ActorSubclass<_SERVICE>
+	}>
 }
 
 const makeBuildTask = <P extends Record<string, unknown>>(
@@ -302,12 +364,12 @@ const makeBuildTask = <P extends Record<string, unknown>>(
 		| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<CustomCanisterConfig>)
 		| ((args: { ctx: TaskCtxShape; deps: P }) => CustomCanisterConfig)
 		| CustomCanisterConfig,
-) => {
+): Task<void> => {
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/build"),
+		dependsOn: {},
 		dependencies: {},
-		provide: {},
 		effect: Effect.gen(function* () {
 			const taskCtx = yield* TaskCtx
 			const fs = yield* FileSystem.FileSystem
@@ -364,7 +426,7 @@ const makeBuildTask = <P extends Record<string, unknown>>(
 		namedParams: {},
 		positionalParams: [],
 		params: {},
-	} satisfies Task
+	} satisfies Task<void>
 }
 
 export const resolveConfig = <T, P extends Record<string, unknown>>(
@@ -404,15 +466,15 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 		| ((args: { ctx: TaskCtxShape; deps: P }) => CreateConfig)
 		| CreateConfig,
 	tags: string[] = [],
-) => {
+): Task<string> => {
 	// TODO: move to .make()
 	// this will allow us to branch builders
 	const id = Symbol("canister/create")
 	return {
 		_tag: "task",
 		id,
+		dependsOn: {},
 		dependencies: {},
-		provide: {},
 		effect: Effect.gen(function* () {
 			const path = yield* Path.Path
 			const fs = yield* FileSystem.FileSystem
@@ -467,207 +529,208 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 		namedParams: {},
 		positionalParams: [],
 		params: {},
-	} satisfies Task
+	} satisfies Task<string>
 }
 
-const makeCustomCanisterBuilder = <
+type MergeInstallTask<S extends CanisterScope, _SERVICE = unknown> = S & {
+	children: {
+		install: Task<{
+			// TODO: as const so the actual id & name are visible?
+			canisterId: string
+			canisterName: string
+			actor: ActorSubclass<_SERVICE>
+		}>
+	}
+}
+
+// Compute a boolean flag from our check.
+export type IsValid<S extends CanisterScope> =
+	UniformScopeCheck<S> extends DependencyMismatchError<S> ? false : true
+
+class CustomCanisterBuilder<
 	I,
-	S extends CanisterScope,
+	S extends CanisterScope<_SERVICE, D, P>,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
 	Config extends CustomCanisterConfig,
 	_SERVICE = unknown,
->(
-	scope: S,
-	// TODO: maybe we need to pass in the service type as well?
-): CanisterBuilder<I, S, D, P, Config> => {
-	return {
-		create: (canisterConfigOrFn) => {
-			const updatedScope = {
-				...scope,
-				children: {
-					...scope.children,
-					create: makeCreateTask<P>(canisterConfigOrFn, [Tags.CUSTOM]),
+> {
+	#scope: S
+	constructor(scope: S) {
+		this.#scope = scope
+	}
+
+	create(
+		canisterConfigOrFn:
+			| Config
+			| ((args: { ctx: TaskCtxShape; deps: P }) => Config)
+			| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<Config>),
+	): CustomCanisterBuilder<
+		I,
+		CanisterScope<_SERVICE, D, P>,
+		D,
+		P,
+		Config,
+		_SERVICE
+	> {
+		const updatedScope = {
+			...this.#scope,
+			children: {
+				...this.#scope.children,
+				create: makeCreateTask<P>(canisterConfigOrFn, [Tags.CUSTOM]),
+			},
+		} satisfies CanisterScope<_SERVICE, D, P>
+		return new CustomCanisterBuilder(updatedScope)
+	}
+
+	build(
+		canisterConfigOrFn:
+			| Config
+			| ((args: { ctx: TaskCtxShape; deps: P }) => Config)
+			| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<Config>),
+	): CustomCanisterBuilder<
+		I,
+		CanisterScope<_SERVICE, D, P>,
+		D,
+		P,
+		Config,
+		_SERVICE
+	> {
+		const updatedScope = {
+			...this.#scope,
+			children: {
+				...this.#scope.children,
+				build: makeBuildTask<P>(canisterConfigOrFn),
+			},
+		} satisfies CanisterScope<_SERVICE, D, P>
+		return new CustomCanisterBuilder(updatedScope)
+	}
+
+	installArgs(
+		installArgsFn: (args: {
+			ctx: TaskCtxShape
+			deps: ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>
+			mode: string
+		}) => I | Promise<I>,
+	): CustomCanisterBuilder<
+		I,
+		CanisterScope<_SERVICE, D, P>,
+		D,
+		P,
+		Config,
+		_SERVICE
+	> {
+		// TODO: is this a flag, arg, or what?
+		const mode = "install"
+		// TODO: passing in I makes the return type: any
+		// TODO: we need to inject dependencies again! or they can be overwritten
+		const dependencies = this.#scope.children.install.dependsOn
+		const provide = this.#scope.children.install.dependencies
+		const installTask = makeInstallTask<
+			I,
+			ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>,
+			_SERVICE
+		>(installArgsFn)
+		const updatedScope = {
+			...this.#scope,
+			children: {
+				...this.#scope.children,
+				install: {
+					...installTask,
+					dependsOn: dependencies,
+					dependencies: provide,
 				},
-			} satisfies CanisterScope
-			return makeCustomCanisterBuilder<
-				I,
-				typeof updatedScope,
-				D,
-				P,
-				Config,
-				_SERVICE
-			>(updatedScope)
-		},
-		installArgs: (installArgsFn) => {
-			// TODO: is this a flag, arg, or what?
-			const mode = "install"
-			// TODO: passing in I makes the return type: any
-			// TODO: we need to inject dependencies again! or they can be overwritten
-			const dependencies = scope.children.install.dependencies
-			const provide = scope.children.install.provide
-			const installTask = makeInstallTask<
-				I,
-				ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>,
-				_SERVICE
-			>(installArgsFn)
-			const updatedScope = {
-				...scope,
-				children: {
-					...scope.children,
-					install: {
-						...installTask,
-						dependencies,
-						provide,
+			},
+		} satisfies CanisterScope<_SERVICE, D, P>
+
+		return new CustomCanisterBuilder(updatedScope)
+	}
+
+	deps<UP extends Record<string, AllowedDep>, NP extends NormalizeDeps<UP>>(
+		providedDeps: ValidProvidedDeps<D, UP>,
+	): CustomCanisterBuilder<
+		I,
+		CanisterScope<_SERVICE, D, NP>,
+		D,
+		// TODO: now this is the final problem! NormalizeDeps
+		NP,
+		Config,
+		_SERVICE
+	> {
+		const finalDeps = normalizeDepsMap(providedDeps) as NP
+		const updatedScope = {
+			...this.#scope,
+			children: {
+				...this.#scope.children,
+				install: {
+					...this.#scope.children.install,
+					dependencies: finalDeps,
+				} as Task<
+					{
+						canisterId: string
+						canisterName: string
+						actor: ActorSubclass<_SERVICE>
 					},
-				},
-			} satisfies CanisterScope
-			return makeCustomCanisterBuilder<
-				I,
-				typeof updatedScope,
-				D,
-				P,
-				Config,
-				_SERVICE
-			>(updatedScope)
-		},
-		build: (canisterConfigOrFn) => {
-			const updatedScope = {
-				...scope,
-				children: {
-					...scope.children,
-					build: makeBuildTask<P>(canisterConfigOrFn),
-				},
-			} satisfies CanisterScope
-			return makeCustomCanisterBuilder<
-				I,
-				typeof updatedScope,
-				D,
-				P,
-				Config,
-				_SERVICE
-			>(updatedScope)
-		},
-		// Here we extract the real tasks from the deps
-		// is it enough to compare symbols?
-		dependsOn: (dependencies) => {
-			// TODO: check that its a canister builder
-			// const dependencies = Object.fromEntries(
-			//   Object.entries(deps).map(([key, dep]) => {
-			//     // if (dep._tag === "builder") {
-			//     //   return dep._scope.children.deploy
-			//     // }
-			//     // if (dep._tag === "scope") {
-			//     //   return [key, dep.children.deploy]
-			//     // }
-			//     if (dep._tag === "task") {
-			//       return [key, dep]
-			//     }
-			//     return [key, dep]
-			//   }),
-			// ) satisfies Record<string, Task> as MergeScopeDependencies<S, typeof deps>
-			const finalDeps = Object.fromEntries(
-				Object.entries(dependencies).map(([key, dep]) => {
-					// if (dep._tag === "builder") {
-					//   return dep._scope.children.deploy
-					// }
-					// if (dep._tag === "scope" && dep.children.deploy) {
-					//   return [key, dep.children.deploy]
-					// }
-					if ("provides" in dep) {
-						return [key, dep.provides]
-					}
-					return [key, dep satisfies Task]
-				}),
-			) satisfies Record<string, Task>
+					D,
+					NP
+				>,
+			},
+		} satisfies CanisterScope<_SERVICE, D, NP>
+		return new CustomCanisterBuilder(updatedScope)
+	}
 
-			const updatedScope = {
-				...scope,
-				children: {
-					...scope.children,
-					install: {
-						...scope.children.install,
-						dependencies: finalDeps,
+	dependsOn<
+		UD extends Record<string, AllowedDep>,
+		ND extends NormalizeDeps<UD>,
+	>(
+		dependencies: UD,
+	): CustomCanisterBuilder<
+		I,
+		CanisterScope<_SERVICE, ND, P>,
+		ND,
+		P,
+		Config,
+		_SERVICE
+	> {
+		const updatedDeps = normalizeDepsMap(dependencies) as ND
+		const updatedScope = {
+			...this.#scope,
+			children: {
+				...this.#scope.children,
+				install: {
+					...this.#scope.children.install,
+					dependsOn: updatedDeps,
+				} as Task<
+					{
+						canisterId: string
+						canisterName: string
+						actor: ActorSubclass<_SERVICE>
 					},
-				},
-			} satisfies CanisterScope as MergeScopeDependencies<
-				S,
-				ExtractProvidedDeps<typeof dependencies>
-			>
+					ND,
+					P
+				>,
+			},
+		} satisfies CanisterScope<_SERVICE, ND, P>
+		return new CustomCanisterBuilder(updatedScope)
+	}
 
-			return makeCustomCanisterBuilder<
-				I,
-				typeof updatedScope,
-				// TODO: update type?
-				ExtractProvidedDeps<typeof dependencies>,
-				P,
-				Config
-			>(updatedScope)
-		},
-
-		deps: (providedDeps) => {
-			// TODO: do we transform here?
-			// TODO: do we type check here?
-
-			const finalDeps = Object.fromEntries(
-				Object.entries(providedDeps).map(([key, dep]) => {
-					// if (dep._tag === "builder") {
-					//   return dep._scope.children.deploy
-					// }
-					// if (dep._tag === "scope" && dep.children.deploy) {
-					//   return [key, dep.children.deploy]
-					// }
-					if ("provides" in dep) {
-						return [key, dep.provides]
-					}
-					return [key, dep satisfies Task]
-				}),
-			) satisfies Record<string, Task>
-
-			// TODO: do we need to pass in to create as well?
-			const updatedScope = {
-				...scope,
-				children: {
-					...scope.children,
-					install: {
-						...scope.children.install,
-						provide: finalDeps,
-					},
-				},
-			} satisfies CanisterScope as MergeScopeProvide<
-				S,
-				ExtractProvidedDeps<typeof providedDeps>
-			>
-			// return makeCustomCanisterBuilder<
-			//   I,
-			//   typeof updatedScope,
-			//   D,
-			//   // TODO: update type?
-			//   typeof finalDeps,
-			//   Config
-			// >(updatedScope)
-			return makeCustomCanisterBuilder<
-				I,
-				typeof updatedScope,
-				D,
-				// TODO: update type?
-				ExtractProvidedDeps<typeof providedDeps>,
-				Config
-			>(updatedScope)
-		},
-
-		make: () => {
-			return {
-				...scope,
-				id: Symbol("scope"),
-				children: Record.map(scope.children, (value) => ({
-					...value,
-					id: Symbol("task"),
-				})),
-			} satisfies CanisterScope as unknown as UniformScopeCheck<S>
-		},
-
-		_tag: "builder",
+	// TODO: validate deps
+	// UniformScopeCheck and other old stuff?
+	make(
+		this: IsValid<S> extends true
+			? CustomCanisterBuilder<I, S, D, P, Config, _SERVICE>
+			: DependencyMismatchError<S>,
+	): S {
+		// Otherwise we get a type error
+		const self = this as CustomCanisterBuilder<I, S, D, P, Config, _SERVICE>
+		return {
+			...self.#scope,
+			id: Symbol("scope"),
+			children: Record.map(self.#scope.children, (value) => ({
+				...value,
+				id: Symbol("task"),
+			})),
+		} satisfies CanisterScope<_SERVICE, D, P>
 	}
 }
 
@@ -678,7 +741,14 @@ export const customCanister = <I = unknown, _SERVICE = unknown>(
 		| ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)
 		| ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)
 		| CustomCanisterConfig,
-) => {
+): CustomCanisterBuilder<
+	I,
+	CanisterScope<_SERVICE>,
+	{},
+	{},
+	CustomCanisterConfig,
+	_SERVICE
+> => {
 	const initialScope = {
 		_tag: "scope",
 		id: Symbol("scope"),
@@ -696,16 +766,24 @@ export const customCanister = <I = unknown, _SERVICE = unknown>(
 			deploy: makeDeployTask([Tags.CUSTOM]),
 			status: makeCanisterStatusTask([Tags.CUSTOM]),
 		},
-	} satisfies CanisterScope
+	} satisfies CanisterScope<_SERVICE>
 
-	return makeCustomCanisterBuilder<
+	return new CustomCanisterBuilder<
 		I,
-		typeof initialScope,
-		Record<string, Task>,
-		Record<string, Task>,
+		CanisterScope<_SERVICE>,
+		{},
+		{},
 		CustomCanisterConfig,
 		_SERVICE
 	>(initialScope)
+	// return makeCustomCanisterBuilder<
+	// 	I,
+	// 	typeof initialScope,
+	// 	Record<string, Task>,
+	// 	Record<string, Task>,
+	// 	CustomCanisterConfig,
+	// 	_SERVICE
+	// >(initialScope)
 }
 
 export const loadCanisterId = (taskPath: string) =>
@@ -783,8 +861,8 @@ const scope = <T extends TaskTree>(description: string, children: T) => {
 const testTask = {
 	_tag: "task",
 	id: Symbol("test"),
+	dependsOn: {},
 	dependencies: {},
-	provide: {},
 	effect: Effect.gen(function* () {}),
 	description: "",
 	tags: [],
@@ -798,8 +876,8 @@ const testTask = {
 const testTask2 = {
 	_tag: "task",
 	id: Symbol("test"),
+	dependsOn: {},
 	dependencies: {},
-	provide: {},
 	effect: Effect.gen(function* () {}),
 	description: "",
 	tags: [],
@@ -818,10 +896,10 @@ const providedTask = {
 	tags: [],
 	computeCacheKey: Option.none(),
 	input: Option.none(),
-	dependencies: {
+	dependsOn: {
 		test: testTask,
 	},
-	provide: {
+	dependencies: {
 		test: testTask,
 	},
 	namedParams: {},
@@ -837,11 +915,11 @@ const unProvidedTask = {
 	tags: [],
 	computeCacheKey: Option.none(),
 	input: Option.none(),
-	dependencies: {
+	dependsOn: {
 		test: testTask,
 		test2: testTask,
 	},
-	provide: {
+	dependencies: {
 		test: testTask,
 		// TODO: does not raise a warning?
 		// test2: testTask2,
@@ -861,11 +939,11 @@ const unProvidedTask2 = {
 	tags: [],
 	computeCacheKey: Option.none(),
 	input: Option.none(),
-	dependencies: {
+	dependsOn: {
 		test: testTask,
 		// test2: testTask,
 	},
-	provide: {
+	dependencies: {
 		// test: testTask,
 		// TODO: does not raise a warning?
 		// test2: testTask2,
@@ -887,7 +965,7 @@ const testScope = {
 		providedTask,
 		unProvidedTask,
 	},
-} satisfies CanisterScope
+}
 
 const testScope2 = {
 	_tag: "scope",
@@ -898,7 +976,7 @@ const testScope2 = {
 	children: {
 		unProvidedTask2,
 	},
-} satisfies CanisterScope
+}
 
 const providedTestScope = {
 	_tag: "scope",
@@ -909,7 +987,7 @@ const providedTestScope = {
 	children: {
 		providedTask,
 	},
-} satisfies CanisterScope
+}
 
 // Type checks
 // const pt = providedTask satisfies DepBuilder<typeof providedTask>

@@ -84,7 +84,7 @@ export const TaskTreeListItem = <A, E, R, I>({
   ...props
 }: {
   label: string
-  task: Task<A, E, R, I>
+  task: Task<A, Record<string, Task>, Record<string, Task>, E, R, I>
   path: string[]
 }) => {
   const { isFocused } = useFocus()

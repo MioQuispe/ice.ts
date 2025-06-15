@@ -1,13 +1,10 @@
 import fs from "node:fs"
 import {
-	Data,
 	Layer,
 	ManagedRuntime,
 	Logger,
 	ConfigProvider,
 	LogLevel,
-	Effect,
-	Context,
 } from "effect"
 import { NodeContext } from "@effect/platform-node"
 import { DfxDefaultReplica, DfxReplica } from "./services/dfx.js"
@@ -25,6 +22,15 @@ import { type } from "arktype"
 export * from "./builders/index.js"
 export * from "./ids.js"
 import { StandardSchemaV1 } from "@standard-schema/spec"
+import { customCanister } from "./builders/custom.js"
+import { task } from "./builders/task.js"
+
+export const t = task("test")
+
+export const c = customCanister({
+	wasm: "",
+	candid: "",
+})
 
 export const Ice = (
 	configOrFn:

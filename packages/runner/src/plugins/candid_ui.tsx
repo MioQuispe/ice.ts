@@ -8,7 +8,7 @@ import type {
 } from "../types/types.js"
 import { TaskCtx } from "../tasks/lib.js"
 import { TaskInfo } from "../tasks/run.js"
-import { Tags } from "../builders/types.js"
+import { Tags } from "../builders/lib.js"
 import { loadCanisterId } from "../builders/custom.js"
 import {
   Box,
@@ -60,8 +60,8 @@ const makeCandidUITask = (scope: CanisterScope): Task => {
     _tag: "task",
     // TODO: get from task?
     id: Symbol("canister/candid_ui"),
-    provide: {},
     dependencies: {},
+    dependsOn: {},
     input: Option.none(),
     computeCacheKey: Option.none(),
     // TODO: do we only want to warn at a type level?

@@ -124,14 +124,14 @@ export const getTaskPathById = (id: Symbol) =>
 	})
 
 export const collectDependencies = (
-	rootTasks: Task[],
+	rootTasks: Task<unknown, Record<string, Task>, Record<string, Task>, unknown, unknown, unknown>[],
 	collected: Map<symbol, Task> = new Map(),
 ): Map<symbol, Task | (Task & { args: Record<string, unknown> })> => {
 	for (const rootTask of rootTasks) {
 		if (collected.has(rootTask.id)) continue
 		collected.set(rootTask.id, rootTask)
-		for (const key in rootTask.provide) {
-			const dependency = rootTask.provide[key]
+		for (const key in rootTask.dependencies) {
+			const dependency = rootTask.dependencies[key]
 			collectDependencies([dependency], collected)
 		}
 	}
@@ -224,8 +224,11 @@ export const resolveTaskArgs = (
  * @throws Error if a cycle is detected.
  */
 export const topologicalSortTasks = <A, E, R, I>(
-	tasks: Map<symbol, Task<A, E, R, I>>,
-): Task<A, E, R, I>[] => {
+	tasks: Map<
+		symbol,
+		Task<A, Record<string, Task>, Record<string, Task>, E, R, I>
+	>,
+): Task<A, Record<string, Task>, Record<string, Task>, E, R, I>[] => {
 	const indegree = new Map<symbol, number>()
 	const adjList = new Map<symbol, symbol[]>()
 
@@ -237,8 +240,8 @@ export const topologicalSortTasks = <A, E, R, I>(
 
 	// Build the graph using the "provide" field.
 	for (const [id, task] of tasks.entries()) {
-		for (const key in task.provide) {
-			const providedTask = task.provide[key]
+		for (const key in task.dependencies) {
+			const providedTask = task.dependencies[key]
 			const depId = providedTask.id
 			// Only consider provided dependencies that are in our tasks map.
 			if (tasks.has(depId)) {
@@ -258,7 +261,14 @@ export const topologicalSortTasks = <A, E, R, I>(
 		}
 	}
 
-	const sortedTasks: Task<A, E, R, I>[] = []
+	const sortedTasks: Task<
+		A,
+		Record<string, Task>,
+		Record<string, Task>,
+		E,
+		R,
+		I
+	>[] = []
 	while (queue.length > 0) {
 		const currentId = queue.shift()
 		if (!currentId) {
@@ -295,7 +305,24 @@ export type ProgressUpdate<A> = {
 }
 
 export const executeTasks = (
-	tasks: (Task | (Task & { args: Record<string, unknown> }))[],
+	tasks: (
+		| Task<
+				unknown,
+				Record<string, Task>,
+				Record<string, Task>,
+				unknown,
+				unknown,
+				unknown
+		  >
+		| (Task<
+				unknown,
+				Record<string, Task>,
+				Record<string, Task>,
+				unknown,
+				unknown,
+				unknown
+		  > & { args: Record<string, unknown> })
+	)[],
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) =>
 	Effect.gen(function* () {
@@ -329,8 +356,8 @@ export const executeTasks = (
 		const taskEffects = tasks.map((task) =>
 			Effect.gen(function* () {
 				const dependencyResults: Record<string, unknown> = {}
-				for (const dependencyName in task.provide) {
-					const providedTask = task.provide[dependencyName]
+				for (const dependencyName in task.dependencies) {
+					const providedTask = task.dependencies[dependencyName]
 					const depDeferred = deferredMap.get(providedTask.id)
 					if (depDeferred) {
 						const depResult = yield* Deferred.await(depDeferred)

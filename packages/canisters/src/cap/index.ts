@@ -205,5 +205,5 @@ CapRouter._tag = "canister-constructor"
 export const Cap = scope("Cap", {
   // bucket: CapBucket(),
   // root: CapRoot(),
-  router: CapRouter(),
+  router: CapRouter.provides,
 })

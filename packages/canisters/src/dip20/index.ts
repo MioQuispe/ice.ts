@@ -4,7 +4,6 @@ import { Principal } from "@dfinity/principal"
 import { customCanister, type TaskCtxShape } from "@ice.ts/runner"
 import { CapRouter } from "../cap"
 import type { _SERVICE } from "./dip20.did"
-import { CanisterConstructor } from "@ice.ts/runner/dist/types/types"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 
@@ -60,7 +59,7 @@ export const DIP20 = (
       candid: path.resolve(__dirname, `./${canisterName}/${canisterName}.did`),
     }
   })
-  .dependsOn({ CapRouter })
+  .dependsOn({ CapRouter: CapRouter.provides })
   .installArgs(async ({ ctx, mode, deps }) => {
     let initArgs: InitArgs
     const initResult =
