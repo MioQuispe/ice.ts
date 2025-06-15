@@ -32,6 +32,29 @@ function moduleHashToHexString(moduleHash: [] | [number[]]): string {
 	return `0x${hexString}`
 }
 
+const getGlobalArgs = (cmdName: string) => {
+	const runIndex = process.argv.indexOf(cmdName)
+	// TODO: simplify this
+	if (runIndex === -1) {
+		// just ice command
+		const argv = mri(process.argv.slice(2, 3), {
+			string: ["logLevel", "network"],
+		})
+		return {
+			network: argv?.network ?? "local",
+			logLevel: argv?.logLevel ?? "info",
+		}
+	}
+	const argv = mri(process.argv.slice(2, runIndex + 2), {
+		string: ["logLevel", "network"],
+	})
+	const globalArgs: { network: string; logLevel: string } = {
+		network: argv?.network ?? "local",
+		logLevel: argv?.logLevel ?? "info",
+	}
+	return globalArgs
+}
+
 const globalArgs = {
 	network: {
 		type: "string",
@@ -67,17 +90,8 @@ const runCommand = defineCommand({
 		...globalArgs,
 	},
 	run: async ({ args, rawArgs }) => {
-		const runIndex = process.argv.indexOf('run')
-		// parse only flags before "run"
-		const argv = mri(process.argv.slice(2, runIndex + 2), {
-			string: ["logLevel", "network"],
-		})
-		const globalArgs: { network: string; logLevel: string } = {
-			network: argv?.network ?? "local",
-			logLevel: argv?.logLevel ?? "info",
-		}
+		const globalArgs = getGlobalArgs("run")
 		const taskArgs = rawArgs.slice(1)
-		// TODO: parse args here with mri
 		const parsedArgs = mri(taskArgs)
 		const namedArgs = Object.fromEntries(
 			Object.entries(parsedArgs).filter(([name]) => name !== "_"),
@@ -89,9 +103,7 @@ const runCommand = defineCommand({
 		// 	// maybe we dont convert them?
 		// }
 		const s = p.spinner()
-		s.start(
-			`Running task... ${color.green(color.underline(args.taskPath))}`,
-		)
+		s.start(`Running task... ${color.green(color.underline(args.taskPath))}`)
 		await makeRuntime({
 			globalArgs,
 			taskArgs: {
@@ -102,9 +114,7 @@ const runCommand = defineCommand({
 			// @ts-ignore
 			runTaskByPath(args.taskPath),
 		)
-		s.stop(
-			`Finished task: ${color.green(color.underline(args.taskPath))}`,
-		)
+		s.stop(`Finished task: ${color.green(color.underline(args.taskPath))}`)
 	},
 })
 
@@ -130,11 +140,12 @@ const deployRun = async ({
 }: { network: string; logLevel: string }) => {
 	const s = p.spinner()
 	s.start("Deploying all canisters...")
+	const globalArgs = {
+		network,
+		logLevel,
+	}
 	await makeRuntime({
-		globalArgs: {
-			network,
-			logLevel,
-		},
+		globalArgs,
 	}).runPromise(
 		// @ts-ignore
 		Effect.gen(function* () {
@@ -180,7 +191,8 @@ const canistersCreateCommand = defineCommand({
 		...globalArgs,
 	},
 	run: async ({ args }) => {
-		const { network, logLevel } = args
+		const globalArgs = getGlobalArgs("create")
+		const { network, logLevel } = globalArgs
 		// TODO: makeRuntime fn?
 		await makeRuntime({
 			globalArgs: {
@@ -230,7 +242,8 @@ const canistersBuildCommand = defineCommand({
 		...globalArgs,
 	},
 	run: async ({ args }) => {
-		const { network, logLevel } = args
+		const globalArgs = getGlobalArgs("build")
+		const { network, logLevel } = globalArgs
 		await makeRuntime({
 			globalArgs: {
 				network,
@@ -280,7 +293,8 @@ const canistersBindingsCommand = defineCommand({
 		...globalArgs,
 	},
 	run: async ({ args }) => {
-		const { network, logLevel } = args
+		const globalArgs = getGlobalArgs("bindings")
+		const { network, logLevel } = globalArgs
 		await makeRuntime({
 			globalArgs: {
 				network,
@@ -330,7 +344,8 @@ const canistersInstallCommand = defineCommand({
 		...globalArgs,
 	},
 	run: async ({ args }) => {
-		const { network, logLevel } = args
+		const globalArgs = getGlobalArgs("install")
+		const { network, logLevel } = globalArgs
 		await makeRuntime({
 			globalArgs: {
 				network,
@@ -380,7 +395,8 @@ const canistersStopCommand = defineCommand({
 		...globalArgs,
 	},
 	run: async ({ args }) => {
-		const { network, logLevel } = args
+		const globalArgs = getGlobalArgs("stop")
+		const { network, logLevel } = globalArgs
 		await makeRuntime({
 			globalArgs: {
 				network,
@@ -465,7 +481,8 @@ const canistersStatusCommand = defineCommand({
 	run: async ({ args }) => {
 		// TODO: support canister name or ID
 		if (args._.length === 0) {
-			const { network, logLevel } = args
+			const globalArgs = getGlobalArgs("status")
+			const { network, logLevel } = globalArgs
 			await makeRuntime({
 				globalArgs: {
 					network,
@@ -553,7 +570,8 @@ const canistersRemoveCommand = defineCommand({
 		...globalArgs,
 	},
 	run: async ({ args }) => {
-		const { network, logLevel } = args
+		const globalArgs = getGlobalArgs("remove")
+		const { network, logLevel } = globalArgs
 		await makeRuntime({
 			globalArgs: {
 				network,
@@ -573,7 +591,8 @@ const uiCommand = defineCommand({
 		description: "Opens the experimental ICE terminal UI",
 	},
 	run: async ({ args }) => {
-		const { network, logLevel } = args
+		const globalArgs = getGlobalArgs("ui")
+		const { network, logLevel } = globalArgs
 		await makeRuntime({
 			globalArgs: {
 				network: "local",
@@ -597,7 +616,8 @@ const canistersDeployCommand = defineCommand({
 		...globalArgs,
 	},
 	run: async ({ args }) => {
-		const { network, logLevel } = args
+		const globalArgs = getGlobalArgs("deploy")
+		const { network, logLevel } = globalArgs
 		await deployRun({ network, logLevel })
 	},
 })
@@ -613,7 +633,8 @@ const canisterCommand = defineCommand({
 	},
 	run: async ({ args }) => {
 		if (args._.length === 0) {
-			const { network, logLevel } = args
+			const globalArgs = getGlobalArgs("canister")
+			const { network, logLevel } = globalArgs
 			await makeRuntime({
 				globalArgs: {
 					network,
@@ -713,7 +734,8 @@ const taskCommand = defineCommand({
 	},
 	run: async ({ args }) => {
 		if (args._.length === 0) {
-			const { network, logLevel } = args
+			const globalArgs = getGlobalArgs("task")
+			const { network, logLevel } = globalArgs
 			await makeRuntime({
 				globalArgs: {
 					network,
@@ -796,12 +818,9 @@ const main = defineCommand({
 		...globalArgs,
 	},
 	run: async (ctx) => {
-		const { network, logLevel } = ctx.args
+		const globalArgs = getGlobalArgs("ice")
 		if (ctx.args._.length === 0) {
-			await deployRun({
-				network,
-				logLevel,
-			})
+			await deployRun(globalArgs)
 		}
 	},
 	subCommands: {
