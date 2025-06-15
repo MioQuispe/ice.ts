@@ -592,7 +592,7 @@ export const NNSGenesisToken = (
     }
     const serialized = serializeGtc(exampleGtc)
     return serialized
-  })
+  }, { noEncodeArgs: true })
 }
 
 NNSGenesisToken.id = NNSGenesisTokenIds

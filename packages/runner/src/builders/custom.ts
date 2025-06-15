@@ -30,6 +30,7 @@ type CustomCanisterConfig = {
 	wasm: string
 	candid: string
 	canisterId?: string
+	noEncodeArgs?: boolean
 }
 
 export const iceDirName = ".ice"
@@ -154,6 +155,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 		mode: string
 		deps: P
 	}) => Promise<I> | I,
+	noEncodeArgs = false,
 ): Task<{
 	canisterId: string
 	canisterName: string
@@ -174,11 +176,8 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 			const { dependencies } = yield* DependencyResults
 			const { taskPath } = yield* TaskInfo
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
-			// TODO: this is a hack, we should have a better way to handle this
-			const onlyCanisterName = canisterName.split(":").slice(-1)[0]
-			const noEncodeArgs = onlyCanisterName === "NNSGenesisToken"
+
 			yield* Effect.logDebug("No encode args", { noEncodeArgs, canisterName })
-			//////////////////////////////////////////////////////////
 
 			const canisterId = yield* loadCanisterId(taskPath)
 			yield* Effect.logDebug("Loaded canister ID", { canisterId })
@@ -225,16 +224,10 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 						try: () => installResult,
 						catch: (error) => {
 							// TODO: proper error handling
-							// console.error("Error executing install args function:", error)
 							return error instanceof Error ? error : new Error(String(error))
 						},
 					})
 				}
-				// installArgs = yield* Effect.tryPromise({
-				//   // TODO: pass everything
-				//   try: () => fn({ ctx: finalCtx, mode: "install" }),
-				//   catch: Effect.fail, // TODO: install args fail? proper error handling
-				// })
 				yield* Effect.logDebug("Install args generated", { args: installArgs })
 			}
 
@@ -541,6 +534,9 @@ class CustomCanisterBuilder<
 			deps: ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>
 			mode: string
 		}) => I | Promise<I>,
+		{ noEncodeArgs }: { noEncodeArgs?: boolean } = {
+			noEncodeArgs: false,
+		},
 	): CustomCanisterBuilder<
 		I,
 		CanisterScope<_SERVICE, D, P>,
@@ -559,7 +555,7 @@ class CustomCanisterBuilder<
 			I,
 			ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>,
 			_SERVICE
-		>(installArgsFn)
+		>(installArgsFn, noEncodeArgs)
 		const updatedScope = {
 			...this.#scope,
 			children: {

@@ -66,7 +66,16 @@ const runCommand = defineCommand({
 		// TODO: fix. these get overridden by later args
 		...globalArgs,
 	},
-	run: async ({ args: globalArgs, rawArgs }) => {
+	run: async ({ args, rawArgs }) => {
+		const runIndex = process.argv.indexOf('run')
+		// parse only flags before "run"
+		const argv = mri(process.argv.slice(2, runIndex + 2), {
+			string: ["logLevel", "network"],
+		})
+		const globalArgs: { network: string; logLevel: string } = {
+			network: argv?.network ?? "local",
+			logLevel: argv?.logLevel ?? "info",
+		}
 		const taskArgs = rawArgs.slice(1)
 		// TODO: parse args here with mri
 		const parsedArgs = mri(taskArgs)
@@ -81,7 +90,7 @@ const runCommand = defineCommand({
 		// }
 		const s = p.spinner()
 		s.start(
-			`Running task... ${color.green(color.underline(globalArgs.taskPath))}`,
+			`Running task... ${color.green(color.underline(args.taskPath))}`,
 		)
 		await makeRuntime({
 			globalArgs,
@@ -91,10 +100,10 @@ const runCommand = defineCommand({
 			},
 		}).runPromise(
 			// @ts-ignore
-			runTaskByPath(globalArgs.taskPath),
+			runTaskByPath(args.taskPath),
 		)
 		s.stop(
-			`Finished task: ${color.green(color.underline(globalArgs.taskPath))}`,
+			`Finished task: ${color.green(color.underline(args.taskPath))}`,
 		)
 	},
 })
