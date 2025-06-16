@@ -698,14 +698,6 @@ export const customCanister = <_SERVICE = unknown, I = unknown>(
 		CustomCanisterConfig,
 		_SERVICE
 	>(initialScope)
-	// return makeCustomCanisterBuilder<
-	// 	I,
-	// 	typeof initialScope,
-	// 	Record<string, Task>,
-	// 	Record<string, Task>,
-	// 	CustomCanisterConfig,
-	// 	_SERVICE
-	// >(initialScope)
 }
 
 export const loadCanisterId = (taskPath: string) =>

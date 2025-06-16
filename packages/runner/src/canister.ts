@@ -64,6 +64,7 @@ export const generateDIDJS = (canisterName: string, didPath: string) =>
 		const appDir = yield* Config.string("APP_DIR")
 		const didString = yield* fs.readFileString(didPath)
 		const didJSString = didc.did_to_js(didString)
+		const didTSString = didc.did_to_ts(didString)
 		const didJSPath = path.join(
 			appDir,
 			iceDirName,
@@ -71,8 +72,16 @@ export const generateDIDJS = (canisterName: string, didPath: string) =>
 			canisterName,
 			`${canisterName}.did.js`,
 		)
+		const didTSPath = path.join(
+			appDir,
+			iceDirName,
+			"canisters",
+			canisterName,
+			`${canisterName}.did.ts`,
+		)
 		yield* fs.makeDirectory(path.dirname(didJSPath), { recursive: true })
 		yield* fs.writeFile(didJSPath, Buffer.from(didJSString ?? ""))
+		yield* fs.writeFile(didTSPath, Buffer.from(didTSString ?? ""))
 
 		const canisterDID = yield* Effect.tryPromise({
 			try: () => import(didJSPath),
