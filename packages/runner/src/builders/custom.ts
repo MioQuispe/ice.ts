@@ -658,7 +658,7 @@ class CustomCanisterBuilder<
 
 // TODO: some kind of metadata?
 // TODO: warn about context if not provided
-export const customCanister = <I = unknown, _SERVICE = unknown>(
+export const customCanister = <_SERVICE = unknown, I = unknown>(
 	canisterConfigOrFn:
 		| ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)
 		| ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)

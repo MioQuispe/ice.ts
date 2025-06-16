@@ -28,7 +28,7 @@ type WrapperInitArgs = {
 export const ICRC7NFT = (
   initArgsOrFn?: WrapperInitArgs | ((args: { ctx: TaskCtxShape }) => WrapperInitArgs),
 ) => {
-  return customCanister<[ICRC7NFTInitArgs], _SERVICE>(({ ctx }) => {
+  return customCanister<_SERVICE, [ICRC7NFTInitArgs]>(({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {

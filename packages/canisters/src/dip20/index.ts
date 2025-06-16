@@ -44,7 +44,7 @@ export const DIP20 = (
     | ((args: { ctx: TaskCtxShape }) => InitArgs)
     | ((args: { ctx: TaskCtxShape }) => Promise<InitArgs>),
 ) => {
-  const result = customCanister<CanisterInitArgs, _SERVICE>(async ({ ctx }) => {
+  const result = customCanister<_SERVICE, CanisterInitArgs>(async ({ ctx }) => {
     let initArgs: InitArgs
     const initResult =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn

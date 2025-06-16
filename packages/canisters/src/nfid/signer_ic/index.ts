@@ -16,7 +16,7 @@ type InitArgs = []
 export const NFIDSignerIc = (
   initArgsOrFn?: { canisterId?: string } | ((args: { ctx: TaskCtxShape }) => { canisterId?: string }),
 ) =>
-  customCanister<InitArgs, _SERVICE>(({ ctx }) => {
+  customCanister<_SERVICE, InitArgs>(({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn;
     return {

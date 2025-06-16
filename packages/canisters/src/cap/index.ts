@@ -37,7 +37,7 @@ export const CapBucket = (
   //   offset = 0, // u64,
   //   next_canisters = [0], // Vec<BucketId>,
   // } = args
-  return customCanister<[], CAP_BUCKET_SERVICE>(({ ctx }) => {
+  return customCanister<CAP_BUCKET_SERVICE, []>(({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
@@ -88,7 +88,7 @@ export const CapRoot = (
   //   contract,
   //   writers,
   // } = args
-  return customCanister<[], CAP_ROOT_SERVICE>(({ ctx }) => {
+  return customCanister<CAP_ROOT_SERVICE, []>(({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
@@ -130,7 +130,7 @@ type CapRouterInitArgs = {
 }
 
 // Here we create the shape
-const capRouter = customCanister<[], CAP_ROUTER_SERVICE>({
+const capRouter = customCanister<CAP_ROUTER_SERVICE, []>({
   candid: path.resolve(__dirname, "./cap/cap-router/cap-router.did"),
   wasm: path.resolve(__dirname, "./cap/cap-router/cap-router.wasm.gz"),
   canisterId: CapRouterIds.local,

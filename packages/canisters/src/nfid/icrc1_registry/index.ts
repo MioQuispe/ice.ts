@@ -27,7 +27,7 @@ export const NFIDIcrc1Registry = (
     | NFIDIcrc1RegistryInitArgs
     | ((args: { ctx: TaskCtxShape }) => NFIDIcrc1RegistryInitArgs),
 ) =>
-  customCanister<[InitArgs], _SERVICE>(({ ctx }) => {
+  customCanister<_SERVICE, [InitArgs]>(({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {

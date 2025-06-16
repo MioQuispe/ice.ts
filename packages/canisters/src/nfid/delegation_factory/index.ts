@@ -26,7 +26,7 @@ export const NFIDDelegationFactory = (
     | ((args: { ctx: TaskCtxShape }) => NFIDDelegationFactoryInitArgs),
 ) => {
   //   return customCanister<[Opt<InitArgs>], _SERVICE>((ctx) => {
-  return customCanister<any, _SERVICE>(({ ctx }) => {
+  return customCanister<_SERVICE, [Opt<InitArgs>]>(({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {

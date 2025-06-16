@@ -23,7 +23,7 @@ export const NFIDStorage = (
     | { canisterId?: string }
     | ((args: { ctx: TaskCtxShape }) => { canisterId?: string }),
 ) =>
-  customCanister<[Opt<InitArgs>], _SERVICE>(({ ctx }) => {
+  customCanister<_SERVICE, [Opt<InitArgs>]>(({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {

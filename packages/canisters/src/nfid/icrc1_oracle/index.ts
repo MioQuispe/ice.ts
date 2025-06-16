@@ -33,7 +33,7 @@ export const NFIDIcrc1Oracle = (
     | NFIDIcrc1OracleInitArgs
     | ((args: { ctx: TaskCtxShape }) => NFIDIcrc1OracleInitArgs),
 ) =>
-  customCanister<[Opt<InitArgs>], _SERVICE>(({ ctx }) => {
+  customCanister<_SERVICE, [Opt<InitArgs>]>(({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {

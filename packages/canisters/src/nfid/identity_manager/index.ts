@@ -25,7 +25,7 @@ const canisterName = "identity_manager"
 export const NFIDIdentityManager = (
   initArgsOrFn?: NFIDIdentityManagerInitArgs | ((args: { ctx: TaskCtxShape }) => NFIDIdentityManagerInitArgs),
 ) => {
-  return customCanister<InitArgs, _SERVICE>(({ ctx }) => {
+  return customCanister<_SERVICE, InitArgs>(({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {

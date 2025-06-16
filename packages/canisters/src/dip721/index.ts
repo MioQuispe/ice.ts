@@ -21,7 +21,7 @@ const canisterName = "dip721"
 export const DIP721 = (
   initArgsOrFn?: DIP721InitArgs | ((args: { ctx: TaskCtxShape }) => DIP721InitArgs),
 ) => {
-  return customCanister<[Opt<InitArgs>], _SERVICE>(({ ctx }) => {
+  return customCanister<_SERVICE, [Opt<InitArgs>]>(({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {

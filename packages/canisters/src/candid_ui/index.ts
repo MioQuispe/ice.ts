@@ -1,7 +1,7 @@
 import * as url from "node:url"
 import path from "node:path"
 import { Principal } from "@dfinity/principal"
-import { customCanister, type TaskCtxShape, task } from "@ice.ts/runner"
+import { customCanister, type TaskCtxShape } from "@ice.ts/runner"
 import { CapRouter } from "../cap"
 import type { _SERVICE } from "./candid_ui.types"
 import { Effect } from "effect"
@@ -23,7 +23,7 @@ export const CandidUI = (
     | ((args: { ctx: TaskCtxShape }) => InitArgs)
     | ((args: { ctx: TaskCtxShape }) => Promise<InitArgs>),
 ) => {
-  const result = customCanister<CanisterInitArgs, _SERVICE>(async ({ ctx }) => {
+  const result = customCanister<_SERVICE, CanisterInitArgs>(async ({ ctx }) => {
     let initArgs: InitArgs
     const initResult =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn

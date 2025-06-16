@@ -56,7 +56,7 @@ export const ICRC1Ledger = (
     | ICRC1LedgerInitArgs
     | ((args: { ctx: TaskCtxShape }) => ICRC1LedgerInitArgs),
 ) => {
-  return customCanister<[LedgerArg], _SERVICE>(({ ctx }) => {
+  return customCanister<_SERVICE, [LedgerArg]>(({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {

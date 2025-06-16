@@ -19,7 +19,12 @@ import { NamedParam, PositionalParam } from "../types/types.js"
 import { match, type } from "arktype"
 import { StandardSchemaV1 } from "@standard-schema/spec"
 import type { ActorSubclass } from "../types/actor.js"
-import { AllowedDep, makeCanisterStatusTask, NormalizeDeps, ValidProvidedDeps } from "./lib.js"
+import {
+	AllowedDep,
+	makeCanisterStatusTask,
+	NormalizeDeps,
+	ValidProvidedDeps,
+} from "./lib.js"
 import { normalizeDepsMap } from "./lib.js"
 
 type MergeTaskParams<
@@ -171,16 +176,12 @@ type BuilderMethods = "start" | "params" | "dependsOn" | "deps" | "run" | "make"
 type TaskBuilderOmit<
 	S extends BuilderMethods,
 	T extends Task,
-	D extends Record<string, Task>,
-	P extends Record<string, Task>,
 	TP extends AddNameToParams<InputParams>,
-> = Pick<TaskBuilderClass<S, T, D, P, TP>, Next<S>>
+> = Pick<TaskBuilderClass<S, T, TP>, Next<S>>
 
 class TaskBuilderClass<
 	S extends BuilderMethods,
 	T extends Task,
-	D extends Record<string, Task>,
-	P extends Record<string, Task>,
 	TP extends AddNameToParams<InputParams>,
 > {
 	#task: T
@@ -219,14 +220,12 @@ class TaskBuilderClass<
 		return new TaskBuilderClass(updatedTask) as unknown as TaskBuilderOmit<
 			S | "params",
 			typeof updatedTask,
-			D,
-			P,
 			typeof updatedParams
 		>
 	}
 
 	deps<NP extends Record<string, AllowedDep>>(
-		providedDeps: ValidProvidedDeps<D, NP>,
+		providedDeps: ValidProvidedDeps<T["dependsOn"], NP>,
 	) {
 		const finalDeps = normalizeDepsMap(providedDeps) as NormalizeDeps<NP>
 		const updatedTask = {
@@ -234,13 +233,11 @@ class TaskBuilderClass<
 			dependencies: finalDeps,
 		} satisfies Task as MergeTaskDependencies<
 			T,
-			NormalizeDeps<ValidProvidedDeps<D, NP>>
+			NormalizeDeps<ValidProvidedDeps<T["dependsOn"], NP>>
 		>
 		return new TaskBuilderClass(updatedTask) as TaskBuilderOmit<
 			S | "deps",
 			typeof updatedTask,
-			D,
-			P,
 			TP
 		>
 	}
@@ -250,7 +247,7 @@ class TaskBuilderClass<
 		ND extends NormalizeDeps<UD>,
 	>(
 		dependencies: UD,
-	): TaskBuilderOmit<S | "dependsOn", MergeTaskDependsOn<T, ND>, ND, P, TP> {
+	): TaskBuilderOmit<S | "dependsOn", MergeTaskDependsOn<T, ND>, TP> {
 		const updatedDeps = normalizeDepsMap(dependencies) as ND
 		const updatedTask = {
 			...this.#task,
@@ -259,8 +256,6 @@ class TaskBuilderClass<
 		return new TaskBuilderClass(updatedTask) as TaskBuilderOmit<
 			S | "dependsOn",
 			typeof updatedTask,
-			typeof updatedDeps,
-			P,
 			TP
 		>
 	}
@@ -269,7 +264,8 @@ class TaskBuilderClass<
 		fn: (env: {
 			args: ExtractArgsFromTaskParams<TP>
 			ctx: TaskCtxShape<ExtractArgsFromTaskParams<TP>>
-			deps: ExtractTaskEffectSuccess<P> & ExtractTaskEffectSuccess<D>
+			deps: ExtractTaskEffectSuccess<T["dependencies"]> &
+				ExtractTaskEffectSuccess<T["dependsOn"]>
 		}) => Promise<Output>,
 	) {
 		const newTask = {
@@ -284,8 +280,10 @@ class TaskBuilderClass<
 							fn({
 								args: taskCtx.args as ExtractArgsFromTaskParams<TP>,
 								ctx: taskCtx as TaskCtxShape<ExtractArgsFromTaskParams<TP>>,
-								deps: dependencies as ExtractTaskEffectSuccess<P> &
-									ExtractTaskEffectSuccess<D>,
+								deps: dependencies as ExtractTaskEffectSuccess<
+									T["dependencies"]
+								> &
+									ExtractTaskEffectSuccess<T["dependsOn"]>,
 							}),
 						),
 					catch: (error) => {
@@ -303,8 +301,6 @@ class TaskBuilderClass<
 		return new TaskBuilderClass(newTask) as TaskBuilderOmit<
 			S | "run",
 			typeof newTask,
-			D,
-			P,
 			TP
 		>
 	}
@@ -332,7 +328,7 @@ export function task(description = "") {
 		positionalParams: [],
 		effect: Effect.gen(function* () {}),
 	} satisfies Task
-	return new TaskBuilderClass<Start, typeof baseTask, {}, {}, {}>(baseTask)
+	return new TaskBuilderClass<Start, typeof baseTask, {}>(baseTask)
 }
 
 //
@@ -381,7 +377,7 @@ const objTask = task()
 		return {
 			canisterId: "123",
 			canisterName: "stringTask",
-			actor: {} as ActorSubclass<unknown>,
+			actor: {} as ActorSubclass<{}>,
 		}
 	})
 	.make()

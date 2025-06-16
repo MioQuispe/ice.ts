@@ -27,7 +27,7 @@ type InitArgs = {
 export const InternetIdentity = (
   initArgsOrFn?: InitArgs | ((args: { ctx: TaskCtxShape }) => InitArgs),
 ) => {
-  return customCanister<CanisterInitArgs, _SERVICE>({
+  return customCanister<_SERVICE, CanisterInitArgs>({
       canisterId: InternetIdentityIds.local,
       candid: path.resolve(
         __dirname,

@@ -35,7 +35,7 @@ export const Ledger = (
 
   // TODO: return config
   // - get paths
-  return customCanister<[LedgerCanisterInitPayload], _SERVICE>({
+  return customCanister<_SERVICE, [LedgerCanisterInitPayload]>({
     canisterId: LedgerIds.local,
     // TODO: change from private => public
     candid: path.resolve(__dirname, `${canisterName}/${canisterName}.private.did`),

@@ -20,7 +20,7 @@ export const CyclesLedger = (
   initArgsOrFn?: WrapperInitArgs | ((args: { ctx: TaskCtxShape }) => WrapperInitArgs),
 ) => {
   // TODO: init args
-  return customCanister<[LedgerArgs], _SERVICE>(({ ctx }) => {
+  return customCanister<_SERVICE, [LedgerArgs]>(({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {

@@ -348,8 +348,8 @@ class MotokoCanisterBuilder<
 }
 
 export const motokoCanister = <
-	I = unknown,
 	_SERVICE = unknown,
+	I = unknown,
 	P extends Record<string, unknown> = Record<string, unknown>,
 >(
 	canisterConfigOrFn:
@@ -375,7 +375,7 @@ export const motokoCanister = <
 		},
 	} satisfies CanisterScope
 
-	return new MotokoCanisterBuilder(initialScope)
+	return new MotokoCanisterBuilder<I, CanisterScope<_SERVICE, {}, {}>, {}, {}, MotokoCanisterConfig, _SERVICE>(initialScope)
 }
 
 const testTask = {
