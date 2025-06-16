@@ -83,8 +83,6 @@ export const makeMotokoBindingsTask = () => {
 		}),
 		description: "some description",
 		tags: [Tags.CANISTER, Tags.MOTOKO, Tags.BINDINGS],
-		computeCacheKey: Option.none(),
-		input: Option.none(),
 		namedParams: {},
 		positionalParams: [],
 		params: {},
@@ -102,8 +100,6 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 		id: Symbol("motokoCanister/build"),
 		dependsOn: {},
 		dependencies: {},
-		input: Option.none(),
-		computeCacheKey: Option.none(),
 		effect: Effect.gen(function* () {
 			const path = yield* Path.Path
 			const fs = yield* FileSystem.FileSystem
@@ -151,8 +147,6 @@ const makeMotokoRemoveTask = (): Task => {
 		id: Symbol("motokoCanister/remove"),
 		dependsOn: {},
 		dependencies: {},
-		input: Option.none(),
-		computeCacheKey: Option.none(),
 		effect: Effect.gen(function* () {
 			// yield* removeCanister(canisterId)
 		}),
@@ -362,7 +356,7 @@ export const motokoCanister = <
 		id: Symbol("scope"),
 		tags: [Tags.CANISTER, Tags.MOTOKO],
 		description: "some description",
-		defaultTask: Option.none(),
+		defaultTask: "deploy",
 		children: {
 			create: makeCreateTask(canisterConfigOrFn, [Tags.MOTOKO]),
 			build: makeMotokoBuildTask(canisterConfigOrFn),
@@ -386,8 +380,6 @@ const testTask = {
 	effect: Effect.gen(function* () {}),
 	description: "",
 	tags: [],
-	computeCacheKey: Option.none(),
-	input: Option.none(),
 	namedParams: {},
 	positionalParams: [],
 	params: {},
@@ -401,8 +393,6 @@ const testTask2 = {
 	effect: Effect.gen(function* () {}),
 	description: "",
 	tags: [],
-	computeCacheKey: Option.none(),
-	input: Option.none(),
 	namedParams: {},
 	positionalParams: [],
 	params: {},
@@ -416,8 +406,6 @@ const providedTask = {
 	}),
 	description: "",
 	tags: [],
-	computeCacheKey: Option.none(),
-	input: Option.none(),
 	dependsOn: {
 		test: testTask,
 	},
@@ -435,8 +423,6 @@ const unProvidedTask = {
 	effect: Effect.gen(function* () {}),
 	description: "",
 	tags: [],
-	computeCacheKey: Option.none(),
-	input: Option.none(),
 	dependsOn: {
 		test: testTask,
 		test2: testTask,
@@ -459,8 +445,6 @@ const unProvidedTask2 = {
 	effect: Effect.gen(function* () {}),
 	description: "",
 	tags: [],
-	computeCacheKey: Option.none(),
-	input: Option.none(),
 	dependsOn: {
 		test: testTask,
 		// test2: testTask,
@@ -482,7 +466,6 @@ const testScope = {
 	tags: [Tags.CANISTER],
 	id: Symbol("scope"),
 	description: "",
-	defaultTask: Option.none(),
 	children: {
 		providedTask,
 		unProvidedTask,
@@ -494,7 +477,6 @@ const testScope2 = {
 	id: Symbol("scope"),
 	tags: [Tags.CANISTER],
 	description: "",
-	defaultTask: Option.none(),
 	children: {
 		unProvidedTask2,
 	},
@@ -505,7 +487,6 @@ const providedTestScope = {
 	id: Symbol("scope"),
 	tags: [Tags.CANISTER],
 	description: "",
-	defaultTask: Option.none(),
 	children: {
 		providedTask,
 	},

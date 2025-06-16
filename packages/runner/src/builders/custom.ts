@@ -65,8 +65,6 @@ export const makeStopTask = (): Task<void> => {
 		description: "some description",
 		// TODO: no tag custom
 		tags: [Tags.CANISTER, Tags.STOP],
-		computeCacheKey: Option.none(),
-		input: Option.none(),
 		namedParams: {},
 		positionalParams: [],
 		params: {},
@@ -105,8 +103,6 @@ export const makeRemoveTask = (): Task<void> => {
 		description: "some description",
 		// TODO: no tag custom
 		tags: [Tags.CANISTER, Tags.REMOVE],
-		computeCacheKey: Option.none(),
-		input: Option.none(),
 		namedParams: {},
 		positionalParams: [],
 		params: {},
@@ -141,8 +137,6 @@ export const makeCustomBindingsTask = (
 		}),
 		description: "some description",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BINDINGS],
-		computeCacheKey: Option.none(),
-		input: Option.none(),
 		namedParams: {},
 		positionalParams: [],
 		params: {},
@@ -166,8 +160,6 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 		id: Symbol("customCanister/install"),
 		dependsOn: {},
 		dependencies: {},
-		computeCacheKey: Option.none(),
-		input: Option.none(),
 		effect: Effect.gen(function* () {
 			yield* Effect.logDebug("Starting custom canister installation")
 			const taskCtx = yield* TaskCtx
@@ -360,8 +352,6 @@ const makeBuildTask = <P extends Record<string, unknown>>(
 		}),
 		description: "some description",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BUILD],
-		computeCacheKey: Option.none(),
-		input: Option.none(),
 		namedParams: {},
 		positionalParams: [],
 		params: {},
@@ -461,8 +451,6 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 		description: "some description",
 		// TODO:
 		tags: [Tags.CANISTER, Tags.CREATE, ...tags],
-		computeCacheKey: Option.none(),
-		input: Option.none(),
 		namedParams: {},
 		positionalParams: [],
 		params: {},
@@ -676,7 +664,7 @@ export const customCanister = <_SERVICE = unknown, I = unknown>(
 		id: Symbol("scope"),
 		tags: [Tags.CANISTER, Tags.CUSTOM],
 		description: "some description",
-		defaultTask: Option.some("deploy"),
+		defaultTask: "deploy",
 		// TODO: default implementations
 		children: {
 			create: makeCreateTask(canisterConfigOrFn, [Tags.CUSTOM]),
@@ -767,7 +755,6 @@ const scope = <T extends TaskTree>(description: string, children: T) => {
 		id: Symbol("scope"),
 		tags: [],
 		description,
-		defaultTask: Option.none(),
 		children,
 	} satisfies Scope
 }
@@ -780,8 +767,6 @@ const testTask = {
 	effect: Effect.gen(function* () {}),
 	description: "",
 	tags: [],
-	computeCacheKey: Option.none(),
-	input: Option.none(),
 	namedParams: {},
 	positionalParams: [],
 	params: {},
@@ -795,8 +780,6 @@ const testTask2 = {
 	effect: Effect.gen(function* () {}),
 	description: "",
 	tags: [],
-	computeCacheKey: Option.none(),
-	input: Option.none(),
 	namedParams: {},
 	positionalParams: [],
 	params: {},
@@ -808,8 +791,6 @@ const providedTask = {
 	effect: Effect.gen(function* () {}),
 	description: "",
 	tags: [],
-	computeCacheKey: Option.none(),
-	input: Option.none(),
 	dependsOn: {
 		test: testTask,
 	},
@@ -827,8 +808,6 @@ const unProvidedTask = {
 	effect: Effect.gen(function* () {}),
 	description: "",
 	tags: [],
-	computeCacheKey: Option.none(),
-	input: Option.none(),
 	dependsOn: {
 		test: testTask,
 		test2: testTask,
@@ -851,8 +830,6 @@ const unProvidedTask2 = {
 	effect: Effect.gen(function* () {}),
 	description: "",
 	tags: [],
-	computeCacheKey: Option.none(),
-	input: Option.none(),
 	dependsOn: {
 		test: testTask,
 		// test2: testTask,
@@ -874,7 +851,6 @@ const testScope = {
 	id: Symbol("scope"),
 	tags: [Tags.CANISTER],
 	description: "",
-	defaultTask: Option.none(),
 	children: {
 		providedTask,
 		unProvidedTask,
@@ -886,7 +862,6 @@ const testScope2 = {
 	id: Symbol("scope"),
 	tags: [Tags.CANISTER],
 	description: "",
-	defaultTask: Option.none(),
 	children: {
 		unProvidedTask2,
 	},
@@ -897,7 +872,6 @@ const providedTestScope = {
 	id: Symbol("scope"),
 	tags: [Tags.CANISTER],
 	description: "",
-	defaultTask: Option.none(),
 	children: {
 		providedTask,
 	},

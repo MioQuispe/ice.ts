@@ -168,11 +168,8 @@ export interface Task<
 	positionalParams: Array<PositionalParam>
 	params: Record<string, NamedParam | PositionalParam>
 	// for caching. do we use standard schema here as well?
-	input: Option.Option<I> // optional input
-	// TODO: causes type issues in builders
-	// computeCacheKey?: (task: Task<A, E, R, I>) => string
-	// TODO:
-	computeCacheKey: Option.Option<(task: Task) => string>
+	input?: I // optional input
+	computeCacheKey?: <T extends Task<A, D, P, E, R, I>>(task: T) => string
 }
 
 export type Scope = {
@@ -182,8 +179,7 @@ export type Scope = {
 	tags: Array<string | symbol>
 	description: string
 	children: Record<string, TaskTreeNode>
-	// TODO:
-	defaultTask: Option.Option<string>
+	defaultTask?: string
 }
 
 export type BuilderResult = {

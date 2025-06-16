@@ -38,8 +38,6 @@ const makeDeployTask = (scope: CanisterScope): Task => {
     // TODO: hmmm?
     id: Symbol("canister/deploy"),
     dependsOn: {},
-    computeCacheKey: Option.none(),
-    input: Option.none(),
     // TODO: we only want to warn at a type level?
     // TODO: type Task
     dependencies: {},
@@ -198,7 +196,7 @@ export const deployTaskPlugin = <T extends TaskTree>(taskTree: T) => {
       const newScope = {
         ...scope,
         // TODO: if defined it wont be overridden?
-        defaultTask: Option.some("deploy"),
+        defaultTask: "deploy",
         children: {
           ...scope.children,
           deploy: makeDeployTask(scope as CanisterScope),

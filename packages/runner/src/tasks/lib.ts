@@ -445,6 +445,7 @@ export const executeTasks = (
 						),
 					),
 				)
+				// TODO: caching
 				// TODO: updates from the task effect? pass in cb?
 				const result = yield* task.effect.pipe(Effect.provide(taskLayer))
 
@@ -574,10 +575,10 @@ export const findTaskInTaskTree = (
 					if (node._tag === "task") {
 						return node as Task
 					} else if (node._tag === "scope") {
-						if (Option.isSome((node as Scope).defaultTask)) {
+						if ("defaultTask" in node) {
 							// TODO: fix
 							// @ts-ignore
-							const taskName = node.defaultTask.value
+							const taskName = node.defaultTask
 							return node.children[taskName] as Task
 						}
 					}
@@ -606,8 +607,8 @@ export const findTaskInTaskTree = (
 					if (node._tag === "task") {
 						return node
 					}
-					if (Option.isSome(node.defaultTask)) {
-						const taskName = node.defaultTask.value
+					if ("defaultTask" in node) {
+						const taskName = node.defaultTask
 						// @ts-ignore
 						return node.children[taskName] as Task
 					}

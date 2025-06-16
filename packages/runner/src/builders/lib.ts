@@ -10,14 +10,14 @@ export type { TaskCtxShape }
 
 export type MergeTaskDependsOn<T extends Task, ND extends Record<string, Task>> = {
 	[K in keyof T]: K extends "dependsOn" ? T[K] & ND : T[K]
-}
+} & Partial<Pick<Task, "computeCacheKey" | "input">>
 
 export type MergeTaskDependencies<
 	T extends Task,
 	NP extends Record<string, Task>,
 > = {
 	[K in keyof T]: K extends "dependencies" ? T[K] & NP : T[K]
-}
+} & Partial<Pick<Task, "computeCacheKey" | "input">>
 
 // export type MergeScopeDependsOn<S extends CanisterScope, D extends Record<string, Task>> = Omit<S, 'children'> & {
 //     children: Omit<S['children'], 'install'> & {
@@ -60,6 +60,7 @@ export type ExtractTaskEffectSuccess<T extends Record<string, Task>> = {
 	[K in keyof T]: Effect.Effect.Success<T[K]["effect"]>
 }
 
+// TODO: use Scope type
 export type CanisterScope<
 	_SERVICE = unknown,
 	D extends Record<string, Task> = Record<string, Task>,
@@ -69,7 +70,7 @@ export type CanisterScope<
 	id: symbol
 	tags: Array<string | symbol>
 	description: string
-	defaultTask: Option.Option<string>
+	defaultTask: "deploy"
 	// only limited to tasks
 	// children: Record<string, Task>
 	children: {
@@ -264,8 +265,6 @@ export const makeCanisterStatusTask = (tags: string[]): Task<{
 		// TODO: change
 		id: Symbol("canister/status"),
 		dependsOn: {},
-		computeCacheKey: Option.none(),
-		input: Option.none(),
 		// TODO: we only want to warn at a type level?
 		// TODO: type Task
 		dependencies: {},
@@ -345,8 +344,6 @@ export const makeDeployTask = (tags: string[]): Task<string> => {
 		// TODO: change
 		id: Symbol("canister/deploy"),
 		dependsOn: {},
-		computeCacheKey: Option.none(),
-		input: Option.none(),
 		// TODO: we only want to warn at a type level?
 		// TODO: type Task
 		dependencies: {},
@@ -403,13 +400,11 @@ const testTask = {
 	id: Symbol("test"),
 	dependsOn: {},
 	dependencies: {},
-	input: Option.none(),
 	effect: Effect.gen(function* () {
 		return { testTask: "test" }
 	}),
 	description: "",
 	tags: [],
-	computeCacheKey: Option.none(),
 	namedParams: {},
 	positionalParams: [],
 	params: {},
@@ -420,13 +415,11 @@ const testTask2 = {
 	id: Symbol("test"),
 	dependsOn: {},
 	dependencies: {},
-	input: Option.none(),
 	effect: Effect.gen(function* () {
 		return { testTask2: "test" }
 	}),
 	description: "",
 	tags: [],
-	computeCacheKey: Option.none(),
 	namedParams: {},
 	positionalParams: [],
 	params: {},
@@ -438,8 +431,6 @@ const providedTask = {
 	effect: Effect.gen(function* () {}),
 	description: "",
 	tags: [],
-	computeCacheKey: Option.none(),
-	input: Option.none(),
 	dependsOn: {
 		test: testTask,
 	},
@@ -457,8 +448,6 @@ const unProvidedTask = {
 	effect: Effect.gen(function* () {}),
 	description: "",
 	tags: [],
-	computeCacheKey: Option.none(),
-	input: Option.none(),
 	dependsOn: {
 		test: testTask,
 		test2: testTask,
@@ -481,8 +470,6 @@ const unProvidedTask2 = {
 	effect: Effect.gen(function* () {}),
 	description: "",
 	tags: [],
-	computeCacheKey: Option.none(),
-	input: Option.none(),
 	dependsOn: {
 		test: testTask,
 		// test2: testTask,
@@ -503,7 +490,6 @@ const testScope = {
 	_tag: "scope",
 	tags: [Tags.CANISTER],
 	description: "",
-	defaultTask: Option.none(),
 	id: Symbol("scope"),
 	children: {
 		providedTask,
@@ -515,7 +501,6 @@ const testScope2 = {
 	_tag: "scope",
 	tags: [Tags.CANISTER],
 	description: "",
-	defaultTask: Option.none(),
 	id: Symbol("scope"),
 	children: {
 		unProvidedTask2,
@@ -526,7 +511,6 @@ const providedTestScope = {
 	_tag: "scope",
 	tags: [Tags.CANISTER],
 	description: "",
-	defaultTask: Option.none(),
 	id: Symbol("scope"),
 	children: {
 		providedTask,

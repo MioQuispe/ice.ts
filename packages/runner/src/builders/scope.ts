@@ -8,6 +8,5 @@ export const scope = <T extends TaskTree>(description: string, children: T) => {
     tags: [],
     description,
     children,
-    defaultTask: Option.none(),
   } satisfies Scope
 }

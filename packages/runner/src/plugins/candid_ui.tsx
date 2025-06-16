@@ -28,13 +28,9 @@ import { TextInput } from "@inkjs/ui"
 const CandidUI = ({
   canisterId,
   canisterName,
-  agent,
-  identity,
 }: {
   canisterId: string
   canisterName: string
-  agent: HttpAgent
-  identity: SignIdentity
 }) => {
 
   return (
@@ -62,20 +58,22 @@ const makeCandidUITask = (scope: CanisterScope): Task => {
     id: Symbol("canister/candid_ui"),
     dependencies: {},
     dependsOn: {},
-    input: Option.none(),
-    computeCacheKey: Option.none(),
     // TODO: do we only want to warn at a type level?
     // TODO: type Task
     effect: Effect.gen(function* () {
-      const { runTask, agent, identity } = yield* TaskCtx
+      const { runTask, replica, roles } = yield* TaskCtx
+      const { identity } = roles.deployer
       const { taskPath } = yield* TaskInfo
       const canisterName = taskPath.split(":").slice(0, -1).join(":")
       const canisterId = yield* loadCanisterId(taskPath)
       // TODO: exits immediately
-      render(<CandidUI canisterId={canisterId} canisterName={canisterName} agent={agent} identity={identity} />)
+      render(<CandidUI canisterId={canisterId} canisterName={canisterName} />)
     }),
     description: "Open canister candid ui",
     tags: [Tags.CANISTER, Tags.UI],
+    namedParams: {},
+    positionalParams: [],
+    params: {},
   }
 }
 
