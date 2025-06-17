@@ -23,6 +23,7 @@ import {
 	NormalizeDeps,
 	normalizeDepsMap,
 	ValidProvidedDeps,
+	hashJson,
 } from "./lib.js"
 import { ActorSubclass } from "../types/actor.js"
 
@@ -155,6 +156,11 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 	canisterName: string
 	actor: ActorSubclass<_SERVICE>
 }> => {
+	type InstallInput = {
+		canisterId: string
+		canisterName: string
+		taskPath: string
+	}
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/install"),
@@ -283,6 +289,78 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 		namedParams: {},
 		positionalParams: [],
 		params: {},
+		// TODO: add network?
+		computeCacheKey: (task, input: InstallInput) => {
+			const installInput = {
+				canisterId: input.canisterId,
+				canisterName: input.canisterName,
+				taskPath: input.taskPath,
+			}
+			console.log("computeCacheKey:", installInput)
+			return hashJson(installInput)
+		},
+		input: (task) =>
+			Effect.gen(function* () {
+				const { taskPath } = yield* TaskInfo
+				const canisterName = taskPath.split(":").slice(0, -1).join(":")
+				const canisterId = yield* loadCanisterId(taskPath)
+				const input = {
+					canisterId,
+					canisterName,
+					taskPath,
+				} satisfies InstallInput
+				console.log("input:", input)
+				return input
+			}),
+		// TODO: fix generic type
+		encode: (input: InstallInput) =>
+			Effect.gen(function* () {
+				const encoded = JSON.stringify({
+					canisterId: input.canisterId,
+					canisterName: input.canisterName,
+				})
+				console.log("encoded:", encoded)
+				return encoded
+			}),
+		decode: (value) =>
+			// TODO: make it less I/O heavy?
+			Effect.gen(function* () {
+				const {
+					replica,
+					roles: {
+						deployer: { identity },
+					},
+				} = yield* TaskCtx
+				const { taskPath } = yield* TaskInfo
+				const canisterName = taskPath.split(":").slice(0, -1).join(":")
+				const canisterId = yield* loadCanisterId(taskPath)
+				const path = yield* Path.Path
+				const appDir = yield* Config.string("APP_DIR")
+				const didJSPath = path.join(
+					appDir,
+					iceDirName,
+					"canisters",
+					canisterName,
+					`${canisterName}.did.js`,
+				)
+				// TODO: can we type it somehow?
+				const canisterDID = yield* Effect.tryPromise({
+					try: () => import(didJSPath),
+					catch: Effect.fail,
+				})
+				const actor = yield* replica.createActor<_SERVICE>({
+					canisterId,
+					canisterDID,
+					identity,
+				})
+				const decoded = {
+					canisterId,
+					canisterName,
+					actor: proxyActor(canisterName, actor),
+				}
+				console.log("decoded:", decoded)
+				return decoded
+			}),
 	} satisfies Task<{
 		canisterId: string
 		canisterName: string

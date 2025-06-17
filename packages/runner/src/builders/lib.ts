@@ -7,17 +7,46 @@ import { Principal } from "@dfinity/principal"
 import type { TaskCtxShape } from "../tasks/lib.js"
 import type { ActorSubclass } from "../types/actor.js"
 export type { TaskCtxShape }
+import { sha256 } from "@noble/hashes/sha2";
+import { utf8ToBytes, bytesToHex } from "@noble/hashes/utils";
+import { readFileSync, statSync } from "node:fs";
+
+export function hashUint8(data: Uint8Array): string {
+  // noble/sha256 is universal (no Buffer, no crypto module)
+  return bytesToHex(sha256(data));
+}
+
+export function hashJson(value: unknown): string {
+  // ensure deterministic key order
+  const ordered = JSON.stringify(value, Object.keys(value as any).sort());
+  return hashUint8(utf8ToBytes(ordered));
+}
+
+export type FileDigest = {
+	path: string
+	mtimeMs: number
+	sha256: string
+}
+
+export function digestFile(path: string): FileDigest {
+	const buf = readFileSync(path);
+	return {
+	  path,
+	  mtimeMs: statSync(path).mtimeMs,
+	  sha256: bytesToHex(sha256(buf))
+	};
+  }
 
 export type MergeTaskDependsOn<T extends Task, ND extends Record<string, Task>> = {
 	[K in keyof T]: K extends "dependsOn" ? T[K] & ND : T[K]
-} & Partial<Pick<Task, "computeCacheKey" | "input">>
+} & Partial<Pick<Task, "computeCacheKey" | "input" | "decode" | "encode">>
 
 export type MergeTaskDependencies<
 	T extends Task,
 	NP extends Record<string, Task>,
 > = {
 	[K in keyof T]: K extends "dependencies" ? T[K] & NP : T[K]
-} & Partial<Pick<Task, "computeCacheKey" | "input">>
+} & Partial<Pick<Task, "computeCacheKey" | "input" | "decode" | "encode">>
 
 // export type MergeScopeDependsOn<S extends CanisterScope, D extends Record<string, Task>> = Omit<S, 'children'> & {
 //     children: Omit<S['children'], 'install'> & {

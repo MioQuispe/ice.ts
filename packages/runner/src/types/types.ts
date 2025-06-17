@@ -154,7 +154,7 @@ export interface Task<
 	P extends Record<string, Task> = {},
 	E = unknown,
 	R = unknown,
-	I = unknown,
+	I = any,
 > {
 	_tag: "task"
 	readonly id: symbol // assigned by the builder
@@ -167,9 +167,14 @@ export interface Task<
 	namedParams: Record<string, NamedParam>
 	positionalParams: Array<PositionalParam>
 	params: Record<string, NamedParam | PositionalParam>
-	// for caching. do we use standard schema here as well?
-	input?: I // optional input
-	computeCacheKey?: <T extends Task<A, D, P, E, R, I>>(task: T) => string
+	// TODO: for caching. do we use standard schema here as well?
+	// but it only supports .validate not encode/decode
+	// TODO: wrap fields in cache object
+	input?: <T extends Task<A, D, P, E, R, I>>(task: T) => Effect.Effect<I, E, R> // optional input
+	// TODO: causes type errors. we shouldnt have to pass in the type here
+	encode?: (value: any) => Effect.Effect<string>
+	decode?: (value: string) => Effect.Effect<A, E, R>
+	computeCacheKey?: <T extends Task<A, D, P, E, R, I>>(task: T, input: I) => string
 }
 
 export type Scope = {

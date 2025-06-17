@@ -1,11 +1,5 @@
 import fs from "node:fs"
-import {
-	Layer,
-	ManagedRuntime,
-	Logger,
-	ConfigProvider,
-	LogLevel,
-} from "effect"
+import { Layer, ManagedRuntime, Logger, ConfigProvider, LogLevel, Effect } from "effect"
 import { NodeContext } from "@effect/platform-node"
 import { DfxDefaultReplica, DfxReplica } from "./services/dfx.js"
 import type { ICECtx } from "./types/types.js"
@@ -22,15 +16,7 @@ import { type } from "arktype"
 export * from "./builders/index.js"
 export * from "./ids.js"
 import { StandardSchemaV1 } from "@standard-schema/spec"
-import { customCanister } from "./builders/custom.js"
-import { task } from "./builders/task.js"
-
-export const t = task("test")
-
-export const c = customCanister({
-	wasm: "",
-	candid: "",
-})
+import { layerFileSystem, layerMemory } from "@effect/platform/KeyValueStore"
 
 export const Ice = (
 	configOrFn:
@@ -67,7 +53,10 @@ const DefaultReplicaService = Layer.effect(DefaultReplica, picReplicaImpl).pipe(
 
 export const DefaultsLayer = Layer.mergeAll(
 	NodeContext.layer,
-	TaskRegistry.Live,
+	TaskRegistry.Live.pipe(
+		Layer.provide(layerFileSystem(".ice/cache")),
+		Layer.provide(NodeContext.layer),
+	),
 	DefaultReplicaService,
 	DefaultConfig.Live.pipe(Layer.provide(DefaultReplicaService)),
 	Moc.Live.pipe(Layer.provide(NodeContext.layer)),

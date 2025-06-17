@@ -22,15 +22,15 @@ import type { Scope } from "../types/types.js"
 import type { TaskTreeNode } from "../types/types.js"
 import type { Task } from "../types/types.js"
 import type { SignIdentity } from "@dfinity/agent"
-import { DependencyResults, runTaskByPath, runTask, TaskInfo } from "./run.js"
+import { DependencyResults, runTask, TaskInfo } from "./run.js"
 import { Layer } from "effect"
-import { configMap, Ids } from "../index.js"
+import { configMap } from "../index.js"
 import { makeRuntime } from "../index.js"
 import { type ReplicaService } from "../services/replica.js"
 import { DefaultConfig } from "../services/defaultConfig.js"
 import { CLIFlags } from "../services/cliFlags.js"
-import mri from "mri"
 import { StandardSchemaV1 } from "@standard-schema/spec"
+import { TaskRegistry } from "../services/taskRegistry.js"
 
 // const asyncRunTask = async <A>(task: Task): Promise<A> => {
 // 	const result = makeRuntime({
@@ -124,7 +124,14 @@ export const getTaskPathById = (id: Symbol) =>
 	})
 
 export const collectDependencies = (
-	rootTasks: Task<unknown, Record<string, Task>, Record<string, Task>, unknown, unknown, unknown>[],
+	rootTasks: Task<
+		unknown,
+		Record<string, Task>,
+		Record<string, Task>,
+		unknown,
+		unknown,
+		unknown
+	>[],
 	collected: Map<symbol, Task> = new Map(),
 ): Map<symbol, Task | (Task & { args: Record<string, unknown> })> => {
 	for (const rootTask of rootTasks) {
@@ -327,6 +334,7 @@ export const executeTasks = (
 ) =>
 	Effect.gen(function* () {
 		const defaultConfig = yield* DefaultConfig
+		const taskRegistry = yield* TaskRegistry
 		const { config } = yield* ICEConfigService
 		const cliFlags = yield* CLIFlags
 		const { globalArgs, taskArgs } = cliFlags
@@ -445,10 +453,48 @@ export const executeTasks = (
 						),
 					),
 				)
-				// TODO: caching
-				// TODO: updates from the task effect? pass in cb?
-				const result = yield* task.effect.pipe(Effect.provide(taskLayer))
 
+				// TODO: simplify?
+				let result: unknown
+				if ("computeCacheKey" in task) {
+					console.log("computeCacheKey in task", taskPath)
+					const input =
+						"input" in task
+							? yield* task.input(task).pipe(Effect.provide(taskLayer))
+							: undefined
+					const cacheKey = task.computeCacheKey(task, input)
+					if (yield* taskRegistry.has(cacheKey)) {
+						console.log("computeCacheKey in task, cache hit")
+						const maybeResult = yield* taskRegistry.get(cacheKey)
+						if (Option.isSome(maybeResult)) {
+							const encodedResult = maybeResult.value
+							if ("decode" in task) {
+								const decodedResult = yield* task
+									.decode(encodedResult)
+									.pipe(Effect.provide(taskLayer))
+								result = decodedResult
+							} else {
+								result = encodedResult
+							}
+						} else {
+							// TODO: reading cache failed, why would this happen?
+							// get rid of this and just throw?
+							result = yield* task.effect.pipe(Effect.provide(taskLayer))
+						}
+					} else {
+						result = yield* task.effect.pipe(Effect.provide(taskLayer))
+						// TODO: fix. maybe not json stringify?
+						const encodedResult =
+							"encode" in task
+								? yield* task.encode(result).pipe(Effect.provide(taskLayer))
+								: JSON.stringify(result)
+						yield* taskRegistry.set(cacheKey, encodedResult)
+					}
+				} else {
+					result = yield* task.effect.pipe(Effect.provide(taskLayer))
+				}
+
+				// TODO: updates from the task effect? pass in cb?
 				const currentDeferred = deferredMap.get(task.id)
 				if (currentDeferred) {
 					yield* Deferred.succeed(currentDeferred, result)
