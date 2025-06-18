@@ -1,6 +1,7 @@
 import { type Effect, Context, Data } from "effect"
 import type { ActorSubclass, HttpAgent, SignIdentity } from "@dfinity/agent"
 import type { canister_status_result } from "src/canisters/management_latest/management.types.js"
+import { Principal } from "@dfinity/principal"
 // import { ActorInterface } from "@dfinity/pic"
 /**
  * Typesafe method of a canister.
@@ -8,7 +9,7 @@ import type { canister_status_result } from "src/canisters/management_latest/man
  * @category Types
  */
 export interface ActorMethod<Args extends any[] = any[], Ret = any> {
-    (...args: Args): Promise<Ret>;
+	(...args: Args): Promise<Ret>
 }
 /**
  * Candid interface of a canister.
@@ -16,23 +17,58 @@ export interface ActorMethod<Args extends any[] = any[], Ret = any> {
  * @category Types
  */
 export type ActorInterface<T = object> = {
-    [K in keyof T]: ActorMethod;
-};
+	[K in keyof T]: ActorMethod
+}
 
 export type CanisterStatus = "not_installed" | "stopped" | "running"
 
+type log_visibility = { 'controllers' : null } |
+  { 'public' : null } |
+  { 'allowed_viewers' : Array<Principal> };
+
+type DefiniteCanisterSettings = {
+	freezing_threshold: bigint
+	controllers: Array<Principal>
+	reserved_cycles_limit: bigint
+	log_visibility: log_visibility
+	wasm_memory_limit: bigint
+	memory_allocation: bigint
+	compute_allocation: bigint
+}
 // TODO: clean this up
-export type CanisterInfo = canister_status_result | { status: "not_installed" }
+type CanisterStatusResult = {
+	status: "stopped" | "stopping" | "running"
+	memory_size: bigint
+	cycles: bigint
+	settings: DefiniteCanisterSettings
+	query_stats: {
+		response_payload_bytes_total: bigint
+		num_instructions_total: bigint
+		num_calls_total: bigint
+		request_payload_bytes_total: bigint
+	}
+	idle_cycles_burned_per_day: bigint
+	module_hash: [] | [Array<number>]
+	reserved_cycles: bigint
+} | { status: "not_installed" }
 
-export class CanisterStatusError extends Data.TaggedError("CanisterStatusError")<{
+export type CanisterInfo = CanisterStatusResult
+
+export class CanisterStatusError extends Data.TaggedError(
+	"CanisterStatusError",
+)<{
 	readonly message: string
 }> {}
 
-export class CanisterInstallError extends Data.TaggedError("CanisterInstallError")<{
+export class CanisterInstallError extends Data.TaggedError(
+	"CanisterInstallError",
+)<{
 	readonly message: string
 }> {}
 
-export class CanisterCreateError extends Data.TaggedError("CanisterCreateError")<{
+export class CanisterCreateError extends Data.TaggedError(
+	"CanisterCreateError",
+)<{
 	readonly message: string
 	readonly cause?: Error
 }> {}
@@ -41,7 +77,9 @@ export class CanisterStopError extends Data.TaggedError("CanisterStopError")<{
 	readonly message: string
 }> {}
 
-export class CanisterDeleteError extends Data.TaggedError("CanisterDeleteError")<{
+export class CanisterDeleteError extends Data.TaggedError(
+	"CanisterDeleteError",
+)<{
 	readonly message: string
 }> {}
 
@@ -67,7 +105,10 @@ export type ReplicaService = {
 		encodedArgs: Uint8Array
 		identity: SignIdentity
 		// TODO: progress callback?
-	}) => Effect.Effect<void, CanisterInstallError | AgentError | CanisterStatusError>
+	}) => Effect.Effect<
+		void,
+		CanisterInstallError | AgentError | CanisterStatusError
+	>
 	// uninstallCode: (canisterId: string) => Effect.Effect<void, unknown, unknown>
 	getCanisterStatus: (params: {
 		canisterId: string
@@ -88,7 +129,10 @@ export type ReplicaService = {
 	createCanister: (params: {
 		canisterId: string | undefined
 		identity: SignIdentity
-	}) => Effect.Effect<string, CanisterCreateError | CanisterStatusError | AgentError> // returns canister id
+	}) => Effect.Effect<
+		string,
+		CanisterCreateError | CanisterStatusError | AgentError
+	> // returns canister id
 	createActor: <_SERVICE>(params: {
 		canisterId: string
 		canisterDID: any

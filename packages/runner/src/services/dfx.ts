@@ -189,9 +189,13 @@ const dfxReplicaImpl = Effect.gen(function* () {
 						return { status: "not_installed" } as const
 					}
 					try {
-						return await mgmt.canister_status({
+						const result = await mgmt.canister_status({
 							canister_id: Principal.fromText(canisterId),
 						})
+						return {
+							...result,
+							status: Object.keys(result.status)[0] as CanisterStatus,
+						}
 					} catch (error) {
 						return { status: "not_installed" } as const
 					}
@@ -257,7 +261,7 @@ const dfxReplicaImpl = Effect.gen(function* () {
 						concurrency: "unbounded",
 					})
 
-					Effect.tryPromise({
+					yield* Effect.tryPromise({
 						try: () =>
 							mgmt.install_chunked_code({
 								arg: Array.from(encodedArgs),

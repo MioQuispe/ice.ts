@@ -6,10 +6,11 @@ import type {
 	CanisterScope,
 	DependencyMismatchError,
 	ExtractTaskEffectSuccess,
+	FileDigest,
 	IsValid,
 	TaskCtxShape,
 } from "./lib.js"
-import { Tags } from "./lib.js"
+import { digestFile, isArtifactCached, Tags } from "./lib.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
 import { proxyActor } from "../utils/extension.js"
 import { TaskInfo } from "../tasks/run.js"
@@ -26,6 +27,7 @@ import {
 	hashJson,
 } from "./lib.js"
 import { ActorSubclass } from "../types/actor.js"
+import { TaskRegistry } from "../services/taskRegistry.js"
 
 type CustomCanisterConfig = {
 	wasm: string
@@ -157,9 +159,13 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 	actor: ActorSubclass<_SERVICE>
 }> => {
 	type InstallInput = {
+		network: string
 		canisterId: string
 		canisterName: string
 		taskPath: string
+		mode: string
+		wasm: FileDigest
+		argHash: string
 	}
 	return {
 		_tag: "task",
@@ -293,23 +299,55 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 		computeCacheKey: (task, input: InstallInput) => {
 			const installInput = {
 				canisterId: input.canisterId,
-				canisterName: input.canisterName,
-				taskPath: input.taskPath,
+				network: input.network,
+				mode: input.mode,
+				wasmHash: input.wasm.sha256,
+				argHash: input.argHash,
 			}
-			console.log("computeCacheKey:", installInput)
-			return hashJson(installInput)
+			console.log("computeCacheKey installInput:", installInput)
+			const cacheKey = hashJson(installInput)
+			console.log("computeCacheKey cacheKey:", cacheKey)
+			return cacheKey
 		},
 		input: (task) =>
 			Effect.gen(function* () {
 				const { taskPath } = yield* TaskInfo
 				const canisterName = taskPath.split(":").slice(0, -1).join(":")
 				const canisterId = yield* loadCanisterId(taskPath)
+				const { currentNetwork, args } = yield* TaskCtx
+				const path = yield* Path.Path
+				const appDir = yield* Config.string("APP_DIR")
+				// TODO: get from flags or args?
+				const mode = "install"
+				const wasmPath = path.join(
+					appDir,
+					iceDirName,
+					"canisters",
+					canisterName,
+					`${canisterName}.wasm`,
+				)
+				// TODO: how do we get this?
+				// should we make use of the param apis instead of a callback?
+				// somehow unify the functionality of the two?
+				const installArgs: Array<unknown> = []
+				const taskRegistry = yield* TaskRegistry
+				// TODO: we need a separate cache for this?
+				const prevWasmDigest = undefined
+				const { fresh, digest: wasmDigest } = yield* Effect.tryPromise({
+					//
+					try: () => isArtifactCached(wasmPath, prevWasmDigest),
+					// TODO:
+					catch: Effect.fail,
+				})
 				const input = {
 					canisterId,
 					canisterName,
+					network: currentNetwork,
 					taskPath,
+					mode,
+					wasm: wasmDigest,
+					argHash: hashJson(installArgs),
 				} satisfies InstallInput
-				console.log("input:", input)
 				return input
 			}),
 		// TODO: fix generic type
@@ -323,7 +361,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 				return encoded
 			}),
 		decode: (value) =>
-			// TODO: make it less I/O heavy?
+			// TODO: make it less I/O heavy? should we get canisterId/Name from value?
 			Effect.gen(function* () {
 				const {
 					replica,
@@ -483,10 +521,20 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 		effect: Effect.gen(function* () {
 			const path = yield* Path.Path
 			const fs = yield* FileSystem.FileSystem
+			const canisterIdsService = yield* CanisterIdsService
 			const taskCtx = yield* TaskCtx
+			const currentNetwork = taskCtx.currentNetwork
 			const { taskPath } = yield* TaskInfo
+			const canisterName = taskPath.split(":").slice(0, -1).join(":")
+			const storedCanisterIds = (yield* canisterIdsService.getCanisterIds())
+			const storedCanisterId: string | undefined = storedCanisterIds[canisterName]?.[currentNetwork]
+			yield* Effect.logDebug("makeCreateTask", { storedCanisterId })
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
 			const configCanisterId = canisterConfig?.canisterId
+			// TODO: handle all edge cases related to this. what happens
+			// if the user provides a new canisterId in the config? and so on
+			// and how about mainnet? 
+			const resolvedCanisterId = storedCanisterId ?? configCanisterId
 			// TODO: do we need to optimize this?
 			// TODO: use this directly instead of getCanisterInfo
 			// const { roles: { deployer: { identity } }, replica } = yield* TaskCtx
@@ -501,22 +549,21 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 				replica,
 			} = yield* TaskCtx
 			const isAlreadyInstalled =
-				configCanisterId &&
+				resolvedCanisterId &&
 				(yield* replica.getCanisterInfo({
-					canisterId: configCanisterId,
+					canisterId: resolvedCanisterId,
 					identity,
 				})).status !== "not_installed"
 
+			yield* Effect.logDebug("makeCreateTask", { isAlreadyInstalled, resolvedCanisterId })
+
 			const canisterId = isAlreadyInstalled
-				? configCanisterId
+				? resolvedCanisterId
 				: yield* replica.createCanister({
-						canisterId: configCanisterId,
+						canisterId: resolvedCanisterId,
 						identity,
 					})
-
-			const canisterIdsService = yield* CanisterIdsService
 			const appDir = yield* Config.string("APP_DIR")
-			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			yield* canisterIdsService.setCanisterId({
 				canisterName,
 				network: taskCtx.currentNetwork,

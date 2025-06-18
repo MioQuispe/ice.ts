@@ -7,19 +7,35 @@ import { Principal } from "@dfinity/principal"
 import type { TaskCtxShape } from "../tasks/lib.js"
 import type { ActorSubclass } from "../types/actor.js"
 export type { TaskCtxShape }
-import { sha256 } from "@noble/hashes/sha2";
-import { utf8ToBytes, bytesToHex } from "@noble/hashes/utils";
-import { readFileSync, statSync } from "node:fs";
+import { sha256 } from "@noble/hashes/sha2"
+import { utf8ToBytes, bytesToHex } from "@noble/hashes/utils"
+import { readFileSync, statSync } from "node:fs"
+import { stat } from "node:fs/promises"
 
 export function hashUint8(data: Uint8Array): string {
-  // noble/sha256 is universal (no Buffer, no crypto module)
-  return bytesToHex(sha256(data));
+	// noble/sha256 is universal (no Buffer, no crypto module)
+	return bytesToHex(sha256(data))
 }
 
+// ensure deterministic key order
+function stableStringify(value: unknown): string {
+	return JSON.stringify(value, (_key, val) => {
+	  if (val && typeof val === "object" && !Array.isArray(val)) {
+		// sort *all* object keys deterministically
+		return Object.keys(val)
+		  .sort()
+		  .reduce<Record<string, unknown>>(
+			(acc, k) => ((acc[k] = (val as any)[k]), acc),
+			{},
+		  );
+	  }
+	  return val;      // primitives & arrays unchanged
+	});
+  }
+
 export function hashJson(value: unknown): string {
-  // ensure deterministic key order
-  const ordered = JSON.stringify(value, Object.keys(value as any).sort());
-  return hashUint8(utf8ToBytes(ordered));
+	const ordered = stableStringify(value)
+	return hashUint8(utf8ToBytes(ordered))
 }
 
 export type FileDigest = {
@@ -29,15 +45,41 @@ export type FileDigest = {
 }
 
 export function digestFile(path: string): FileDigest {
-	const buf = readFileSync(path);
+	const buf = readFileSync(path)
 	return {
-	  path,
-	  mtimeMs: statSync(path).mtimeMs,
-	  sha256: bytesToHex(sha256(buf))
-	};
-  }
+		path,
+		// mtimeMs: statSync(path).mtimeMs,
+		// TODO:
+		mtimeMs: 0,
+		sha256: bytesToHex(sha256(buf)),
+	}
+}
 
-export type MergeTaskDependsOn<T extends Task, ND extends Record<string, Task>> = {
+export async function isArtifactCached(
+	path: string,
+	prev: FileDigest | undefined, // last run (undefined = cache miss)
+): Promise<{ fresh: boolean; digest: FileDigest }> {
+	// No previous record – must rebuild
+	if (!prev) {
+		return { fresh: false, digest: digestFile(path) }
+	}
+
+	// 1️⃣ fast-path : stat only
+	const currentStat = await stat(path)
+	if (currentStat.mtimeMs === prev.mtimeMs) {
+		return { fresh: true, digest: prev } // timestamps match ⟹ assume fresh
+	}
+
+	// 2️⃣ slow-path : hash check
+	const digest = digestFile(path)
+	const fresh = digest.sha256 === prev.sha256
+	return { fresh, digest }
+}
+
+export type MergeTaskDependsOn<
+	T extends Task,
+	ND extends Record<string, Task>,
+> = {
 	[K in keyof T]: K extends "dependsOn" ? T[K] & ND : T[K]
 } & Partial<Pick<Task, "computeCacheKey" | "input" | "decode" | "encode">>
 
@@ -61,10 +103,13 @@ export type MergeTaskDependencies<
 // 		install: MergeTaskDependsOn<S['children']['install'], D>
 //     }
 // }
-export type MergeScopeDependsOn<S extends CanisterScope, D extends Record<string, Task>> = Omit<S, 'children'> & {
-    children: Omit<S['children'], 'install'> & {
-		install: MergeTaskDependsOn<S['children']['install'], D>
-    }
+export type MergeScopeDependsOn<
+	S extends CanisterScope,
+	D extends Record<string, Task>,
+> = Omit<S, "children"> & {
+	children: Omit<S["children"], "install"> & {
+		install: MergeTaskDependsOn<S["children"]["install"], D>
+	}
 }
 
 // export type MergeScopeDependencies<
@@ -74,10 +119,13 @@ export type MergeScopeDependsOn<S extends CanisterScope, D extends Record<string
 // 	children: MergeAllChildrenDependencies<S["children"], NP>
 // }
 
-export type MergeScopeDependencies<S extends CanisterScope, D extends Record<string, Task>> = Omit<S, 'children'> & {
-    children: Omit<S['children'], 'install'> & {
-		install: MergeTaskDependencies<S['children']['install'], D>
-    }
+export type MergeScopeDependencies<
+	S extends CanisterScope,
+	D extends Record<string, Task>,
+> = Omit<S, "children"> & {
+	children: Omit<S["children"], "install"> & {
+		install: MergeTaskDependencies<S["children"]["install"], D>
+	}
 }
 
 /**
@@ -106,11 +154,15 @@ export type CanisterScope<
 		create: Task<string>
 		bindings: Task<void>
 		build: Task<void>
-		install: Task<{
-			canisterId: string
-			canisterName: string
-			actor: ActorSubclass<_SERVICE>
-		}, D, P>
+		install: Task<
+			{
+				canisterId: string
+				canisterName: string
+				actor: ActorSubclass<_SERVICE>
+			},
+			D,
+			P
+		>
 		stop: Task<void>
 		remove: Task<void>
 		deploy: Task<void>
@@ -143,10 +195,9 @@ export const Tags = {
 	SCRIPT: "$$ice/script",
 }
 
-type CanisterStatus = "not_installed" | "stopped" | "running"
+type CanisterStatus = "not_installed" | "stopped" | "running" | "stopping"
 
 // TODO: dont pass in tags, just make the effect
-
 
 export type TaskReturnValue<T extends Task> = T extends {
 	effect: Effect.Effect<infer S, any, any>
@@ -193,11 +244,11 @@ export type NormalizeDep<T> = T extends Task
 // }
 
 export type NormalizeDeps<Deps extends Record<string, AllowedDep>> = {
-    [K in keyof Deps]: Deps[K] extends Task 
-        ? Deps[K] 
-        : Deps[K] extends CanisterScope 
-            ? Deps[K]["children"]["install"] 
-            : never
+	[K in keyof Deps]: Deps[K] extends Task
+		? Deps[K]
+		: Deps[K] extends CanisterScope
+			? Deps[K]["children"]["install"]
+			: never
 }
 
 export type ValidProvidedDeps<
@@ -259,11 +310,9 @@ export type UniformScopeCheck<S extends CanisterScope> = S extends {
 export type IsValid<S extends CanisterScope> =
 	UniformScopeCheck<S> extends DependencyMismatchError<S> ? false : true
 
-
 //
 // Helper Functions
 //
-
 
 // TODO: arktype match?
 export function normalizeDep(dep: Task | CanisterScope): Task {
@@ -284,10 +333,12 @@ export function normalizeDepsMap(
 	)
 }
 
-export const makeCanisterStatusTask = (tags: string[]): Task<{
+export const makeCanisterStatusTask = (
+	tags: string[],
+): Task<{
 	canisterName: string
 	canisterId: string | undefined
-	status: CanisterStatus | { not_installed: null }
+	status: CanisterStatus
 }> => {
 	return {
 		_tag: "task",
@@ -305,18 +356,18 @@ export const makeCanisterStatusTask = (tags: string[]): Task<{
 			const canisterIdsService = yield* CanisterIdsService
 			const canisterIdsMap = yield* canisterIdsService.getCanisterIds()
 			// TODO: if deleted doesnt exist
-			const canisterInfo = canisterIdsMap[canisterName]
-			if (!canisterInfo) {
+			const canisterIds = canisterIdsMap[canisterName]
+			if (!canisterIds) {
 				return {
 					canisterName,
 					canisterId: undefined,
-					status: { not_installed: null },
+					status: "not_installed",
 				}
 			}
-			const canisterId = canisterInfo[currentNetwork]
+			const canisterId = canisterIds[currentNetwork]
 			if (!canisterId) {
 				// TODO: fix format
-				return { canisterName, canisterId, status: { not_installed: null } }
+				return { canisterName, canisterId, status: "not_installed" }
 			}
 			// export interface canister_status_result {
 			//   'status' : { 'stopped' : null } |
@@ -348,11 +399,16 @@ export const makeCanisterStatusTask = (tags: string[]): Task<{
 			// 			}`,
 			// 		}),
 			// // })
-			const { roles: { deployer: { identity } } } = yield* TaskCtx
-			const status = yield* replica.getCanisterStatus({
+			const {
+				roles: {
+					deployer: { identity },
+				},
+			} = yield* TaskCtx
+			const canisterInfo = yield* replica.getCanisterInfo({
 				canisterId,
 				identity,
 			})
+			const status = canisterInfo.status
 			return { canisterName, canisterId, status }
 		}),
 		description: "Get canister status",
@@ -363,7 +419,7 @@ export const makeCanisterStatusTask = (tags: string[]): Task<{
 	} satisfies Task<{
 		canisterName: string
 		canisterId: string | undefined
-		status: CanisterStatus | { not_installed: null }
+		status: CanisterStatus
 	}>
 }
 
@@ -421,8 +477,6 @@ export const makeDeployTask = (tags: string[]): Task<string> => {
 		params: {},
 	} satisfies Task<string>
 }
-
-
 
 const testTask = {
 	_tag: "task",
