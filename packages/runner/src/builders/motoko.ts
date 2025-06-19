@@ -101,6 +101,7 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 		dependsOn: {},
 		dependencies: {},
 		effect: Effect.gen(function* () {
+			yield* Effect.logDebug("Building Motoko canister")
 			const path = yield* Path.Path
 			const fs = yield* FileSystem.FileSystem
 			const appDir = yield* Config.string("APP_DIR")
@@ -127,11 +128,13 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 			yield* fs.makeDirectory(path.dirname(wasmOutputFilePath), {
 				recursive: true,
 			})
+			yield* Effect.logDebug("Compiling Motoko canister")
 			yield* compileMotokoCanister(
 				path.resolve(appDir, canisterConfig.src),
 				canisterName,
 				wasmOutputFilePath,
 			)
+			yield* Effect.logDebug("Motoko canister built successfully")
 		}),
 		description: "some description",
 		tags: [Tags.CANISTER, Tags.MOTOKO, Tags.BUILD],
@@ -240,7 +243,7 @@ class MotokoCanisterBuilder<
 			I,
 			ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>,
 			_SERVICE
-		>(installArgsFn)
+		>()
 		const updatedScope = {
 			...this.#scope,
 			children: {

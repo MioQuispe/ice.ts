@@ -22,12 +22,12 @@ export class Moc extends Context.Tag("Moc")<
       const mocPath = process.env.DFX_MOC_PATH
       const command = Command.make("dfx", "cache", "show")
       const dfxCachePath = `${(yield* commandExecutor.string(command)).trim()}/moc`
-      const resolvedPath = mocPath || dfxCachePath || "moc"
+      const resolvedMocPath = mocPath || dfxCachePath || "moc"
 
-      const versionCommand = Command.make(resolvedPath, "--version")
+      const versionCommand = Command.make(resolvedMocPath, "--version")
       const version = yield* commandExecutor.string(versionCommand)
 
-      if (!resolvedPath) {
+      if (!resolvedMocPath) {
         yield* Effect.fail(
           new MocError({
             message: "Moc not found",
@@ -59,13 +59,15 @@ export class Moc extends Context.Tag("Moc")<
         compile: (src, output) =>
           Effect.gen(function* () {
             const command = Command.make(
-              resolvedPath,
+              resolvedMocPath,
               "--idl",
               "-c",
+              "-v",
               src,
               "-o",
               output,
             )
+            // TODO: this swallows all errors!
             yield* commandExecutor.string(command).pipe(
               Effect.mapError(
                 (err) =>

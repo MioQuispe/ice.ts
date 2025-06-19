@@ -28,7 +28,7 @@ export const compileMotokoCanister = (
 	Effect.gen(function* () {
 		const moc = yield* Moc
 		// Create output directories if they don't exist
-		yield* Effect.logDebug(`Compiling ${canisterName} to ${wasmOutputFilePath}`)
+		yield* Effect.logDebug(`Compiling from ${src}, with name ${canisterName} to ${wasmOutputFilePath}`)
 		// TODO: we need to make dirs if they don't exist
 		yield* moc.compile(src, wasmOutputFilePath)
 		yield* Effect.logDebug(

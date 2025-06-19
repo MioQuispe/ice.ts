@@ -570,7 +570,6 @@ export const NNSGenesisToken = (
         __dirname,
         "./nns/nns-genesis-token/nns-genesis-token.did",
       ),
-      noEncodeArgs: true,
     }
   }).installArgs(async ({ ctx }) => {
     const initArgs =

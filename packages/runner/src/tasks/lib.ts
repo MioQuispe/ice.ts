@@ -355,15 +355,24 @@ export const executeTasks = (
 			: defaultConfig.roles
 
 		// Create a deferred for every task to hold its eventual result.
-		const deferredMap = new Map<symbol, Deferred.Deferred<unknown, unknown>>()
+		const deferredMap = new Map<symbol, Deferred.Deferred<{
+			cacheKey: string | undefined
+			result: unknown
+		}, unknown>>()
 		for (const task of tasks) {
-			const deferred = yield* Deferred.make<unknown, unknown>()
+			const deferred = yield* Deferred.make<{
+				cacheKey: string | undefined
+				result: unknown
+			}, unknown>()
 			deferredMap.set(task.id, deferred)
 		}
 		const results = new Map<symbol, unknown>()
 		const taskEffects = tasks.map((task) =>
 			Effect.gen(function* () {
-				const dependencyResults: Record<string, unknown> = {}
+				const dependencyResults: Record<string, {
+					cacheKey: string | undefined
+					result: unknown
+				}> = {}
 				for (const dependencyName in task.dependencies) {
 					const providedTask = task.dependencies[dependencyName]
 					const depDeferred = deferredMap.get(providedTask.id)
@@ -456,15 +465,16 @@ export const executeTasks = (
 
 				// TODO: simplify?
 				let result: unknown
+				let cacheKey: string | undefined
 				if ("computeCacheKey" in task) {
-					console.log("computeCacheKey in task", taskPath)
+					yield* Effect.logDebug("computeCacheKey in task", taskPath)
 					const input =
 						"input" in task
 							? yield* task.input(task).pipe(Effect.provide(taskLayer))
 							: undefined
-					const cacheKey = task.computeCacheKey(task, input)
+					cacheKey = task.computeCacheKey(task, input)
 					if (yield* taskRegistry.has(cacheKey)) {
-						console.log("computeCacheKey in task, cache hit")
+						yield* Effect.logDebug("computeCacheKey in task, cache hit")
 						const maybeResult = yield* taskRegistry.get(cacheKey)
 						if (Option.isSome(maybeResult)) {
 							const encodedResult = maybeResult.value
@@ -497,7 +507,10 @@ export const executeTasks = (
 				// TODO: updates from the task effect? pass in cb?
 				const currentDeferred = deferredMap.get(task.id)
 				if (currentDeferred) {
-					yield* Deferred.succeed(currentDeferred, result)
+					yield* Deferred.succeed(currentDeferred, {
+						cacheKey,
+						result,
+					})
 				}
 
 				progressCb({
@@ -505,6 +518,7 @@ export const executeTasks = (
 					taskPath,
 					status: "completed",
 					result,
+					// TODO: pass in cacheKey? probably not needed
 				})
 				results.set(task.id, result)
 			}),

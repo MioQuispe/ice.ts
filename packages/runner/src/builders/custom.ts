@@ -10,7 +10,12 @@ import type {
 	IsValid,
 	TaskCtxShape,
 } from "./lib.js"
-import { digestFile, isArtifactCached, Tags } from "./lib.js"
+import {
+	digestFile,
+	isArtifactCached,
+	makeInstallArgsTask,
+	Tags,
+} from "./lib.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
 import { proxyActor } from "../utils/extension.js"
 import { TaskInfo } from "../tasks/run.js"
@@ -33,7 +38,6 @@ type CustomCanisterConfig = {
 	wasm: string
 	candid: string
 	canisterId?: string
-	noEncodeArgs?: boolean
 }
 
 export const iceDirName = ".ice"
@@ -147,11 +151,6 @@ export const makeCustomBindingsTask = (
 }
 
 export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
-	installArgsFn?: (args: {
-		ctx: TaskCtxShape
-		mode: string
-		deps: P
-	}) => Promise<I> | I,
 	noEncodeArgs = false,
 ): Task<{
 	canisterId: string
@@ -178,6 +177,8 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 			const identity = taskCtx.roles.deployer.identity
 			const { replica } = taskCtx
 			const { dependencies } = yield* DependencyResults
+			// TODO: fix. also type should be inferred?
+			const installArgs = dependencies.install_args.result as I
 			const { taskPath } = yield* TaskInfo
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 
@@ -206,34 +207,6 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 				catch: Effect.fail,
 			})
 			yield* Effect.logDebug("Loaded canisterDID", { canisterDID })
-
-			let installArgs = [] as unknown as I
-			if (installArgsFn) {
-				yield* Effect.logDebug("Executing install args function")
-
-				const installFn = installArgsFn as (args: {
-					ctx: TaskCtxShape
-					mode: string
-					deps: P
-				}) => Promise<I> | I
-				// TODO: should it catch errors?
-				// TODO: handle different modes
-				const installResult = installFn({
-					mode: "install",
-					ctx: taskCtx,
-					deps: dependencies as P,
-				})
-				if (installResult instanceof Promise) {
-					installArgs = yield* Effect.tryPromise({
-						try: () => installResult,
-						catch: (error) => {
-							// TODO: proper error handling
-							return error instanceof Error ? error : new Error(String(error))
-						},
-					})
-				}
-				yield* Effect.logDebug("Install args generated", { args: installArgs })
-			}
 
 			yield* Effect.logDebug("Encoding args", { installArgs, canisterDID })
 			const encodedArgs = noEncodeArgs
@@ -314,7 +287,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 				const { taskPath } = yield* TaskInfo
 				const canisterName = taskPath.split(":").slice(0, -1).join(":")
 				const canisterId = yield* loadCanisterId(taskPath)
-				const { currentNetwork, args } = yield* TaskCtx
+				const { currentNetwork } = yield* TaskCtx
 				const path = yield* Path.Path
 				const appDir = yield* Config.string("APP_DIR")
 				// TODO: get from flags or args?
@@ -329,6 +302,8 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 				// TODO: how do we get this?
 				// should we make use of the param apis instead of a callback?
 				// somehow unify the functionality of the two?
+				// TODO: input runs before the task is executed
+				// so how do we get the install args? from a previous run perhaps?
 				const installArgs: Array<unknown> = []
 				const taskRegistry = yield* TaskRegistry
 				// TODO: we need a separate cache for this?
@@ -363,15 +338,16 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 		decode: (value) =>
 			// TODO: make it less I/O heavy? should we get canisterId/Name from value?
 			Effect.gen(function* () {
+				const { canisterId, canisterName } = JSON.parse(value) as {
+					canisterId: string
+					canisterName: string
+				}
 				const {
 					replica,
 					roles: {
 						deployer: { identity },
 					},
 				} = yield* TaskCtx
-				const { taskPath } = yield* TaskInfo
-				const canisterName = taskPath.split(":").slice(0, -1).join(":")
-				const canisterId = yield* loadCanisterId(taskPath)
 				const path = yield* Path.Path
 				const appDir = yield* Config.string("APP_DIR")
 				const didJSPath = path.join(
@@ -526,22 +502,16 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 			const currentNetwork = taskCtx.currentNetwork
 			const { taskPath } = yield* TaskInfo
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
-			const storedCanisterIds = (yield* canisterIdsService.getCanisterIds())
-			const storedCanisterId: string | undefined = storedCanisterIds[canisterName]?.[currentNetwork]
+			const storedCanisterIds = yield* canisterIdsService.getCanisterIds()
+			const storedCanisterId: string | undefined =
+				storedCanisterIds[canisterName]?.[currentNetwork]
 			yield* Effect.logDebug("makeCreateTask", { storedCanisterId })
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
 			const configCanisterId = canisterConfig?.canisterId
 			// TODO: handle all edge cases related to this. what happens
 			// if the user provides a new canisterId in the config? and so on
-			// and how about mainnet? 
+			// and how about mainnet?
 			const resolvedCanisterId = storedCanisterId ?? configCanisterId
-			// TODO: do we need to optimize this?
-			// TODO: use this directly instead of getCanisterInfo
-			// const { roles: { deployer: { identity } }, replica } = yield* TaskCtx
-			// const canisterInfo = yield* replica.getCanisterInfo({
-			// 	canisterId,
-			// 	identity,
-			// })
 			const {
 				roles: {
 					deployer: { identity },
@@ -555,7 +525,10 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 					identity,
 				})).status !== "not_installed"
 
-			yield* Effect.logDebug("makeCreateTask", { isAlreadyInstalled, resolvedCanisterId })
+			yield* Effect.logDebug("makeCreateTask", {
+				isAlreadyInstalled,
+				resolvedCanisterId,
+			})
 
 			const canisterId = isAlreadyInstalled
 				? resolvedCanisterId
@@ -664,19 +637,33 @@ class CustomCanisterBuilder<
 		// TODO: we need to inject dependencies again! or they can be overwritten
 		const dependencies = this.#scope.children.install.dependsOn
 		const provide = this.#scope.children.install.dependencies
+		const installArgsTask = {
+			...makeInstallArgsTask<
+				I,
+				ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>,
+				_SERVICE
+			>(installArgsFn),
+			dependsOn: dependencies,
+			dependencies: provide,
+		}
 		const installTask = makeInstallTask<
 			I,
 			ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>,
 			_SERVICE
-		>(installArgsFn, noEncodeArgs)
+		>(noEncodeArgs)
 		const updatedScope = {
 			...this.#scope,
 			children: {
 				...this.#scope.children,
+				install_args: installArgsTask,
 				install: {
 					...installTask,
 					dependsOn: dependencies,
-					dependencies: provide,
+					// dependencies: provide,
+					dependencies: {
+						...provide,
+						install_args: installArgsTask,
+					},
 				},
 			},
 		} satisfies CanisterScope<_SERVICE, D, P>
@@ -695,13 +682,22 @@ class CustomCanisterBuilder<
 		_SERVICE
 	> {
 		const finalDeps = normalizeDepsMap(providedDeps) as NP
+		const installArgsTask = {
+			// @ts-ignore
+			...this.#scope.children.install_args,
+			dependsOn: finalDeps,
+		} as Task<I, D, NP>
 		const updatedScope = {
 			...this.#scope,
 			children: {
 				...this.#scope.children,
+				install_args: installArgsTask,
 				install: {
 					...this.#scope.children.install,
-					dependencies: finalDeps,
+					dependencies: {
+						...finalDeps,
+						install_args: installArgsTask,
+					},
 				} as Task<
 					{
 						canisterId: string
@@ -730,13 +726,23 @@ class CustomCanisterBuilder<
 		_SERVICE
 	> {
 		const updatedDeps = normalizeDepsMap(dependencies) as ND
+		const installArgsTask = {
+			// @ts-ignore
+			...this.#scope.children.install_args,
+			dependsOn: updatedDeps,
+		} as Task<I, ND, P>
 		const updatedScope = {
 			...this.#scope,
 			children: {
 				...this.#scope.children,
+				install_args: installArgsTask,
+				// TODO: add install_args to deps
 				install: {
 					...this.#scope.children.install,
-					dependsOn: updatedDeps,
+					dependsOn: {
+						...updatedDeps,
+						install_args: installArgsTask,
+					},
 				} as Task<
 					{
 						canisterId: string
@@ -758,14 +764,35 @@ class CustomCanisterBuilder<
 	): S {
 		// Otherwise we get a type error
 		const self = this as CustomCanisterBuilder<I, S, D, P, Config, _SERVICE>
-		return {
+		const freshIdChildren = Record.map(self.#scope.children, (value) => ({
+			...value,
+			id: Symbol("task"),
+		}))
+		// TODO: this erases all links between the current tasks
+		// need to recreate them
+		// or we only do it here
+		const linkedChildren = {
+			...freshIdChildren,
+			install: {
+				...freshIdChildren.install,
+				dependsOn: {
+					...freshIdChildren.install.dependsOn,
+					// @ts-ignore
+					install_args: freshIdChildren.install_args,
+				},
+				dependencies: {
+					...freshIdChildren.install.dependencies,
+					// @ts-ignore
+					install_args: freshIdChildren.install_args,
+				},
+			},
+		}
+		const finalScope = {
 			...self.#scope,
 			id: Symbol("scope"),
-			children: Record.map(self.#scope.children, (value) => ({
-				...value,
-				id: Symbol("task"),
-			})),
+			children: linkedChildren,
 		} satisfies CanisterScope<_SERVICE, D, P>
+		return finalScope
 	}
 }
 
@@ -784,6 +811,11 @@ export const customCanister = <_SERVICE = unknown, I = unknown>(
 	CustomCanisterConfig,
 	_SERVICE
 > => {
+	const installArgsTask = makeInstallArgsTask<
+		I,
+		Record<string, unknown>,
+		_SERVICE
+	>(() => [] as I)
 	const initialScope = {
 		_tag: "scope",
 		id: Symbol("scope"),
@@ -795,6 +827,8 @@ export const customCanister = <_SERVICE = unknown, I = unknown>(
 			create: makeCreateTask(canisterConfigOrFn, [Tags.CUSTOM]),
 			bindings: makeCustomBindingsTask(canisterConfigOrFn),
 			build: makeBuildTask(canisterConfigOrFn),
+			// @ts-ignore
+			install_args: installArgsTask,
 			install: makeInstallTask<I, Record<string, unknown>, _SERVICE>(),
 			stop: makeStopTask(),
 			remove: makeRemoveTask(),

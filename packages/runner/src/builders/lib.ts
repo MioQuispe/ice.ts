@@ -1,7 +1,7 @@
 import type { Task } from "../types/types.js"
-import { Effect, Option } from "effect"
+import { Config, Effect, Option, Record } from "effect"
 import { getTaskByPath, getNodeByPath, TaskCtx } from "../tasks/lib.js"
-import { runTask, TaskInfo } from "../tasks/run.js"
+import { DependencyResults, runTask, TaskInfo } from "../tasks/run.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
 import { Principal } from "@dfinity/principal"
 import type { TaskCtxShape } from "../tasks/lib.js"
@@ -11,6 +11,8 @@ import { sha256 } from "@noble/hashes/sha2"
 import { utf8ToBytes, bytesToHex } from "@noble/hashes/utils"
 import { readFileSync, statSync } from "node:fs"
 import { stat } from "node:fs/promises"
+import { Path } from "@effect/platform"
+import { TaskRegistry } from "../services/taskRegistry.js"
 
 export function hashUint8(data: Uint8Array): string {
 	// noble/sha256 is universal (no Buffer, no crypto module)
@@ -20,18 +22,18 @@ export function hashUint8(data: Uint8Array): string {
 // ensure deterministic key order
 function stableStringify(value: unknown): string {
 	return JSON.stringify(value, (_key, val) => {
-	  if (val && typeof val === "object" && !Array.isArray(val)) {
-		// sort *all* object keys deterministically
-		return Object.keys(val)
-		  .sort()
-		  .reduce<Record<string, unknown>>(
-			(acc, k) => ((acc[k] = (val as any)[k]), acc),
-			{},
-		  );
-	  }
-	  return val;      // primitives & arrays unchanged
-	});
-  }
+		if (val && typeof val === "object" && !Array.isArray(val)) {
+			// sort *all* object keys deterministically
+			return Object.keys(val)
+				.sort()
+				.reduce<Record<string, unknown>>(
+					(acc, k) => ((acc[k] = (val as any)[k]), acc),
+					{},
+				)
+		}
+		return val // primitives & arrays unchanged
+	})
+}
 
 export function hashJson(value: unknown): string {
 	const ordered = stableStringify(value)
@@ -74,6 +76,24 @@ export async function isArtifactCached(
 	const digest = digestFile(path)
 	const fresh = digest.sha256 === prev.sha256
 	return { fresh, digest }
+}
+
+/**
+ * Hash the *transpiled* JS produced by tsx/ESBuild,
+ * normalising obvious sources of noise (WS, CRLF).
+ */
+export function hashCallback(fn: Function): string {
+	// 1. grab the transpiled source
+	let txt = fn.toString()
+
+	// 2. normalise line-endings and strip leading WS
+	txt = txt
+		.replace(/\r\n/g, "\n") // CRLF ⇒ LF
+		.replace(/^[\s\t]+/gm, "") // leading indent
+		.replace(/\s+$/gm, "") // trailing WS
+
+	// 3. hash
+	return bytesToHex(sha256(utf8ToBytes(txt)))
 }
 
 export type MergeTaskDependsOn<
@@ -175,6 +195,8 @@ export type CanisterScope<
 }
 
 export const Tags = {
+	HIDDEN: "$$ice/hidden",
+
 	CANISTER: "$$ice/canister",
 	CUSTOM: "$$ice/canister/custom",
 	MOTOKO: "$$ice/canister/motoko",
@@ -182,17 +204,16 @@ export const Tags = {
 	AZLE: "$$ice/canister/azle",
 	KYBRA: "$$ice/canister/kybra",
 
-	CREATE: "$$ice/create",
-	STATUS: "$$ice/status",
-	BUILD: "$$ice/build",
-	INSTALL: "$$ice/install",
-	BINDINGS: "$$ice/bindings",
-	DEPLOY: "$$ice/deploy",
-	STOP: "$$ice/stop",
-	REMOVE: "$$ice/remove",
-	UI: "$$ice/ui",
-	// TODO: hmm do we need this?
-	SCRIPT: "$$ice/script",
+	CREATE: "$$ice/canister/create",
+	STATUS: "$$ice/canister/status",
+	BUILD: "$$ice/canister/build",
+	INSTALL: "$$ice/canister/install",
+	INSTALL_ARGS: "$$ice/canister/installArgs",
+	BINDINGS: "$$ice/canister/bindings",
+	DEPLOY: "$$ice/canister/deploy",
+	STOP: "$$ice/canister/stop",
+	REMOVE: "$$ice/canister/remove",
+	UI: "$$ice/canister/ui",
 }
 
 type CanisterStatus = "not_installed" | "stopped" | "running" | "stopping"
@@ -476,6 +497,110 @@ export const makeDeployTask = (tags: string[]): Task<string> => {
 		positionalParams: [],
 		params: {},
 	} satisfies Task<string>
+}
+
+export const makeInstallArgsTask = <
+	A,
+	P extends Record<string, unknown>,
+	_SERVICE,
+>(
+	installArgsFn: (args: {
+		ctx: TaskCtxShape
+		mode: string
+		deps: P
+	}) => Promise<A> | A,
+): Task<A> => {
+	type InstallArgsInput = {
+		argFnHash: string
+		depsHash: string
+	}
+	return {
+		_tag: "task",
+		id: Symbol("canister/installArgs"),
+		// TODO: do we need this?
+		dependsOn: {},
+		dependencies: {},
+		effect: Effect.gen(function* () {
+			yield* Effect.logDebug("Starting install args generation")
+			const taskCtx = yield* TaskCtx
+			const { dependencies } = yield* DependencyResults
+			const deps = Record.map(dependencies, (dep) => dep.result)
+			const { taskPath } = yield* TaskInfo
+			const canisterName = taskPath.split(":").slice(0, -1).join(":")
+
+			let installArgs = [] as unknown as A
+			if (installArgsFn) {
+				yield* Effect.logDebug("Executing install args function")
+
+				const installFn = installArgsFn as (args: {
+					ctx: TaskCtxShape
+					mode: string
+					deps: P
+				}) => Promise<A> | A
+				// TODO: should it catch errors?
+				// TODO: handle different modes
+				const installResult = installFn({
+					mode: "install",
+					ctx: taskCtx,
+					deps: deps as P,
+				})
+				if (installResult instanceof Promise) {
+					installArgs = yield* Effect.tryPromise({
+						try: () => installResult,
+						catch: (error) => {
+							// TODO: proper error handling
+							return error instanceof Error ? error : new Error(String(error))
+						},
+					})
+				}
+				yield* Effect.logDebug("Install args generated", { args: installArgs })
+			}
+
+			return installArgs
+		}),
+		description: "Generate install args",
+		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.INSTALL_ARGS, Tags.HIDDEN],
+		namedParams: {},
+		positionalParams: [],
+		params: {},
+		// TODO: add network?
+		computeCacheKey: (task, input: InstallArgsInput) => {
+			const installArgsInput = {
+				argFnHash: input.argFnHash,
+				depsHash: input.depsHash,
+			}
+			console.log("computeCacheKey installArgsInput:", installArgsInput)
+			const cacheKey = hashJson(installArgsInput)
+			console.log("computeCacheKey cacheKey:", cacheKey)
+			return cacheKey
+		},
+		input: (task) =>
+			Effect.gen(function* () {
+				const { dependencies } = yield* DependencyResults
+				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
+				console.log("hashing installArgsFn:", installArgsFn.toString())
+				const input = {
+					argFnHash: hashCallback(installArgsFn),
+					depsHash: hashJson(depCacheKeys),
+				} satisfies InstallArgsInput
+				console.log("input:", input)
+				return input
+			}),
+		// TODO: try skipping defining these?
+		// TODO: dont pass in input. pass in the result of the task instead.
+		encode: (input: InstallArgsInput) =>
+			Effect.gen(function* () {
+				const encoded = JSON.stringify(input)
+				console.log("encoded:", encoded)
+				return encoded
+			}),
+		decode: (value) =>
+			Effect.gen(function* () {
+				const decoded = JSON.parse(value) as A
+				console.log("decoded:", decoded)
+				return decoded
+			}),
+	} satisfies Task<A>
 }
 
 const testTask = {

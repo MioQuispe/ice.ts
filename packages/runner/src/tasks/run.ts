@@ -25,7 +25,10 @@ import {
 export class DependencyResults extends Context.Tag("DependencyResults")<
 	DependencyResults,
 	{
-		readonly dependencies: Record<string, unknown>
+		readonly dependencies: Record<string, {
+			cacheKey: string | undefined
+			result: unknown
+		}>
 	}
 >() {}
 
@@ -46,7 +49,9 @@ export const runTaskByPath = (
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) =>
 	Effect.gen(function* () {
+		yield* Effect.logDebug("Running task by path", { taskPath })
 		const { task } = yield* getTaskByPath(taskPath)
+		yield* Effect.logDebug("Task found", taskPath)
 		return yield* runTask(task, args, progressCb)
 	})
 

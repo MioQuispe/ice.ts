@@ -274,13 +274,14 @@ class TaskBuilderClass<
 				const taskCtx = yield* TaskCtx
 				const taskInfo = yield* TaskInfo
 				const { dependencies } = yield* DependencyResults
+				const deps = Record.map(dependencies, (dep) => dep.result)
 				const result = yield* Effect.tryPromise({
 					try: () =>
 						patchGlobals(() =>
 							fn({
 								args: taskCtx.args as ExtractArgsFromTaskParams<TP>,
 								ctx: taskCtx as TaskCtxShape<ExtractArgsFromTaskParams<TP>>,
-								deps: dependencies as ExtractTaskEffectSuccess<
+								deps: deps as ExtractTaskEffectSuccess<
 									T["dependencies"]
 								> &
 									ExtractTaskEffectSuccess<T["dependsOn"]>,
