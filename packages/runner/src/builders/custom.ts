@@ -430,14 +430,6 @@ const makeBuildTask = <P extends Record<string, unknown>>(
 			)
 			const candid = yield* fs.readFile(canisterConfig.candid)
 			yield* fs.writeFile(outCandidPath, candid)
-
-			// if (fn) {
-			//   yield* Effect.tryPromise({
-			//     // TODO: why are we passing this in?
-			//     try: () => fn(taskCtx),
-			//     catch: Effect.fail,
-			//   })
-			// }
 		}),
 		description: "some description",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BUILD],
