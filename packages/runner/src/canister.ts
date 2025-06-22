@@ -4,7 +4,6 @@ import { IDL } from "@dfinity/candid"
 import { Effect, Config, Data } from "effect"
 import { Path, FileSystem, CommandExecutor, Command } from "@effect/platform"
 import * as didc from "@ice.ts/didc_js"
-import { iceDirName } from "./builders/custom.js"
 import { Actor, HttpAgent } from "@dfinity/agent"
 import type * as ActorTypes from "./types/actor.js"
 import { TaskCtx } from "./tasks/lib.js"
@@ -62,6 +61,7 @@ export const generateDIDJS = (canisterName: string, didPath: string) =>
 		const fs = yield* FileSystem.FileSystem
 		const path = yield* Path.Path
 		const appDir = yield* Config.string("APP_DIR")
+		const iceDirName = yield* Config.string("ICE_DIR_NAME")
 		const didString = yield* fs.readFileString(didPath)
 		const didJSString = didc.did_to_js(didString)
 		const didTSString = didc.did_to_ts(didString)

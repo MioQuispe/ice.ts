@@ -33,14 +33,13 @@ import {
 } from "./lib.js"
 import { ActorSubclass } from "../types/actor.js"
 import { TaskRegistry } from "../services/taskRegistry.js"
+import { JsonValue } from "@dfinity/candid"
 
 type CustomCanisterConfig = {
 	wasm: string
 	candid: string
 	canisterId?: string
 }
-
-export const iceDirName = ".ice"
 
 export const makeStopTask = (): Task<void> => {
 	return {
@@ -150,9 +149,11 @@ export const makeCustomBindingsTask = (
 	} satisfies Task
 }
 
-export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
-	noEncodeArgs = false,
-): Task<{
+export const makeInstallTask = <
+	I,
+	P extends Record<string, unknown>,
+	_SERVICE,
+>(): Task<{
 	canisterId: string
 	canisterName: string
 	actor: ActorSubclass<_SERVICE>
@@ -164,7 +165,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 		taskPath: string
 		mode: string
 		wasm: FileDigest
-		argHash: string
+		depCacheKeys: Record<string, string | undefined>
 	}
 	return {
 		_tag: "task",
@@ -175,14 +176,15 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 			yield* Effect.logDebug("Starting custom canister installation")
 			const taskCtx = yield* TaskCtx
 			const identity = taskCtx.roles.deployer.identity
-			const { replica } = taskCtx
+			const { replica, args } = taskCtx
 			const { dependencies } = yield* DependencyResults
 			// TODO: fix. also type should be inferred?
-			const installArgs = dependencies.install_args.result as I
+			const argsTaskResult = dependencies.install_args.result as {
+				args: I
+				encodedArgs: Uint8Array<ArrayBufferLike>
+			}
 			const { taskPath } = yield* TaskInfo
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
-
-			yield* Effect.logDebug("No encode args", { noEncodeArgs, canisterName })
 
 			const canisterId = yield* loadCanisterId(taskPath)
 			yield* Effect.logDebug("Loaded canister ID", { canisterId })
@@ -193,35 +195,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 
 			yield* canisterBuildGuard
 			yield* Effect.logDebug("Build guard check passed")
-
-			const didJSPath = path.join(
-				appDir,
-				iceDirName,
-				"canisters",
-				canisterName,
-				`${canisterName}.did.js`,
-			)
-			// TODO: can we type it somehow?
-			const canisterDID = yield* Effect.tryPromise({
-				try: () => import(didJSPath),
-				catch: Effect.fail,
-			})
-			yield* Effect.logDebug("Loaded canisterDID", { canisterDID })
-
-			yield* Effect.logDebug("Encoding args", { installArgs, canisterDID })
-			const encodedArgs = noEncodeArgs
-				? (installArgs as unknown as Uint8Array)
-				: yield* Effect.try({
-						// TODO: do we accept simple objects as well?
-						// @ts-ignore
-						try: () => encodeArgs(installArgs, canisterDID),
-						catch: (error) => {
-							throw new Error(
-								`Failed to encode args: ${error instanceof Error ? error.message : String(error)}`,
-							)
-						},
-					})
-			yield* Effect.logDebug("Args encoded successfully")
+			const iceDirName = yield* Config.string("ICE_DIR_NAME")
 
 			const isGzipped = yield* fs.exists(
 				path.join(
@@ -244,14 +218,27 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 			const maxSize = 3670016
 			// const identity =
 			yield* Effect.logDebug(`Installing code for ${canisterId} at ${wasmPath}`)
+			yield* Effect.logDebug("argsTaskResult", argsTaskResult)
 			yield* replica.installCode({
 				canisterId,
 				wasm,
-				encodedArgs,
+				encodedArgs: argsTaskResult.encodedArgs,
 				identity,
 			})
 			yield* Effect.logDebug(`Code installed for ${canisterId}`)
 			yield* Effect.logDebug(`Canister ${canisterName} installed successfully`)
+			const didJSPath = path.join(
+				appDir,
+				iceDirName,
+				"canisters",
+				canisterName,
+				`${canisterName}.did.js`,
+			)
+			// TODO: can we type it somehow?
+			const canisterDID = yield* Effect.tryPromise({
+				try: () => import(didJSPath),
+				catch: Effect.fail,
+			})
 			const actor = yield* replica.createActor<_SERVICE>({
 				canisterId,
 				canisterDID,
@@ -265,31 +252,34 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 		}),
 		description: "Install canister code",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.INSTALL],
+		// TODO: generate from candid? would allow passing them in via cli
 		namedParams: {},
 		positionalParams: [],
 		params: {},
 		// TODO: add network?
 		computeCacheKey: (task, input: InstallInput) => {
+			// TODO: pocket-ic could be restarted?
 			const installInput = {
 				canisterId: input.canisterId,
 				network: input.network,
 				mode: input.mode,
 				wasmHash: input.wasm.sha256,
-				argHash: input.argHash,
+				depsHash: hashJson(input.depCacheKeys),
 			}
-			console.log("computeCacheKey installInput:", installInput)
 			const cacheKey = hashJson(installInput)
-			console.log("computeCacheKey cacheKey:", cacheKey)
 			return cacheKey
 		},
 		input: (task) =>
 			Effect.gen(function* () {
 				const { taskPath } = yield* TaskInfo
 				const canisterName = taskPath.split(":").slice(0, -1).join(":")
+				const { dependencies } = yield* DependencyResults
+				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
 				const canisterId = yield* loadCanisterId(taskPath)
 				const { currentNetwork } = yield* TaskCtx
 				const path = yield* Path.Path
 				const appDir = yield* Config.string("APP_DIR")
+				const iceDirName = yield* Config.string("ICE_DIR_NAME")
 				// TODO: get from flags or args?
 				const mode = "install"
 				const wasmPath = path.join(
@@ -304,7 +294,6 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 				// somehow unify the functionality of the two?
 				// TODO: input runs before the task is executed
 				// so how do we get the install args? from a previous run perhaps?
-				const installArgs: Array<unknown> = []
 				const taskRegistry = yield* TaskRegistry
 				// TODO: we need a separate cache for this?
 				const prevWasmDigest = undefined
@@ -321,24 +310,27 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 					taskPath,
 					mode,
 					wasm: wasmDigest,
-					argHash: hashJson(installArgs),
+					depCacheKeys,
 				} satisfies InstallInput
 				return input
 			}),
-		// TODO: fix generic type
-		encode: (input: InstallInput) =>
+		// TODO: fix generic type? we shouldnt have to type this
+		encode: (result: {
+			canisterId: string
+			canisterName: string
+			actor: ActorSubclass<_SERVICE>
+		}) =>
 			Effect.gen(function* () {
 				const encoded = JSON.stringify({
-					canisterId: input.canisterId,
-					canisterName: input.canisterName,
+					canisterId: result.canisterId,
+					canisterName: result.canisterName,
 				})
-				console.log("encoded:", encoded)
 				return encoded
 			}),
 		decode: (value) =>
 			// TODO: make it less I/O heavy? should we get canisterId/Name from value?
 			Effect.gen(function* () {
-				const { canisterId, canisterName } = JSON.parse(value) as {
+				const { canisterId, canisterName } = JSON.parse(value as string) as {
 					canisterId: string
 					canisterName: string
 				}
@@ -350,6 +342,7 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 				} = yield* TaskCtx
 				const path = yield* Path.Path
 				const appDir = yield* Config.string("APP_DIR")
+				const iceDirName = yield* Config.string("ICE_DIR_NAME")
 				const didJSPath = path.join(
 					appDir,
 					iceDirName,
@@ -371,8 +364,11 @@ export const makeInstallTask = <I, P extends Record<string, unknown>, _SERVICE>(
 					canisterId,
 					canisterName,
 					actor: proxyActor(canisterName, actor),
+				} satisfies {
+					canisterId: string
+					canisterName: string
+					actor: ActorSubclass<_SERVICE>
 				}
-				console.log("decoded:", decoded)
 				return decoded
 			}),
 	} satisfies Task<{
@@ -398,6 +394,7 @@ const makeBuildTask = <P extends Record<string, unknown>>(
 			const fs = yield* FileSystem.FileSystem
 			const path = yield* Path.Path
 			const appDir = yield* Config.string("APP_DIR")
+			const iceDirName = yield* Config.string("ICE_DIR_NAME")
 			// TODO: could be a promise
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
 			const { taskPath } = yield* TaskInfo
@@ -537,6 +534,7 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 						identity,
 					})
 			const appDir = yield* Config.string("APP_DIR")
+			const iceDirName = yield* Config.string("ICE_DIR_NAME")
 			yield* canisterIdsService.setCanisterId({
 				canisterName,
 				network: taskCtx.currentNetwork,
@@ -620,8 +618,8 @@ class CustomCanisterBuilder<
 			deps: ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>
 			mode: string
 		}) => I | Promise<I>,
-		{ noEncodeArgs }: { noEncodeArgs?: boolean } = {
-			noEncodeArgs: false,
+		{ customEncode }: { customEncode: undefined | ((args: I) => Effect.Effect<Uint8Array<ArrayBufferLike>>) } = {
+			customEncode: undefined,
 		},
 	): CustomCanisterBuilder<
 		I,
@@ -642,7 +640,7 @@ class CustomCanisterBuilder<
 				I,
 				ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>,
 				_SERVICE
-			>(installArgsFn),
+			>(installArgsFn, { customEncode }),
 			dependsOn: dependencies,
 			dependencies: provide,
 		}
@@ -650,7 +648,7 @@ class CustomCanisterBuilder<
 			I,
 			ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>,
 			_SERVICE
-		>(noEncodeArgs)
+		>()
 		const updatedScope = {
 			...this.#scope,
 			children: {
@@ -685,7 +683,7 @@ class CustomCanisterBuilder<
 		const installArgsTask = {
 			// @ts-ignore
 			...this.#scope.children.install_args,
-			dependsOn: finalDeps,
+			dependencies: finalDeps,
 		} as Task<I, D, NP>
 		const updatedScope = {
 			...this.#scope,
@@ -815,7 +813,7 @@ export const customCanister = <_SERVICE = unknown, I = unknown>(
 		I,
 		Record<string, unknown>,
 		_SERVICE
-	>(() => [] as I)
+	>(() => [] as unknown as I)
 	const initialScope = {
 		_tag: "scope",
 		id: Symbol("scope"),
@@ -864,6 +862,7 @@ export const canisterBuildGuard = Effect.gen(function* () {
 	const path = yield* Path.Path
 	const fs = yield* FileSystem.FileSystem
 	const appDir = yield* Config.string("APP_DIR")
+	const iceDirName = yield* Config.string("ICE_DIR_NAME")
 	// TODO: dont wanna pass around id everywhere
 	const { taskPath } = yield* TaskInfo
 	const canisterName = taskPath.split(":").slice(0, -1).join(":")
@@ -1071,6 +1070,7 @@ const t = test
 		// TODO: type the actors
 		// ctx.dependencies.asd.actor
 		deps.asd.actor
+		return []
 	})
 	.make()
 // t.children.install.computeCacheKey

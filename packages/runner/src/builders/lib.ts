@@ -13,6 +13,8 @@ import { readFileSync, statSync } from "node:fs"
 import { stat } from "node:fs/promises"
 import { Path } from "@effect/platform"
 import { TaskRegistry } from "../services/taskRegistry.js"
+import { IDL, JsonValue } from "@dfinity/candid"
+import { encodeArgs } from "../canister.js"
 
 export function hashUint8(data: Uint8Array): string {
 	// noble/sha256 is universal (no Buffer, no crypto module)
@@ -101,14 +103,24 @@ export type MergeTaskDependsOn<
 	ND extends Record<string, Task>,
 > = {
 	[K in keyof T]: K extends "dependsOn" ? T[K] & ND : T[K]
-} & Partial<Pick<Task, "computeCacheKey" | "input" | "decode" | "encode">>
+} & Partial<
+	Pick<
+		Task,
+		"computeCacheKey" | "input" | "decode" | "encode" | "encodingFormat"
+	>
+>
 
 export type MergeTaskDependencies<
 	T extends Task,
 	NP extends Record<string, Task>,
 > = {
 	[K in keyof T]: K extends "dependencies" ? T[K] & NP : T[K]
-} & Partial<Pick<Task, "computeCacheKey" | "input" | "decode" | "encode">>
+} & Partial<
+	Pick<
+		Task,
+		"computeCacheKey" | "input" | "decode" | "encode" | "encodingFormat"
+	>
+>
 
 // export type MergeScopeDependsOn<S extends CanisterScope, D extends Record<string, Task>> = Omit<S, 'children'> & {
 //     children: Omit<S['children'], 'install'> & {
@@ -498,6 +510,13 @@ export const makeDeployTask = (tags: string[]): Task<string> => {
 		params: {},
 	} satisfies Task<string>
 }
+/**
+ * Represents the expected structure of a dynamically imported DID module.
+ */
+export interface CanisterDidModule {
+	idlFactory: IDL.InterfaceFactory
+	init: (args: { IDL: typeof IDL }) => IDL.Type[]
+}
 
 export const makeInstallArgsTask = <
 	A,
@@ -509,10 +528,23 @@ export const makeInstallArgsTask = <
 		mode: string
 		deps: P
 	}) => Promise<A> | A,
-): Task<A> => {
+	{
+		customEncode,
+		// customInitIDL,
+	}: {
+		customEncode: undefined | ((args: A) => Effect.Effect<Uint8Array<ArrayBufferLike>>)
+		// customInitIDL: IDL.Type[] | undefined
+	} = {
+		customEncode: undefined,
+		// customInitIDL: undefined,
+	},
+): Task<{
+	args: A
+	encodedArgs: Uint8Array<ArrayBufferLike>
+}> => {
 	type InstallArgsInput = {
-		argFnHash: string
-		depsHash: string
+		installArgsFn: Function
+		depCacheKeys: Record<string, string | undefined>
 	}
 	return {
 		_tag: "task",
@@ -526,7 +558,10 @@ export const makeInstallArgsTask = <
 			const { dependencies } = yield* DependencyResults
 			const deps = Record.map(dependencies, (dep) => dep.result)
 			const { taskPath } = yield* TaskInfo
+			const path = yield* Path.Path
+			const appDir = yield* Config.string("APP_DIR")
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
+			const iceDirName = yield* Config.string("ICE_DIR_NAME")
 
 			let installArgs = [] as unknown as A
 			if (installArgsFn) {
@@ -552,11 +587,46 @@ export const makeInstallArgsTask = <
 							return error instanceof Error ? error : new Error(String(error))
 						},
 					})
+				} else {
+					installArgs = installResult
 				}
-				yield* Effect.logDebug("Install args generated", { args: installArgs })
+				yield* Effect.logDebug("installArgsFn effect result:", installResult)
 			}
+			// TODO: this is not working!
+			yield* Effect.logDebug("installArgsFn effect:", {
+				installArgsFn: installArgsFn.toString(),
+			})
+			yield* Effect.logDebug("Install args generated", { args: installArgs })
 
-			return installArgs
+			const didJSPath = path.join(
+				appDir,
+				iceDirName,
+				"canisters",
+				canisterName,
+				`${canisterName}.did.js`,
+			)
+			// TODO: can we type it somehow?
+			const canisterDID = yield* Effect.tryPromise({
+				try: () => import(didJSPath) as Promise<CanisterDidModule>,
+				catch: Effect.fail,
+			})
+			yield* Effect.logDebug("Loaded canisterDID", { canisterDID })
+
+			yield* Effect.logDebug("Encoding args", { installArgs, canisterDID })
+			const encodedArgs = customEncode
+				? yield* customEncode(installArgs)
+				: yield* Effect.try({
+						// TODO: do we accept simple objects as well?
+						// @ts-ignore
+						try: () => encodeArgs(installArgs, canisterDID),
+						catch: (error) => {
+							throw new Error(
+								`Failed to encode args: ${error instanceof Error ? error.message : String(error)}`,
+							)
+						},
+					})
+
+			return { args: installArgs, encodedArgs }
 		}),
 		description: "Generate install args",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.INSTALL_ARGS, Tags.HIDDEN],
@@ -565,42 +635,106 @@ export const makeInstallArgsTask = <
 		params: {},
 		// TODO: add network?
 		computeCacheKey: (task, input: InstallArgsInput) => {
+			// const installArgsInput = {
+			// 	argFnHash: input.argFnHash,
+			// 	depsHash: input.depsHash,
+			// }
 			const installArgsInput = {
-				argFnHash: input.argFnHash,
-				depsHash: input.depsHash,
+				argFnHash: hashCallback(input.installArgsFn),
+				depsHash: hashJson(input.depCacheKeys),
 			}
-			console.log("computeCacheKey installArgsInput:", installArgsInput)
 			const cacheKey = hashJson(installArgsInput)
-			console.log("computeCacheKey cacheKey:", cacheKey)
 			return cacheKey
 		},
 		input: (task) =>
 			Effect.gen(function* () {
 				const { dependencies } = yield* DependencyResults
 				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
-				console.log("hashing installArgsFn:", installArgsFn.toString())
+				yield* Effect.logDebug(
+					"hashing installArgsFn:",
+					installArgsFn.toString(),
+				)
 				const input = {
-					argFnHash: hashCallback(installArgsFn),
-					depsHash: hashJson(depCacheKeys),
+					installArgsFn,
+					depCacheKeys,
 				} satisfies InstallArgsInput
-				console.log("input:", input)
+				yield* Effect.logDebug("input:", input)
 				return input
 			}),
-		// TODO: try skipping defining these?
-		// TODO: dont pass in input. pass in the result of the task instead.
-		encode: (input: InstallArgsInput) =>
+		encodingFormat: customEncode ? "string" : "uint8array",
+		encode: (result: {
+			args: A
+			encodedArgs: Uint8Array<ArrayBufferLike>
+		}) =>
 			Effect.gen(function* () {
-				const encoded = JSON.stringify(input)
-				console.log("encoded:", encoded)
-				return encoded
+				if (customEncode) {
+					// TODO: stringify? or uint8array?
+					return JSON.stringify(result.args)
+				}
+				yield* Effect.logDebug("encoded:", result.encodedArgs)
+				return result.encodedArgs
 			}),
-		decode: (value) =>
+		// TODO: noEncodeArgs messes this up
+		decode: (prev) =>
 			Effect.gen(function* () {
-				const decoded = JSON.parse(value) as A
-				console.log("decoded:", decoded)
-				return decoded
+				// TODO: fix
+				const encoded = prev as Uint8Array<ArrayBufferLike>
+				// TODO: get from candid / bindings task result instead?
+				// this task should depend on that and just get its result
+				const { dependencies } = yield* DependencyResults
+				// const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
+				// const depResult = dependencies.bindings.result
+				const path = yield* Path.Path
+				const appDir = yield* Config.string("APP_DIR")
+				const { taskPath } = yield* TaskInfo
+				const canisterName = taskPath.split(":").slice(0, -1).join(":")
+				const iceDirName = yield* Config.string("ICE_DIR_NAME")
+				const didJSPath = path.join(
+					appDir,
+					iceDirName,
+					"canisters",
+					canisterName,
+					`${canisterName}.did.js`,
+				)
+
+				if (customEncode) {
+					const decoded = JSON.parse(encoded as unknown as string) as A
+					// TODO: use customEncode again
+					const customEncoded = yield* customEncode(decoded)
+					return {
+						encodedArgs: customEncoded,
+						args: decoded,
+					}
+				}
+
+				// TODO: can we type it somehow?
+				const canisterDID = yield* Effect.tryPromise({
+					try: () => import(didJSPath) as Promise<CanisterDidModule>,
+					catch: Effect.fail,
+				})
+
+				// TODO: custom init IDL. mainly for nns canisters
+				// const idl = customInitIDL ?? canisterDID.init({ IDL })
+				const idl = canisterDID.init({ IDL })
+				yield* Effect.logDebug(
+					"decoding value",
+					"with type:",
+					typeof encoded,
+					"with value:",
+					encoded,
+					"with idl:",
+					idl,
+				)
+				// TODO: customEncode maybe messes this up?
+				const decoded = IDL.decode(idl, encoded.slice().buffer) as A
+
+				yield* Effect.logDebug("decoded:", decoded)
+				return {
+					encodedArgs: encoded,
+					args: decoded,
+				}
 			}),
-	} satisfies Task<A>
+	}
 }
 
 const testTask = {

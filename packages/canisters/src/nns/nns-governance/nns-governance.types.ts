@@ -181,7 +181,7 @@ export interface Governance {
   'neuron_management_voting_period_seconds' : [] | [bigint],
   'node_providers' : Array<NodeProvider>,
   'cached_daily_maturity_modulation_basis_points' : [] | [number],
-  'economics' : [] | [NetworkEconomics],
+  'economics' : NetworkEconomics,
   'restore_aging_summary' : [] | [RestoreAgingSummary],
   'spawning_neurons' : [] | [boolean],
   'latest_reward_event' : [] | [RewardEvent],

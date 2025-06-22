@@ -8,7 +8,6 @@ import {
 	makeCreateTask,
 	resolveConfig,
 	makeStopTask,
-	iceDirName,
 	makeRemoveTask,
 } from "./custom.js"
 import { TaskInfo } from "../tasks/run.js"
@@ -43,6 +42,7 @@ export const makeMotokoBindingsTask = () => {
 			const path = yield* Path.Path
 			const fs = yield* FileSystem.FileSystem
 			const appDir = yield* Config.string("APP_DIR")
+			const iceDirName = yield* Config.string("ICE_DIR_NAME")
 			const { taskPath } = yield* TaskInfo
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			yield* canisterBuildGuard
@@ -105,6 +105,7 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 			const path = yield* Path.Path
 			const fs = yield* FileSystem.FileSystem
 			const appDir = yield* Config.string("APP_DIR")
+			const iceDirName = yield* Config.string("ICE_DIR_NAME")
 			const { taskPath } = yield* TaskInfo
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")

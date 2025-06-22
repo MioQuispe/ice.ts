@@ -5,6 +5,7 @@ import {
 	Actor,
 	ActorSubclass,
 	HttpAgent,
+	MANAGEMENT_CANISTER_ID,
 	type SignIdentity,
 } from "@dfinity/agent"
 import { IDL } from "@dfinity/candid"
@@ -17,12 +18,9 @@ import type { ManagementActor } from "../../types/types.js"
 import type { PlatformError } from "@effect/platform/Error"
 import os from "node:os"
 import psList from "ps-list"
-import {
-	PocketIc,
-	PocketIcServer,
-	createActorClass,
-} from "@dfinity/pic"
+import { PocketIc, PocketIcServer, createActorClass } from "@dfinity/pic"
 import { PocketIcClient as CustomPocketIcClient } from "./pocket-ic-client.js"
+import { ChunkHash, encodeInstallCodeChunkedRequest } from "../../canisters/pic_management/index.js"
 import {
 	AgentError,
 	CanisterCreateError,
@@ -36,7 +34,7 @@ import {
 import { sha256 } from "js-sha256"
 import type { log_visibility } from "@dfinity/agent/lib/cjs/canisters/management_service.js"
 import * as url from "node:url"
-import { SubnetStateType } from "./pocket-ic-client-types.js"
+import { EffectivePrincipal, SubnetStateType } from "./pocket-ic-client-types.js"
 import type * as ActorTypes from "../../types/actor.js"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
@@ -51,7 +49,6 @@ export const picReplicaImpl = Effect.gen(function* () {
 	// const dirUrl = new URL(".", import.meta.url).href
 	// TODO: pocket-ic isnt moved to dist/
 	// we need to move it in the build step and get the url somehow
-
 
 	// TODO: fix!
 	const port = 8081
@@ -321,12 +318,13 @@ export const picReplicaImpl = Effect.gen(function* () {
 			Effect.gen(function* () {
 				const maxSize = 3670016
 				const isOverSize = wasm.length > maxSize
-				const wasmModuleHash = Array.from(sha256.array(wasm))
+				const wasmModuleHash = sha256.arrayBuffer(wasm)
 				const mgmt = yield* getMgmt(identity)
 				const canisterInfo = yield* getCanisterInfo({
 					canisterId,
 					identity,
 				})
+				const targetSubnetId = undefined
 				// const mode =
 				// 	canisterInfo.status === "not_installed" ? "install" : "reinstall"
 				// TODO: "install" doesnt work for certain canisters for some reason
@@ -336,12 +334,12 @@ export const picReplicaImpl = Effect.gen(function* () {
 					// TODO: proper error handling if fails?
 					const chunkSize = 1048576
 					// Maximum size: 1048576
-					const chunkHashes: Array<{ hash: Array<number> }> = []
+					const chunkHashes: ChunkHash[] = []
 					const chunkUploadEffects = []
 					for (let i = 0; i < wasm.length; i += chunkSize) {
 						const chunk = wasm.slice(i, i + chunkSize)
-						const chunkHash = Array.from(sha256.array(chunk))
-						chunkHashes.push({ hash: chunkHash })
+						const chunkHash = sha256.arrayBuffer(chunk)
+						chunkHashes.push({ hash: new Uint8Array(chunkHash) })
 						chunkUploadEffects.push(
 							Effect.tryPromise({
 								try: () =>
@@ -368,8 +366,9 @@ export const picReplicaImpl = Effect.gen(function* () {
 						concurrency: "unbounded",
 					})
 
+					// TODO: not working!
 					yield* Effect.tryPromise({
-						try: () =>
+						try: () => {
 							// TODO: use pic.installCode instead
 							// pic.installCode({
 							// 	arg: encodedArgs.buffer,
@@ -378,8 +377,67 @@ export const picReplicaImpl = Effect.gen(function* () {
 							// 	wasm: wasm.buffer,
 							// 	// targetSubnetId: nnsSubnet?.id!,
 							// }),
-							mgmt.install_chunked_code({
-								arg: Array.from(encodedArgs),
+
+							// mgmt.install_chunked_code({
+							// 	arg: Array.from(encodedArgs),
+							// 	target_canister: Principal.fromText(canisterId),
+							// 	sender_canister_version: Opt<bigint>(),
+							// 	mode: { reinstall: null },
+							// 	// TODO: upgrade mode / upgrade args
+							// 	// mode: { upgrade: [] },
+							// 	// export type canister_install_mode = { 'reinstall' : null } |
+							// 	//   {
+							// 	//     'upgrade' : [] | [
+							// 	//       {
+							// 	//         'wasm_memory_persistence' : [] | [
+							// 	//           { 'keep' : null } |
+							// 	//             { 'replace' : null }
+							// 	//         ],
+							// 	//         'skip_pre_upgrade' : [] | [boolean],
+							// 	//       }
+							// 	//     ]
+							// 	//   } |
+							// 	//   { 'install' : null };
+							// 	chunk_hashes_list: chunkHashes,
+							// 	store_canister: [],
+							// 	wasm_module_hash: wasmModuleHash,
+							// }),
+
+							// pic.installCodeChunked({
+							// 	arg: Array.from(encodedArgs),
+							// 	target_canister: Principal.fromText(canisterId),
+							// 	sender_canister_version: Opt<bigint>(),
+							// 	mode: { reinstall: null },
+							// 	// TODO: upgrade mode / upgrade args
+							// 	// mode: { upgrade: [] },
+							// 	// export type canister_install_mode = { 'reinstall' : null } |
+							// 	//   {
+							// 	//     'upgrade' : [] | [
+							// 	//       {
+							// 	//         'wasm_memory_persistence' : [] | [
+							// 	//           { 'keep' : null } |
+							// 	//             { 'replace' : null }
+							// 	//         ],
+							// 	//         'skip_pre_upgrade' : [] | [boolean],
+							// 	//       }
+							// 	//     ]
+							// 	//   } |
+							// 	//   { 'install' : null };
+							// 	chunk_hashes_list: chunkHashes,
+							// 	store_canister: [],
+							// 	wasm_module_hash: wasmModuleHash,
+							// }),
+
+							const payload = {
+								//   arg: encodedArgs,
+								//   canister_id: Principal.fromText(canisterId),
+								//   mode: {
+								// 	install: null,
+								//   },
+								//   wasm_module: new Uint8Array(wasm),
+
+								arg: encodedArgs,
+								canister_id: Principal.fromText(canisterId),
 								target_canister: Principal.fromText(canisterId),
 								sender_canister_version: Opt<bigint>(),
 								mode: { reinstall: null },
@@ -399,9 +457,27 @@ export const picReplicaImpl = Effect.gen(function* () {
 								//   } |
 								//   { 'install' : null };
 								chunk_hashes_list: chunkHashes,
-								store_canister: [],
-								wasm_module_hash: wasmModuleHash,
-							}),
+								store_canister: Opt<Principal>(),
+								wasm_module_hash: new Uint8Array(wasmModuleHash),
+							}
+							console.log("payload", payload)
+							const encodedPayload = encodeInstallCodeChunkedRequest(payload)
+
+							// console.log("encoded payload", encodedPayload)
+							const req = {
+								canisterId: Principal.fromText('aaaaa-aa'),
+								sender: identity.getPrincipal(),
+								method: "install_chunked_code",
+								payload: encodedPayload,
+								effectivePrincipal: (targetSubnetId
+									? {
+											subnetId: Principal.fromText(targetSubnetId),
+										}
+									: undefined) as EffectivePrincipal,
+							}
+							console.log("sending update call", req)
+							return customPocketIcClient.updateCall(req)
+						},
 						catch: (error) =>
 							new CanisterInstallError({
 								message: `Failed to install code: ${error instanceof Error ? error.message : String(error)}`,

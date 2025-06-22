@@ -26,13 +26,15 @@ import {
   decodeCreateCanisterResponse,
   encodeCreateCanisterRequest,
   encodeInstallCodeRequest,
+  encodeInstallCodeChunkedRequest,
   encodeStartCanisterRequest,
   encodeUpdateCanisterSettingsRequest,
-} from './management-canister';
+} from '../../canisters/pic_management';
+// } from './management-canister';
 import {
   createDeferredActorClass,
   DeferredActor,
-} from './pocket-ic-deferred-actor';
+} from './pocket-ic-deferred-actor.js';
 
 /**
  * This class represents the main PocketIC client.
@@ -384,6 +386,40 @@ export class PocketIc {
       canisterId: MANAGEMENT_CANISTER_ID,
       sender,
       method: 'install_code',
+      payload,
+      effectivePrincipal: targetSubnetId
+        ? {
+            subnetId: targetSubnetId,
+          }
+        : undefined,
+    });
+  }
+
+
+  public async installCodeChunked({
+    arg = new Uint8Array(),
+    sender = Principal.anonymous(),
+    canisterId,
+    wasm,
+    targetSubnetId,
+  }: InstallCodeOptions): Promise<void> {
+    if (typeof wasm === 'string') {
+      wasm = await readFileAsBytes(wasm);
+    }
+
+    const payload = encodeInstallCodeChunkedRequest({
+      arg: new Uint8Array(arg),
+      canister_id: canisterId,
+      mode: {
+        install: null,
+      },
+      wasm_module: new Uint8Array(wasm),
+    });
+
+    await this.client.updateCall({
+      canisterId: MANAGEMENT_CANISTER_ID,
+      sender,
+      method: 'install_chunked_code',
       payload,
       effectivePrincipal: targetSubnetId
         ? {

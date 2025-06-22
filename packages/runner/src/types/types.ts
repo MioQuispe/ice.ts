@@ -172,8 +172,9 @@ export interface Task<
 	// TODO: wrap fields in cache object
 	input?: <T extends Task<A, D, P, E, R, I>>(task: T) => Effect.Effect<I, E, R> // optional input
 	// TODO: causes type errors. we shouldnt have to pass in the type here
-	encode?: (value: any) => Effect.Effect<string>
-	decode?: (value: string) => Effect.Effect<A, E, R>
+	encode?: (value: any) => Effect.Effect<string | Uint8Array<ArrayBufferLike>>
+	encodingFormat?: "string" | "uint8array"
+	decode?: (value: string | Uint8Array<ArrayBufferLike>) => Effect.Effect<A, E, R>
 	computeCacheKey?: <T extends Task<A, D, P, E, R, I>>(task: T, input: I) => string
 }
 

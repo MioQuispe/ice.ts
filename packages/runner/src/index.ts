@@ -30,6 +30,7 @@ export const configMap = new Map([
 	["APP_DIR", fs.realpathSync(process.cwd())],
 	["DFX_CONFIG_FILENAME", "ice.config.ts"],
 	["CANISTER_IDS_FILENAME", "canister_ids.json"],
+	["ICE_DIR_NAME", ".ice"],
 ])
 
 export const configLayer = Layer.setConfigProvider(

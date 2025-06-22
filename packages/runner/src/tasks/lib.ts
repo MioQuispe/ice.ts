@@ -474,15 +474,18 @@ export const executeTasks = (
 							: undefined
 					cacheKey = task.computeCacheKey(task, input)
 					if (yield* taskRegistry.has(cacheKey)) {
-						yield* Effect.logDebug("computeCacheKey in task, cache hit")
-						const maybeResult = yield* taskRegistry.get(cacheKey)
+						yield* Effect.logDebug(`Cache hit for cacheKey: ${cacheKey}`)
+						const encodingFormat = "encodingFormat" in task ? task.encodingFormat : "string"
+						const maybeResult = yield* taskRegistry.get(cacheKey, encodingFormat)
 						if (Option.isSome(maybeResult)) {
 							const encodedResult = maybeResult.value
 							if ("decode" in task) {
+								yield* Effect.logDebug("decoding result:", encodedResult)
 								const decodedResult = yield* task
 									.decode(encodedResult)
 									.pipe(Effect.provide(taskLayer))
 								result = decodedResult
+								yield* Effect.logDebug("decoded result:", decodedResult)
 							} else {
 								result = encodedResult
 							}
@@ -494,10 +497,12 @@ export const executeTasks = (
 					} else {
 						result = yield* task.effect.pipe(Effect.provide(taskLayer))
 						// TODO: fix. maybe not json stringify?
+						yield* Effect.logDebug("encoding result:", result)
 						const encodedResult =
 							"encode" in task
 								? yield* task.encode(result).pipe(Effect.provide(taskLayer))
 								: JSON.stringify(result)
+						yield* Effect.logDebug("encoded result", "with type:", typeof encodedResult, "with value:", encodedResult)
 						yield* taskRegistry.set(cacheKey, encodedResult)
 					}
 				} else {

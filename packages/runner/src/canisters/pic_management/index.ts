@@ -132,8 +132,55 @@ export interface InstallCodeRequest {
   canister_id: Principal;
 }
 
+export interface ChunkHash {
+  hash: Uint8Array;
+}
+// { 'hash' : Array<number> }
+
+export interface InstallCodeChunkedRequest {
+  arg: Uint8Array;
+  wasm_module_hash: Uint8Array;
+  chunk_hashes_list: ChunkHash[];
+  mode: { reinstall?: null; upgrade?: null; install?: null };
+  target_canister: Principal;
+  store_canister: [] | [Principal];
+  sender_canister_version: [] | [bigint]
+  canister_id: Principal;
+
+  // 'arg' : Array<number>,
+  // 'wasm_module_hash' : Array<number>,
+  // 'mode' : canister_install_mode,
+  // 'chunk_hashes_list' : Array<chunk_hash>,
+  // 'target_canister' : canister_id,
+  // 'store_canister' : [] | [canister_id],
+  // 'sender_canister_version' : [] | [bigint],
+}
+
+const ChunkHash = IDL.Record({
+  hash: IDL.Vec(IDL.Nat8),
+});
+
+const InstallCodeChunkedRequest = IDL.Record({
+  arg: IDL.Vec(IDL.Nat8),
+  wasm_module_hash: IDL.Vec(IDL.Nat8),
+  chunk_hashes_list: IDL.Vec(ChunkHash),
+  mode: IDL.Variant({
+    reinstall: IDL.Null,
+    upgrade: IDL.Null,
+    install: IDL.Null,
+  }),
+  target_canister: IDL.Principal,
+  store_canister: IDL.Opt(IDL.Principal),
+  sender_canister_version: IDL.Opt(IDL.Nat),
+  canister_id: IDL.Principal,
+});
+
 export function encodeInstallCodeRequest(arg: InstallCodeRequest): Uint8Array {
   return new Uint8Array(IDL.encode([InstallCodeRequest], [arg]));
+}
+
+export function encodeInstallCodeChunkedRequest(arg: InstallCodeChunkedRequest): Uint8Array {
+  return new Uint8Array(IDL.encode([InstallCodeChunkedRequest], [arg]));
 }
 
 const UpdateCanisterSettingsRequest = IDL.Record({
