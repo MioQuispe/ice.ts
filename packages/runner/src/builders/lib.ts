@@ -19,7 +19,9 @@ import {
 	makeCreateTask,
 	makeCustomBuildTask,
 	makeCustomBindingsTask,
+	loadCanisterId,
 } from "./custom.js"
+import type { CanisterStatusResult } from "../services/replica.js"
 
 export function hashUint8(data: Uint8Array): string {
 	// noble/sha256 is universal (no Buffer, no crypto module)
@@ -264,8 +266,8 @@ export type AllowedDep = Task | CanisterScope
 export type NormalizeDep<T> = T extends Task
 	? T
 	: T extends CanisterScope
-		? T["children"]["install_args"] extends Task
-			? T["children"]["install_args"]
+		? T["children"]["install"] extends Task
+			? T["children"]["install"]
 			: never
 		: never
 
@@ -282,7 +284,7 @@ export type NormalizeDeps<Deps extends Record<string, AllowedDep>> = {
 	[K in keyof Deps]: Deps[K] extends Task
 		? Deps[K]
 		: Deps[K] extends CanisterScope
-			? Deps[K]["children"]["install_args"]
+			? Deps[K]["children"]["install"]
 			: never
 }
 
@@ -368,12 +370,97 @@ export function normalizeDepsMap(
 	)
 }
 
+export const makeStopTask = (): Task<void> => {
+	return {
+		_tag: "task",
+		id: Symbol("customCanister/stop"),
+		dependsOn: {},
+		dependencies: {},
+		// TODO: do we allow a fn as args here?
+		effect: Effect.gen(function* () {
+			const { taskPath } = yield* TaskInfo
+			const canisterName = taskPath.split(":").slice(0, -1).join(":")
+			// TODO: handle error
+			const canisterId = yield* loadCanisterId(taskPath)
+			const {
+				roles: {
+					deployer: { identity },
+				},
+				replica,
+			} = yield* TaskCtx
+			// TODO: check if canister is running / stopped
+			// get status first
+			const status = yield* replica.getCanisterStatus({
+				canisterId,
+				identity,
+			})
+			if (status === "stopped") {
+				yield* Effect.logDebug(`Canister ${canisterName} is already stopped or not installed`, status)
+				return
+			}
+			yield* replica.stopCanister({
+				canisterId,
+				identity,
+			})
+			yield* Effect.logDebug(`Stopped canister ${canisterName}`)
+		}),
+		description: "Stop canister",
+		// TODO: no tag custom
+		tags: [Tags.CANISTER, Tags.STOP],
+		namedParams: {},
+		positionalParams: [],
+		params: {},
+	} satisfies Task<void>
+}
+
+export const makeRemoveTask = ({
+	stop,
+}: {
+	stop: Task<void>
+}): Task<void> => {
+	return {
+		_tag: "task",
+		id: Symbol("customCanister/remove"),
+		dependsOn: {},
+		dependencies: {
+			stop,
+		},
+		// TODO: do we allow a fn as args here?
+		effect: Effect.gen(function* () {
+			const { taskPath } = yield* TaskInfo
+			const canisterName = taskPath.split(":").slice(0, -1).join(":")
+			// TODO: handle error
+			const canisterId = yield* loadCanisterId(taskPath)
+			const {
+				roles: {
+					deployer: { identity },
+				},
+				replica,
+			} = yield* TaskCtx
+			yield* replica.removeCanister({
+				canisterId,
+				identity,
+			})
+			const canisterIdsService = yield* CanisterIdsService
+			yield* canisterIdsService.removeCanisterId(canisterName)
+			yield* Effect.logDebug(`Removed canister ${canisterName}`)
+		}),
+		description: "Remove canister",
+		// TODO: no tag custom
+		tags: [Tags.CANISTER, Tags.REMOVE],
+		namedParams: {},
+		positionalParams: [],
+		params: {},
+	} satisfies Task<void>
+}
+
 export const makeCanisterStatusTask = (
 	tags: string[],
 ): Task<{
 	canisterName: string
 	canisterId: string | undefined
 	status: CanisterStatus
+	info: CanisterStatusResult | undefined
 }> => {
 	return {
 		_tag: "task",
@@ -397,12 +484,13 @@ export const makeCanisterStatusTask = (
 					canisterName,
 					canisterId: undefined,
 					status: "not_installed",
+					info: undefined,
 				}
 			}
 			const canisterId = canisterIds[currentNetwork]
 			if (!canisterId) {
 				// TODO: fix format
-				return { canisterName, canisterId, status: "not_installed" }
+				return { canisterName, canisterId, status: "not_installed", info: undefined }
 			}
 			// export interface canister_status_result {
 			//   'status' : { 'stopped' : null } |
@@ -444,7 +532,7 @@ export const makeCanisterStatusTask = (
 				identity,
 			})
 			const status = canisterInfo.status
-			return { canisterName, canisterId, status }
+			return { canisterName, canisterId, status, info: canisterInfo }
 		}),
 		description: "Get canister status",
 		tags: [Tags.CANISTER, Tags.STATUS, ...tags],
@@ -455,6 +543,7 @@ export const makeCanisterStatusTask = (
 		canisterName: string
 		canisterId: string | undefined
 		status: CanisterStatus
+		info: CanisterStatusResult | undefined
 	}>
 }
 

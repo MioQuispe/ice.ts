@@ -6,8 +6,6 @@ import {
 	makeInstallTask,
 	makeCreateTask,
 	resolveConfig,
-	makeStopTask,
-	makeRemoveTask,
 } from "./custom.js"
 import { DependencyResults, TaskInfo } from "../tasks/run.js"
 import { generateDIDJS, compileMotokoCanister } from "../canister.js"
@@ -27,7 +25,7 @@ import {
 	Tags,
 	linkChildren,
 } from "./lib.js"
-import { makeCanisterStatusTask, makeDeployTask } from "./lib.js"
+import { makeCanisterStatusTask, makeDeployTask, makeRemoveTask, makeStopTask } from "./lib.js"
 import type { ActorSubclass } from "../types/actor.js"
 
 type MotokoCanisterConfig = {
@@ -388,6 +386,8 @@ export const motokoCanister = <
 		build: buildTask,
 	})
 	const createTask = makeCreateTask(canisterConfigOrFn, [Tags.MOTOKO])
+	const stopTask = makeStopTask()
+	const removeTask = makeRemoveTask({ stop: stopTask })
 	const installArgsTask = makeInstallArgsTask<
 		I,
 		Record<string, unknown>,
@@ -406,8 +406,8 @@ export const motokoCanister = <
 			build: buildTask,
 			bindings: bindingsTask,
 			install_args: installArgsTask,
-			stop: makeStopTask(),
-			remove: makeRemoveTask(),
+			stop: stopTask,
+			remove: removeTask,
 			install: makeInstallTask<I, Record<string, unknown>, _SERVICE>({
 				install_args: installArgsTask,
 				build: buildTask,

@@ -36,7 +36,7 @@ type DefiniteCanisterSettings = {
 	compute_allocation: bigint
 }
 // TODO: clean this up
-type CanisterStatusResult = {
+export type CanisterStatusResult = {
 	status: "stopped" | "stopping" | "running"
 	memory_size: bigint
 	cycles: bigint

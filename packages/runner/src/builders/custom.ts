@@ -27,6 +27,8 @@ import {
 	AllowedDep,
 	makeCanisterStatusTask,
 	makeDeployTask,
+	makeRemoveTask,
+	makeStopTask,
 	NormalizeDeps,
 	normalizeDepsMap,
 	ValidProvidedDeps,
@@ -40,74 +42,6 @@ type CustomCanisterConfig = {
 	wasm: string
 	candid: string
 	canisterId?: string
-}
-
-export const makeStopTask = (): Task<void> => {
-	return {
-		_tag: "task",
-		id: Symbol("customCanister/stop"),
-		dependsOn: {},
-		dependencies: {},
-		// TODO: do we allow a fn as args here?
-		effect: Effect.gen(function* () {
-			const { taskPath } = yield* TaskInfo
-			const canisterName = taskPath.split(":").slice(0, -1).join(":")
-			// TODO: handle error
-			const canisterId = yield* loadCanisterId(taskPath)
-			const {
-				roles: {
-					deployer: { identity },
-				},
-				replica,
-			} = yield* TaskCtx
-			yield* replica.stopCanister({
-				canisterId,
-				identity,
-			})
-			yield* Effect.logDebug(`Stopped canister ${canisterName}`)
-		}),
-		description: "Stop canister",
-		// TODO: no tag custom
-		tags: [Tags.CANISTER, Tags.STOP],
-		namedParams: {},
-		positionalParams: [],
-		params: {},
-	} satisfies Task<void>
-}
-
-export const makeRemoveTask = (): Task<void> => {
-	return {
-		_tag: "task",
-		id: Symbol("customCanister/remove"),
-		dependsOn: {},
-		dependencies: {},
-		// TODO: do we allow a fn as args here?
-		effect: Effect.gen(function* () {
-			const { taskPath } = yield* TaskInfo
-			const canisterName = taskPath.split(":").slice(0, -1).join(":")
-			// TODO: handle error
-			const canisterId = yield* loadCanisterId(taskPath)
-			const {
-				roles: {
-					deployer: { identity },
-				},
-				replica,
-			} = yield* TaskCtx
-			yield* replica.removeCanister({
-				canisterId,
-				identity,
-			})
-			const canisterIdsService = yield* CanisterIdsService
-			yield* canisterIdsService.removeCanisterId(canisterName)
-			yield* Effect.logDebug(`Removed canister ${canisterName}`)
-		}),
-		description: "Remove canister",
-		// TODO: no tag custom
-		tags: [Tags.CANISTER, Tags.REMOVE],
-		namedParams: {},
-		positionalParams: [],
-		params: {},
-	} satisfies Task<void>
 }
 
 export const makeCustomBindingsTask = (
@@ -778,6 +712,8 @@ export const customCanister = <_SERVICE = unknown, I = unknown>(
 	const createTask = makeCreateTask(canisterConfigOrFn, [Tags.CUSTOM])
 	const bindingsTask = makeCustomBindingsTask(canisterConfigOrFn)
 	const buildTask = makeCustomBuildTask(canisterConfigOrFn)
+	const stopTask = makeStopTask()
+	const removeTask = makeRemoveTask({ stop: stopTask })
 	const installArgsTask = makeInstallArgsTask<
 		I,
 		Record<string, unknown>,
@@ -803,8 +739,8 @@ export const customCanister = <_SERVICE = unknown, I = unknown>(
 				bindings: bindingsTask,
 				create: createTask,
 			}),
-			stop: makeStopTask(),
-			remove: makeRemoveTask(),
+			stop: stopTask,
+			remove: removeTask,
 			deploy: makeDeployTask([Tags.CUSTOM]),
 			status: makeCanisterStatusTask([Tags.CUSTOM]),
 		},

@@ -348,8 +348,6 @@ const numberTask = task()
 	})
 	.make()
 
-type S = ExtractTaskEffectSuccess<{ numberTask: typeof numberTask }>
-
 const stringTask = task()
 	.params({
 		amount: {

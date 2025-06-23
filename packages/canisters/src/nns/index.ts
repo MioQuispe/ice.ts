@@ -23,7 +23,7 @@ import type {
 import type {
 	_SERVICE as NNSLedgerService,
 	LedgerCanisterPayload as LedgerInitArgs,
-} from "./nns-ledger/nns-ledger.types.ts"
+} from "./nns-ledger/ledger-canister.types.ts"
 import type { _SERVICE as NNSGenesisTokenService } from "./nns-genesis-token/nns-genesis-token.types.ts"
 import type {
 	_SERVICE as NNSCyclesMintingService,
@@ -303,20 +303,22 @@ export const NNSRegistry = (
 		| ((args: { ctx: TaskCtxShape }) => NNSRegistryInitArgs)
 		| ((args: { ctx: TaskCtxShape }) => Promise<NNSRegistryInitArgs>),
 ) => {
-	return customCanister<NNSRegistryService, [RegistryCanisterInitPayload]>(async ({ ctx }) => {
-		const initArgs =
-			typeof initArgsOrFn === "function"
-				? await initArgsOrFn({ ctx })
-				: initArgsOrFn
-		return {
-			canisterId: NNSRegistryIds.local,
-			// For some reason the init args are not working with a gzipped wasm
-			wasm: path.resolve(__dirname, "./nns/nns-registry/nns-registry.wasm"),
+	return customCanister<NNSRegistryService, [RegistryCanisterInitPayload]>(
+		async ({ ctx }) => {
+			const initArgs =
+				typeof initArgsOrFn === "function"
+					? await initArgsOrFn({ ctx })
+					: initArgsOrFn
+			return {
+				canisterId: NNSRegistryIds.local,
+				// For some reason the init args are not working with a gzipped wasm
+				wasm: path.resolve(__dirname, "./nns/nns-registry/nns-registry.wasm"),
 
-			// TODO: add custom init candid
-			candid: path.resolve(__dirname, "./nns/nns-registry/nns-registry.did"),
-		}
-	}).installArgs(
+				// TODO: add custom init candid
+				candid: path.resolve(__dirname, "./nns/nns-registry/nns-registry.did"),
+			}
+		},
+	).installArgs(
 		async ({ ctx }) => {
 			const initArgs =
 				typeof initArgsOrFn === "function"
@@ -586,8 +588,8 @@ export const NNSLedger = (
 				: initArgsOrFn
 		return {
 			canisterId: NNSLedgerIds.local,
-			wasm: path.resolve(__dirname, "./nns/nns-ledger/nns-ledger.wasm.gz"),
-			candid: path.resolve(__dirname, "./nns/nns-ledger/nns-ledger.did"),
+			wasm: path.resolve(__dirname, "./nns/nns-ledger/ledger-canister.opt.wasm"),
+			candid: path.resolve(__dirname, "./nns/nns-ledger/ledger-canister.did"),
 		}
 	}).installArgs(async ({ ctx }) => {
 		const initArgs =
@@ -595,7 +597,25 @@ export const NNSLedger = (
 				? await initArgsOrFn({ ctx })
 				: initArgsOrFn
 		// TODO:
-		return [initArgs]
+		return [
+			{
+				Init: {
+					send_whitelist: [],
+					token_symbol: ["ICP"],
+					transfer_fee: [],
+					minting_account: ctx.roles.deployer.accountId,
+					maximum_number_of_accounts: [],
+					accounts_overflow_trim_quantity: [],
+					transaction_window: [],
+					max_message_size_bytes: [],
+					icrc1_minting_account: [],
+					archive_options: [],
+					initial_values: [],
+					token_name: [],
+					feature_flags: [],
+				},
+			},
+		]
 	})
 }
 
@@ -802,7 +822,7 @@ export const NNS = () =>
 		NNSRoot: NNSRoot().make(),
 		NNSRegistry: NNSRegistry().make(),
 		NNSGovernance: NNSGovernance().make(),
-		// NNSLedger: NNSLedger(),
+		NNSLedger: NNSLedger().make(),
 		NNSGenesisToken: NNSGenesisToken().make(),
 		NNSCyclesMinting: NNSCyclesMinting().make(),
 		NNSLifeline: NNSLifeline().make(),
