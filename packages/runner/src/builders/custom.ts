@@ -322,6 +322,13 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 	wasmPath: string
 	candidPath: string
 }> => {
+	type BuildInput = {
+		canisterId: string
+		canisterName: string
+		taskPath: string
+		wasm: FileDigest
+		depCacheKeys: Record<string, string | undefined>
+	}
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/build"),
@@ -374,6 +381,50 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 				candidPath: outCandidPath,
 			}
 		}),
+		computeCacheKey: (task, input: BuildInput) => {
+			// TODO: pocket-ic could be restarted?
+			const installInput = {
+				canisterId: input.canisterId,
+				wasmHash: input.wasm.sha256,
+				depsHash: hashJson(input.depCacheKeys),
+			}
+			const cacheKey = hashJson(installInput)
+			return cacheKey
+		},
+		input: (task) =>
+			Effect.gen(function* () {
+				const { taskPath } = yield* TaskInfo
+				const canisterName = taskPath.split(":").slice(0, -1).join(":")
+				const { dependencies } = yield* DependencyResults
+				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
+				const canisterId = yield* loadCanisterId(taskPath)
+				const path = yield* Path.Path
+				const appDir = yield* Config.string("APP_DIR")
+				const iceDirName = yield* Config.string("ICE_DIR_NAME")
+				const wasmPath = path.join(
+					appDir,
+					iceDirName,
+					"canisters",
+					canisterName,
+					`${canisterName}.wasm`,
+				)
+				// TODO: we need a separate cache for this?
+				const prevWasmDigest = undefined
+				const { fresh, digest: wasmDigest } = yield* Effect.tryPromise({
+					//
+					try: () => isArtifactCached(wasmPath, prevWasmDigest),
+					// TODO:
+					catch: Effect.fail,
+				})
+				const input = {
+					canisterId,
+					canisterName,
+					taskPath,
+					wasm: wasmDigest,
+					depCacheKeys,
+				} satisfies BuildInput
+				return input
+			}),
 		description: "Build custom canister",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BUILD],
 		namedParams: {},
