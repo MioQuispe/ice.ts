@@ -226,37 +226,15 @@ export const makeInstallTask = <
 
 			const canisterId = yield* loadCanisterId(taskPath)
 			yield* Effect.logDebug("Loaded canister ID", { canisterId })
-
-			const path = yield* Path.Path
 			const fs = yield* FileSystem.FileSystem
-			const appDir = yield* Config.string("APP_DIR")
 
 			// TODO: use dependencies instead of this
 			// depends on build & bindings tasks?
 			// they can return the values we need perhaps? instead of reading from fs
 			// we need the wasm blob and candid DIDjs / idlFactory?
-			const iceDirName = yield* Config.string("ICE_DIR_NAME")
-
-			// const isGzipped = yield* fs.exists(
-			// 	path.join(
-			// 		appDir,
-			// 		iceDirName,
-			// 		"canisters",
-			// 		canisterName,
-			// 		`${canisterName}.wasm.gz`,
-			// 	),
-			// )
-			// const wasmPath = path.join(
-			// 	appDir,
-			// 	iceDirName,
-			// 	"canisters",
-			// 	canisterName,
-			// 	isGzipped ? `${canisterName}.wasm.gz` : `${canisterName}.wasm`,
-			// )
 			const wasmContent = yield* fs.readFile(wasmPath)
 			const wasm = new Uint8Array(wasmContent)
 			const maxSize = 3670016
-			// const identity =
 			yield* Effect.logDebug(`Installing code for ${canisterId} at ${wasmPath}`)
 			yield* Effect.logDebug("argsTaskResult", argsTaskResult)
 			yield* replica.installCode({
@@ -267,13 +245,6 @@ export const makeInstallTask = <
 			})
 			yield* Effect.logDebug(`Code installed for ${canisterId}`)
 			yield* Effect.logDebug(`Canister ${canisterName} installed successfully`)
-			// const didJSPath = path.join(
-			// 	appDir,
-			// 	iceDirName,
-			// 	"canisters",
-			// 	canisterName,
-			// 	`${canisterName}.did.js`,
-			// )
 			// TODO: can we type it somehow?
 			const canisterDID = yield* Effect.tryPromise({
 				try: () => import(didJSPath),
@@ -292,7 +263,7 @@ export const makeInstallTask = <
 		}),
 		description: "Install canister code",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.INSTALL],
-		// TODO: generate from candid? would allow passing them in via cli
+		// TODO: allow passing in candid as a string from CLI
 		namedParams: {},
 		positionalParams: [],
 		params: {},
@@ -329,9 +300,6 @@ export const makeInstallTask = <
 					canisterName,
 					`${canisterName}.wasm`,
 				)
-				// TODO: how do we get this?
-				// should we make use of the param apis instead of a callback?
-				// somehow unify the functionality of the two?
 				// TODO: input runs before the task is executed
 				// so how do we get the install args? from a previous run perhaps?
 				const taskRegistry = yield* TaskRegistry
@@ -368,7 +336,6 @@ export const makeInstallTask = <
 				return encoded
 			}),
 		decode: (value) =>
-			// TODO: make it less I/O heavy? should we get canisterId/Name from value?
 			Effect.gen(function* () {
 				const { canisterId, canisterName } = JSON.parse(value as string) as {
 					canisterId: string
@@ -380,16 +347,10 @@ export const makeInstallTask = <
 						deployer: { identity },
 					},
 				} = yield* TaskCtx
-				const path = yield* Path.Path
-				const appDir = yield* Config.string("APP_DIR")
-				const iceDirName = yield* Config.string("ICE_DIR_NAME")
-				const didJSPath = path.join(
-					appDir,
-					iceDirName,
-					"canisters",
-					canisterName,
-					`${canisterName}.did.js`,
-				)
+				const { dependencies } = yield* DependencyResults
+				const { didJSPath } = dependencies.bindings.result as {
+					didJSPath: string
+				}
 				// TODO: can we type it somehow?
 				const canisterDID = yield* Effect.tryPromise({
 					try: () => import(didJSPath),
