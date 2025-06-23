@@ -12,6 +12,7 @@ import type {
 } from "./lib.js"
 import {
 	digestFile,
+	hashConfig,
 	isArtifactCached,
 	linkChildren,
 	makeInstallArgsTask,
@@ -44,31 +45,31 @@ type CustomCanisterConfig = {
 	canisterId?: string
 }
 
-export const makeCustomBindingsTask = (
+export const makeBindingsTask = (
 	canisterConfigOrFn:
 		| ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)
 		| ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)
 		| CustomCanisterConfig,
 ): Task<{
-	didJS: string
 	didJSPath: string
 	didTSPath: string
 }> => {
+	type BindingsInput = {
+		taskPath: string
+		depCacheKeys: Record<string, string | undefined>
+	}
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/bindings"),
 		dependsOn: {},
-		dependencies: {
-			// no deps
-		},
+		dependencies: {},
 		// TODO: do we allow a fn as args here?
 		effect: Effect.gen(function* () {
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
 			const { taskPath } = yield* TaskInfo
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			const didPath = canisterConfig.candid
-			const wasmPath = canisterConfig.wasm
-			yield* Effect.logDebug("Artifact paths", { wasmPath, didPath })
+			yield* Effect.logDebug("Bindings task", canisterName, { didPath })
 
 			const { didJS, didJSPath, didTSPath } = yield* generateDIDJS(
 				canisterName,
@@ -76,11 +77,28 @@ export const makeCustomBindingsTask = (
 			)
 			yield* Effect.logDebug(`Generated DID JS for ${canisterName}`)
 			return {
-				didJS,
 				didJSPath,
 				didTSPath,
 			}
 		}),
+		computeCacheKey: (task, input: BindingsInput) => {
+			return hashJson({
+				depsHash: hashJson(input.depCacheKeys),
+				taskPath: input.taskPath,
+				configHash: hashConfig(canisterConfigOrFn),
+			})
+		},
+		input: (task) =>
+			Effect.gen(function* () {
+				const { taskPath } = yield* TaskInfo
+				const { dependencies } = yield* DependencyResults
+				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
+				const input = {
+					taskPath,
+					depCacheKeys,
+				} satisfies BindingsInput
+				return input
+			}),
 		description: "Generate bindings for custom canister",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BINDINGS],
 		namedParams: {},
@@ -161,7 +179,7 @@ export const makeInstallTask = <
 			yield* Effect.logDebug("Loaded canister ID", { canisterId })
 			const fs = yield* FileSystem.FileSystem
 
-			// TODO: 
+			// TODO:
 			// they can return the values we need perhaps? instead of reading from fs
 			// we need the wasm blob and candid DIDjs / idlFactory?
 			const wasmContent = yield* fs.readFile(wasmPath)
@@ -368,6 +386,8 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 				wasmHash: input.wasm.sha256,
 				candidHash: input.candid.sha256,
 				depsHash: hashJson(input.depCacheKeys),
+				// TODO: support objects as well
+				configHash: hashConfig(canisterConfigOrFn),
 			}
 			const cacheKey = hashJson(installInput)
 			return cacheKey
@@ -405,10 +425,11 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 					catch: Effect.fail,
 				})
 				const prevCandidDigest = undefined
-				const { fresh: candidFresh, digest: candidDigest } = yield* Effect.tryPromise({
-					try: () => isArtifactCached(candidPath, prevCandidDigest),
-					catch: Effect.fail,
-				})
+				const { fresh: candidFresh, digest: candidDigest } =
+					yield* Effect.tryPromise({
+						try: () => isArtifactCached(candidPath, prevCandidDigest),
+						catch: Effect.fail,
+					})
 				const input = {
 					canisterId,
 					canisterName,
@@ -755,7 +776,7 @@ export const customCanister = <_SERVICE = unknown, I = unknown>(
 	_SERVICE
 > => {
 	const createTask = makeCreateTask(canisterConfigOrFn, [Tags.CUSTOM])
-	const bindingsTask = makeCustomBindingsTask(canisterConfigOrFn)
+	const bindingsTask = makeBindingsTask(canisterConfigOrFn)
 	const buildTask = makeCustomBuildTask(canisterConfigOrFn)
 	const stopTask = makeStopTask()
 	const removeTask = makeRemoveTask({ stop: stopTask })

@@ -18,7 +18,7 @@ import { encodeArgs } from "../canister.js"
 import {
 	makeCreateTask,
 	makeCustomBuildTask,
-	makeCustomBindingsTask,
+	makeBindingsTask,
 	loadCanisterId,
 } from "./custom.js"
 import type { CanisterStatusResult } from "../services/replica.js"
@@ -91,9 +91,10 @@ export async function isArtifactCached(
  * Hash the *transpiled* JS produced by tsx/ESBuild,
  * normalising obvious sources of noise (WS, CRLF).
  */
-export function hashCallback(fn: Function): string {
+// TODO: support objects as well
+export function hashConfig(fn: Function | object): string {
 	// 1. grab the transpiled source
-	let txt = fn.toString()
+	let txt = typeof fn === "function" ? fn.toString() : JSON.stringify(fn)
 
 	// 2. normalise line-endings and strip leading WS
 	txt = txt
@@ -180,7 +181,7 @@ export type CanisterScope<
 	children: {
 		// create: Task<string>
 		create: ReturnType<typeof makeCreateTask>
-		bindings: ReturnType<typeof makeCustomBindingsTask>
+		bindings: ReturnType<typeof makeBindingsTask>
 		build: ReturnType<typeof makeCustomBuildTask>
 		install_args: Task<
 			{
@@ -654,7 +655,6 @@ export const makeInstallArgsTask = <
 	// TODO: add deps
 	dependencies: {
 		bindings: Task<{
-			didJS: string
 			didJSPath: string
 			didTSPath: string
 		}>
@@ -745,7 +745,7 @@ export const makeInstallArgsTask = <
 			// })
 			const { result: bindingsResult } = dependencies.bindings
 			// @ts-ignore
-			const { didJS, didJSPath, didTSPath } = bindingsResult
+			const { didJSPath, didTSPath } = bindingsResult
 			const canisterDID = yield* Effect.tryPromise({
 				try: () => import(didJSPath) as Promise<CanisterDidModule>,
 				catch: Effect.fail,
@@ -780,7 +780,7 @@ export const makeInstallArgsTask = <
 			// 	depsHash: input.depsHash,
 			// }
 			const installArgsInput = {
-				argFnHash: hashCallback(input.installArgsFn),
+				argFnHash: hashConfig(input.installArgsFn),
 				depsHash: hashJson(input.depCacheKeys),
 			}
 			const cacheKey = hashJson(installArgsInput)

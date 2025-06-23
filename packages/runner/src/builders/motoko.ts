@@ -28,6 +28,7 @@ import {
 	linkChildren,
 	hashJson,
 	isArtifactCached,
+	hashConfig,
 } from "./lib.js"
 import { makeCanisterStatusTask, makeDeployTask, makeRemoveTask, makeStopTask } from "./lib.js"
 import type { ActorSubclass } from "../types/actor.js"
@@ -43,6 +44,10 @@ export const makeMotokoBindingsTask = (deps: {
 		candidPath: string
 	}>
 }) => {
+	type BindingsInput = {
+		taskPath: string
+		depCacheKeys: Record<string, string | undefined>
+	}
 	return {
 		_tag: "task",
 		id: Symbol("motokoCanister/bindings"),
@@ -63,7 +68,7 @@ export const makeMotokoBindingsTask = (deps: {
 			yield* Effect.logDebug("Artifact paths", { wasmPath, candidPath })
 
 			// yield* fs.makeDirectory(path.dirname(didPath), { recursive: true })
-			yield* fs.makeDirectory(path.dirname(wasmPath), { recursive: true })
+			// yield* fs.makeDirectory(path.dirname(wasmPath), { recursive: true })
 
 			const { didJS, didJSPath, didTSPath } = yield* generateDIDJS(
 				canisterName,
@@ -71,11 +76,27 @@ export const makeMotokoBindingsTask = (deps: {
 			)
 			yield* Effect.logDebug(`Generated DID JS for ${canisterName}`)
 			return {
-				didJS,
 				didJSPath,
 				didTSPath,
 			}
 		}),
+		computeCacheKey: (task, input: BindingsInput) => {
+			return hashJson({
+				depsHash: hashJson(input.depCacheKeys),
+				taskPath: input.taskPath,
+			})
+		},
+		input: (task) =>
+			Effect.gen(function* () {
+				const { taskPath } = yield* TaskInfo
+				const { dependencies } = yield* DependencyResults
+				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
+				const input = {
+					taskPath,
+					depCacheKeys,
+				} satisfies BindingsInput
+				return input
+			}),
 		description: "Generate bindings for Motoko canister",
 		tags: [Tags.CANISTER, Tags.MOTOKO, Tags.BINDINGS],
 		namedParams: {},
