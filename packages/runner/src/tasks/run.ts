@@ -61,14 +61,22 @@ export const runTask = (
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) =>
 	Effect.gen(function* () {
+		yield* Effect.logDebug("Getting task path...", task.description)
 		const path = yield* getTaskPathById(task.id)
+		yield* Effect.logDebug("Got task path:", path)
 		const taskWithArgs = {
 			...task,
 			args,
 		}
+		yield* Effect.logDebug("Collecting dependencies...")
 		const collectedTasks = collectDependencies([task])
+		yield* Effect.logDebug("Collected dependencies")
 		collectedTasks.set(task.id, taskWithArgs)
+		yield* Effect.logDebug("Sorting tasks...")
 		const sortedTasks = topologicalSortTasks(collectedTasks)
+		yield* Effect.logDebug("Sorted tasks")
+		yield* Effect.logDebug("Executing tasks...")
 		const results = yield* executeTasks(sortedTasks, progressCb)
+		yield* Effect.logDebug("Tasks executed")
 		return results.get(task.id)
 	})

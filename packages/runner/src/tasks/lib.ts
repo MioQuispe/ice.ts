@@ -101,7 +101,13 @@ export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {}
 
 export class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
 	message: string
-}> {}
+}> {
+	// constructor(args: { message: string }) {
+	// 	super(args)
+	// 	// ↓ capture the stack at construction time
+	// 	Error.captureStackTrace?.(this, TaskNotFoundError)
+	// }
+}
 
 // TODO: do we need to get by id? will symbol work?
 export const getTaskPathById = (id: Symbol) =>
@@ -296,7 +302,11 @@ export const topologicalSortTasks = <A, E, R, I>(
 	}
 
 	if (sortedTasks.length !== tasks.size) {
-		throw new Error("Cycle detected in task dependencies via 'provide' field.")
+		throw new Error(
+			`Cycle detected in task dependencies via 'provide' field. ${JSON.stringify(
+				sortedTasks,
+			)}`,
+		)
 	}
 
 	return sortedTasks
@@ -355,24 +365,36 @@ export const executeTasks = (
 			: defaultConfig.roles
 
 		// Create a deferred for every task to hold its eventual result.
-		const deferredMap = new Map<symbol, Deferred.Deferred<{
-			cacheKey: string | undefined
-			result: unknown
-		}, unknown>>()
+		const deferredMap = new Map<
+			symbol,
+			Deferred.Deferred<
+				{
+					cacheKey: string | undefined
+					result: unknown
+				},
+				unknown
+			>
+		>()
 		for (const task of tasks) {
-			const deferred = yield* Deferred.make<{
-				cacheKey: string | undefined
-				result: unknown
-			}, unknown>()
+			const deferred = yield* Deferred.make<
+				{
+					cacheKey: string | undefined
+					result: unknown
+				},
+				unknown
+			>()
 			deferredMap.set(task.id, deferred)
 		}
 		const results = new Map<symbol, unknown>()
 		const taskEffects = tasks.map((task) =>
 			Effect.gen(function* () {
-				const dependencyResults: Record<string, {
-					cacheKey: string | undefined
-					result: unknown
-				}> = {}
+				const dependencyResults: Record<
+					string,
+					{
+						cacheKey: string | undefined
+						result: unknown
+					}
+				> = {}
 				for (const dependencyName in task.dependencies) {
 					const providedTask = task.dependencies[dependencyName]
 					const depDeferred = deferredMap.get(providedTask.id)
@@ -475,8 +497,12 @@ export const executeTasks = (
 					cacheKey = task.computeCacheKey(task, input)
 					if (yield* taskRegistry.has(cacheKey)) {
 						yield* Effect.logDebug(`Cache hit for cacheKey: ${cacheKey}`)
-						const encodingFormat = "encodingFormat" in task ? task.encodingFormat : "string"
-						const maybeResult = yield* taskRegistry.get(cacheKey, encodingFormat)
+						const encodingFormat =
+							"encodingFormat" in task ? task.encodingFormat : "string"
+						const maybeResult = yield* taskRegistry.get(
+							cacheKey,
+							encodingFormat,
+						)
 						if (Option.isSome(maybeResult)) {
 							const encodedResult = maybeResult.value
 							if ("decode" in task) {
@@ -502,7 +528,13 @@ export const executeTasks = (
 							"encode" in task
 								? yield* task.encode(result).pipe(Effect.provide(taskLayer))
 								: JSON.stringify(result)
-						yield* Effect.logDebug("encoded result", "with type:", typeof encodedResult, "with value:", encodedResult)
+						yield* Effect.logDebug(
+							"encoded result",
+							"with type:",
+							typeof encodedResult,
+							"with value:",
+							encodedResult,
+						)
 						yield* taskRegistry.set(cacheKey, encodedResult)
 					}
 				} else {

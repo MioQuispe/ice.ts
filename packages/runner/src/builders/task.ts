@@ -381,6 +381,36 @@ const objTask = task()
 	})
 	.make()
 
+const bindingsTask = task()
+	.run(async (ctx) => {
+		const result = await ctx.ctx.runTask(stringTask, {
+			amount: "100",
+		})
+		return {
+			didJS: "didJS",
+			didJSPath: "didJSPath",
+			didTSPath: "didTSPath",
+		}
+	})
+	.make()
+
+const buildTask = task()
+	.run(async (ctx) => {
+		return {
+			wasmPath: "wasmPath",
+			candidPath: "candidPath",
+		}
+	}).make()
+
+const installArgsTask = task()
+	.run(async (ctx) => {
+		return {
+			encodedArgs: new Uint8Array(),
+			args: {},
+		}
+	})
+	.make()
+
 const canScope = {
 	_tag: "scope",
 	id: Symbol("scope"),
@@ -389,9 +419,10 @@ const canScope = {
 	defaultTask: "deploy",
 	children: {
 		install: objTask,
+		install_args: installArgsTask,
 		create: stringTask,
-		bindings: objTask,
-		build: objTask,
+		bindings: bindingsTask,
+		build: buildTask,
 		stop: objTask,
 		remove: objTask,
 		deploy: objTask,

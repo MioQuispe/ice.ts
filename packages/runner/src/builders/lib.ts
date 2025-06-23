@@ -15,6 +15,11 @@ import { Path } from "@effect/platform"
 import { TaskRegistry } from "../services/taskRegistry.js"
 import { IDL, JsonValue } from "@dfinity/candid"
 import { encodeArgs } from "../canister.js"
+import {
+	makeCreateTask,
+	makeCustomBuildTask,
+	makeCustomBindingsTask,
+} from "./custom.js"
 
 export function hashUint8(data: Uint8Array): string {
 	// noble/sha256 is universal (no Buffer, no crypto module)
@@ -122,25 +127,12 @@ export type MergeTaskDependencies<
 	>
 >
 
-// export type MergeScopeDependsOn<S extends CanisterScope, D extends Record<string, Task>> = Omit<S, 'children'> & {
-//     children: Omit<S['children'], 'install'> & {
-//         install: Omit<S['children']['install'], 'dependsOn'> & {
-//             dependsOn: D
-//         }
-//     }
-// }
-
-// export type MergeScopeDependsOn<S extends CanisterScope, D extends Record<string, Task>> = Omit<S, 'children'> & {
-//     children: Omit<S['children'], 'install'> & {
-// 		install: MergeTaskDependsOn<S['children']['install'], D>
-//     }
-// }
 export type MergeScopeDependsOn<
 	S extends CanisterScope,
 	D extends Record<string, Task>,
 > = Omit<S, "children"> & {
-	children: Omit<S["children"], "install"> & {
-		install: MergeTaskDependsOn<S["children"]["install"], D>
+	children: Omit<S["children"], "install_args"> & {
+		install_args: MergeTaskDependsOn<S["children"]["install_args"], D>
 	}
 }
 
@@ -155,8 +147,8 @@ export type MergeScopeDependencies<
 	S extends CanisterScope,
 	D extends Record<string, Task>,
 > = Omit<S, "children"> & {
-	children: Omit<S["children"], "install"> & {
-		install: MergeTaskDependencies<S["children"]["install"], D>
+	children: Omit<S["children"], "install_args"> & {
+		install_args: MergeTaskDependencies<S["children"]["install_args"], D>
 	}
 }
 
@@ -172,6 +164,7 @@ export type ExtractTaskEffectSuccess<T extends Record<string, Task>> = {
 // TODO: use Scope type
 export type CanisterScope<
 	_SERVICE = unknown,
+	I = unknown,
 	D extends Record<string, Task> = Record<string, Task>,
 	P extends Record<string, Task> = Record<string, Task>,
 > = {
@@ -183,20 +176,29 @@ export type CanisterScope<
 	// only limited to tasks
 	// children: Record<string, Task>
 	children: {
-		create: Task<string>
-		bindings: Task<void>
-		build: Task<void>
-		install: Task<
+		// create: Task<string>
+		create: ReturnType<typeof makeCreateTask>
+		bindings: ReturnType<typeof makeCustomBindingsTask>
+		build: ReturnType<typeof makeCustomBuildTask>
+		install_args: Task<
 			{
-				canisterId: string
-				canisterName: string
-				actor: ActorSubclass<_SERVICE>
+				args: I
+				encodedArgs: Uint8Array<ArrayBufferLike>
 			},
 			D,
 			P
 		>
+		// install_args: ReturnType<typeof makeInstallArgsTask>
+		install: Task<{
+			canisterId: string
+			canisterName: string
+			actor: ActorSubclass<_SERVICE>
+		}>
+		// D,
+		// P
 		stop: Task<void>
 		remove: Task<void>
+		// TODO: same as install?
 		deploy: Task<void>
 		status: Task<{
 			canisterName: string
@@ -262,8 +264,8 @@ export type AllowedDep = Task | CanisterScope
 export type NormalizeDep<T> = T extends Task
 	? T
 	: T extends CanisterScope
-		? T["children"]["install"] extends Task
-			? T["children"]["install"]
+		? T["children"]["install_args"] extends Task
+			? T["children"]["install_args"]
 			: never
 		: never
 
@@ -280,7 +282,7 @@ export type NormalizeDeps<Deps extends Record<string, AllowedDep>> = {
 	[K in keyof Deps]: Deps[K] extends Task
 		? Deps[K]
 		: Deps[K] extends CanisterScope
-			? Deps[K]["children"]["install"]
+			? Deps[K]["children"]["install_args"]
 			: never
 }
 
@@ -331,7 +333,7 @@ export type DependencyMismatchError<S extends CanisterScope> = {
 
 export type UniformScopeCheck<S extends CanisterScope> = S extends {
 	children: {
-		install: infer C
+		install_args: infer C
 	}
 }
 	? C extends DepBuilder<C>
@@ -456,7 +458,7 @@ export const makeCanisterStatusTask = (
 	}>
 }
 
-export const makeDeployTask = (tags: string[]): Task<string> => {
+export const makeDeployTask = (tags: string[]): Task<void> => {
 	return {
 		_tag: "task",
 		// TODO: change
@@ -469,47 +471,79 @@ export const makeDeployTask = (tags: string[]): Task<string> => {
 			const { taskPath } = yield* TaskInfo
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			const parentScope = (yield* getNodeByPath(canisterName)) as CanisterScope
-			const [canisterId] = yield* Effect.all(
-				[
-					Effect.gen(function* () {
-						const canisterId = (yield* runTask(
-							parentScope.children.create,
-						)) as unknown as string
-						return canisterId
-					}),
-					Effect.gen(function* () {
-						if (parentScope.tags.includes(Tags.MOTOKO)) {
-							// Moc generates candid and wasm files in the same phase
-							yield* runTask(parentScope.children.build)
-							yield* runTask(parentScope.children.bindings)
-						} else {
-							yield* Effect.all(
-								[
-									runTask(parentScope.children.build),
-									runTask(parentScope.children.bindings),
-								],
-								{
-									concurrency: "unbounded",
-								},
-							)
-						}
-					}),
-				],
-				{
-					concurrency: "unbounded",
-				},
-			)
-			yield* runTask(parentScope.children.install)
+			// const [canisterId] = yield* Effect.all(
+			// 	[
+			// 		Effect.gen(function* () {
+			// 			const canisterId = (yield* runTask(
+			// 				parentScope.children.create,
+			// 			)) as unknown as string
+			// 			return canisterId
+			// 		}),
+			// 		Effect.gen(function* () {
+			// 			if (parentScope.tags.includes(Tags.MOTOKO)) {
+			// 				// Moc generates candid and wasm files in the same phase
+			// 				yield* Effect.logDebug("Now running build task")
+			// 				yield* runTask(parentScope.children.build)
+			// 				yield* Effect.logDebug("Now running bindings task")
+			// 				yield* runTask(parentScope.children.bindings)
+			// 				yield* Effect.logDebug(
+			// 					"Finished running build and bindings tasks",
+			// 				)
+			// 			} else {
+			// 				yield* Effect.all(
+			// 					[
+			// 						runTask(parentScope.children.build),
+			// 						runTask(parentScope.children.bindings),
+			// 					],
+			// 					{
+			// 						concurrency: "unbounded",
+			// 					},
+			// 				)
+			// 			}
+			// 		}),
+			// 	],
+			// 	{
+			// 		concurrency: "unbounded",
+			// 	},
+			// )
+			yield* Effect.logDebug("Now running install task")
+			const result = yield* runTask(parentScope.children.install)
 			yield* Effect.logDebug("Canister deployed successfully")
-			return canisterId
+			// return canisterId
 		}),
 		description: "Deploy canister code",
 		tags: [Tags.CANISTER, Tags.DEPLOY, ...tags],
 		namedParams: {},
 		positionalParams: [],
 		params: {},
-	} satisfies Task<string>
+	} satisfies Task<void>
 }
+
+export const linkChildren = <A extends Record<string, Task>>(
+	children: A,
+): A => {
+	// 1️⃣  fresh copies with new ids
+	const fresh = Record.map(children, (task) => ({
+		...task,
+		id: Symbol("task"),
+	})) as A
+
+	// 2️⃣  start with fresh, then relink all edges to the final map
+	const linked = { ...fresh } as A
+
+	for (const k in linked) {
+		const t = linked[k]
+		// @ts-ignore
+		linked[k] = {
+			...t,
+			dependsOn: Record.map(t.dependsOn, (v, key) => key in linked ? linked[key as keyof A] : v),
+			dependencies: Record.map(t.dependencies, (v, key) => key in linked ? linked[key as keyof A] : v),
+		} as Task
+	}
+
+	return linked
+}
+
 /**
  * Represents the expected structure of a dynamically imported DID module.
  */
@@ -528,11 +562,21 @@ export const makeInstallArgsTask = <
 		mode: string
 		deps: P
 	}) => Promise<A> | A,
+	// TODO: add deps
+	dependencies: {
+		bindings: Task<{
+			didJS: string
+			didJSPath: string
+			didTSPath: string
+		}>
+	},
 	{
 		customEncode,
 		// customInitIDL,
 	}: {
-		customEncode: undefined | ((args: A) => Effect.Effect<Uint8Array<ArrayBufferLike>>)
+		customEncode:
+			| undefined
+			| ((args: A) => Effect.Effect<Uint8Array<ArrayBufferLike>>)
 		// customInitIDL: IDL.Type[] | undefined
 	} = {
 		customEncode: undefined,
@@ -551,7 +595,7 @@ export const makeInstallArgsTask = <
 		id: Symbol("canister/installArgs"),
 		// TODO: do we need this?
 		dependsOn: {},
-		dependencies: {},
+		dependencies,
 		effect: Effect.gen(function* () {
 			yield* Effect.logDebug("Starting install args generation")
 			const taskCtx = yield* TaskCtx
@@ -598,14 +642,21 @@ export const makeInstallArgsTask = <
 			})
 			yield* Effect.logDebug("Install args generated", { args: installArgs })
 
-			const didJSPath = path.join(
-				appDir,
-				iceDirName,
-				"canisters",
-				canisterName,
-				`${canisterName}.did.js`,
-			)
-			// TODO: can we type it somehow?
+			// const didJSPath = path.join(
+			// 	appDir,
+			// 	iceDirName,
+			// 	"canisters",
+			// 	canisterName,
+			// 	`${canisterName}.did.js`,
+			// )
+			// // TODO: can we type it somehow?
+			// const canisterDID = yield* Effect.tryPromise({
+			// 	try: () => import(didJSPath) as Promise<CanisterDidModule>,
+			// 	catch: Effect.fail,
+			// })
+			const { result: bindingsResult } = dependencies.bindings
+			// @ts-ignore
+			const { didJS, didJSPath, didTSPath } = bindingsResult
 			const canisterDID = yield* Effect.tryPromise({
 				try: () => import(didJSPath) as Promise<CanisterDidModule>,
 				catch: Effect.fail,

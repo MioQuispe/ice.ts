@@ -48,13 +48,17 @@ const makeDeployTask = (scope: CanisterScope): Task => {
         [
           Effect.gen(function* () {
             const taskPath = `${canisterName}:create`
+            yield* Effect.logDebug("Now running create task")
             const canisterId = (yield* runTask(scope.children.create)) as unknown as string
+            yield* Effect.logDebug("Finished running create task")
             return canisterId
           }),
           Effect.gen(function* () {
             if (scope.tags.includes(Tags.MOTOKO)) {
               // Moc generates candid and wasm files in the same phase
+              yield* Effect.logDebug("Now running build task")
               yield* runTask(scope.children.build)
+              yield* Effect.logDebug("Now running bindings task")
               yield* runTask(scope.children.bindings)
             } else {
               // custom canisters already have candid available so we can parallelize
@@ -76,6 +80,7 @@ const makeDeployTask = (scope: CanisterScope): Task => {
           concurrency: "unbounded",
         },
       )
+      yield* Effect.logDebug("Now running install task")
       yield* runTask(scope.children.install)
       yield* Effect.logDebug("Canister deployed successfully")
       return canisterId

@@ -56,6 +56,7 @@ export const createCanister = (canisterId?: string) =>
 	})
 
 
+// TODO: types for DIDJS
 export const generateDIDJS = (canisterName: string, didPath: string) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem
@@ -83,7 +84,7 @@ export const generateDIDJS = (canisterName: string, didPath: string) =>
 		yield* fs.writeFile(didJSPath, Buffer.from(didJSString ?? ""))
 		yield* fs.writeFile(didTSPath, Buffer.from(didTSString ?? ""))
 
-		const canisterDID = yield* Effect.tryPromise({
+		const didJS = yield* Effect.tryPromise({
 			try: () => import(didJSPath),
 			catch: (error) =>
 				new DeploymentError({
@@ -91,12 +92,16 @@ export const generateDIDJS = (canisterName: string, didPath: string) =>
 				}),
 		})
 
-		if (!canisterDID) {
+		if (!didJS) {
 			return yield* Effect.fail(
 				new DeploymentError({ message: "Failed to convert DID to JS" }),
 			)
 		}
-		return canisterDID
+		return {
+			didJS,
+			didJSPath,
+			didTSPath,
+		}
 	})
 
 /**

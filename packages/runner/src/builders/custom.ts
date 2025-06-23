@@ -13,6 +13,7 @@ import type {
 import {
 	digestFile,
 	isArtifactCached,
+	linkChildren,
 	makeInstallArgsTask,
 	Tags,
 } from "./lib.js"
@@ -49,9 +50,6 @@ export const makeStopTask = (): Task<void> => {
 		dependencies: {},
 		// TODO: do we allow a fn as args here?
 		effect: Effect.gen(function* () {
-			const path = yield* Path.Path
-			const fs = yield* FileSystem.FileSystem
-			const appDir = yield* Config.string("APP_DIR")
 			const { taskPath } = yield* TaskInfo
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			// TODO: handle error
@@ -68,7 +66,7 @@ export const makeStopTask = (): Task<void> => {
 			})
 			yield* Effect.logDebug(`Stopped canister ${canisterName}`)
 		}),
-		description: "some description",
+		description: "Stop canister",
 		// TODO: no tag custom
 		tags: [Tags.CANISTER, Tags.STOP],
 		namedParams: {},
@@ -85,9 +83,6 @@ export const makeRemoveTask = (): Task<void> => {
 		dependencies: {},
 		// TODO: do we allow a fn as args here?
 		effect: Effect.gen(function* () {
-			const path = yield* Path.Path
-			const fs = yield* FileSystem.FileSystem
-			const appDir = yield* Config.string("APP_DIR")
 			const { taskPath } = yield* TaskInfo
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			// TODO: handle error
@@ -106,7 +101,7 @@ export const makeRemoveTask = (): Task<void> => {
 			yield* canisterIdsService.removeCanisterId(canisterName)
 			yield* Effect.logDebug(`Removed canister ${canisterName}`)
 		}),
-		description: "some description",
+		description: "Remove canister",
 		// TODO: no tag custom
 		tags: [Tags.CANISTER, Tags.REMOVE],
 		namedParams: {},
@@ -120,28 +115,39 @@ export const makeCustomBindingsTask = (
 		| ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)
 		| ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)
 		| CustomCanisterConfig,
-): Task<void> => {
+): Task<{
+	didJS: string
+	didJSPath: string
+	didTSPath: string
+}> => {
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/bindings"),
 		dependsOn: {},
-		dependencies: {},
+		dependencies: {
+			// no deps
+		},
 		// TODO: do we allow a fn as args here?
 		effect: Effect.gen(function* () {
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
-			const path = yield* Path.Path
-			const fs = yield* FileSystem.FileSystem
-			const appDir = yield* Config.string("APP_DIR")
 			const { taskPath } = yield* TaskInfo
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			const didPath = canisterConfig.candid
 			const wasmPath = canisterConfig.wasm
 			yield* Effect.logDebug("Artifact paths", { wasmPath, didPath })
 
-			yield* generateDIDJS(canisterName, didPath)
+			const { didJS, didJSPath, didTSPath } = yield* generateDIDJS(
+				canisterName,
+				didPath,
+			)
 			yield* Effect.logDebug(`Generated DID JS for ${canisterName}`)
+			return {
+				didJS,
+				didJSPath,
+				didTSPath,
+			}
 		}),
-		description: "some description",
+		description: "Generate bindings for custom canister",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BINDINGS],
 		namedParams: {},
 		positionalParams: [],
@@ -153,7 +159,26 @@ export const makeInstallTask = <
 	I,
 	P extends Record<string, unknown>,
 	_SERVICE,
->(): Task<{
+>({
+	install_args,
+	build,
+	bindings,
+	create,
+}: {
+	install_args: Task<{
+		args: I
+		encodedArgs: Uint8Array<ArrayBufferLike>
+	}>
+	build: Task<{
+		wasmPath: string
+		candidPath: string
+	}>
+	bindings: Task<{
+		didJSPath: string
+		didTSPath: string
+	}>
+	create: Task<string>
+}): Task<{
 	canisterId: string
 	canisterName: string
 	actor: ActorSubclass<_SERVICE>
@@ -171,7 +196,12 @@ export const makeInstallTask = <
 		_tag: "task",
 		id: Symbol("customCanister/install"),
 		dependsOn: {},
-		dependencies: {},
+		dependencies: {
+			install_args,
+			build,
+			bindings,
+			create,
+		},
 		effect: Effect.gen(function* () {
 			yield* Effect.logDebug("Starting custom canister installation")
 			const taskCtx = yield* TaskCtx
@@ -183,6 +213,14 @@ export const makeInstallTask = <
 				args: I
 				encodedArgs: Uint8Array<ArrayBufferLike>
 			}
+			const { didJSPath, didTSPath } = dependencies.bindings.result as {
+				didJSPath: string
+				didTSPath: string
+			}
+			const { wasmPath } = dependencies.build.result as {
+				wasmPath: string
+				candidPath: string
+			}
 			const { taskPath } = yield* TaskInfo
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 
@@ -193,26 +231,28 @@ export const makeInstallTask = <
 			const fs = yield* FileSystem.FileSystem
 			const appDir = yield* Config.string("APP_DIR")
 
-			yield* canisterBuildGuard
-			yield* Effect.logDebug("Build guard check passed")
+			// TODO: use dependencies instead of this
+			// depends on build & bindings tasks?
+			// they can return the values we need perhaps? instead of reading from fs
+			// we need the wasm blob and candid DIDjs / idlFactory?
 			const iceDirName = yield* Config.string("ICE_DIR_NAME")
 
-			const isGzipped = yield* fs.exists(
-				path.join(
-					appDir,
-					iceDirName,
-					"canisters",
-					canisterName,
-					`${canisterName}.wasm.gz`,
-				),
-			)
-			const wasmPath = path.join(
-				appDir,
-				iceDirName,
-				"canisters",
-				canisterName,
-				isGzipped ? `${canisterName}.wasm.gz` : `${canisterName}.wasm`,
-			)
+			// const isGzipped = yield* fs.exists(
+			// 	path.join(
+			// 		appDir,
+			// 		iceDirName,
+			// 		"canisters",
+			// 		canisterName,
+			// 		`${canisterName}.wasm.gz`,
+			// 	),
+			// )
+			// const wasmPath = path.join(
+			// 	appDir,
+			// 	iceDirName,
+			// 	"canisters",
+			// 	canisterName,
+			// 	isGzipped ? `${canisterName}.wasm.gz` : `${canisterName}.wasm`,
+			// )
 			const wasmContent = yield* fs.readFile(wasmPath)
 			const wasm = new Uint8Array(wasmContent)
 			const maxSize = 3670016
@@ -227,13 +267,13 @@ export const makeInstallTask = <
 			})
 			yield* Effect.logDebug(`Code installed for ${canisterId}`)
 			yield* Effect.logDebug(`Canister ${canisterName} installed successfully`)
-			const didJSPath = path.join(
-				appDir,
-				iceDirName,
-				"canisters",
-				canisterName,
-				`${canisterName}.did.js`,
-			)
+			// const didJSPath = path.join(
+			// 	appDir,
+			// 	iceDirName,
+			// 	"canisters",
+			// 	canisterName,
+			// 	`${canisterName}.did.js`,
+			// )
 			// TODO: can we type it somehow?
 			const canisterDID = yield* Effect.tryPromise({
 				try: () => import(didJSPath),
@@ -378,17 +418,22 @@ export const makeInstallTask = <
 	}>
 }
 
-const makeBuildTask = <P extends Record<string, unknown>>(
+export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 	canisterConfigOrFn:
 		| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<CustomCanisterConfig>)
 		| ((args: { ctx: TaskCtxShape; deps: P }) => CustomCanisterConfig)
 		| CustomCanisterConfig,
-): Task<void> => {
+): Task<{
+	wasmPath: string
+	candidPath: string
+}> => {
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/build"),
 		dependsOn: {},
-		dependencies: {},
+		dependencies: {
+			// no deps
+		},
 		effect: Effect.gen(function* () {
 			const taskCtx = yield* TaskCtx
 			const fs = yield* FileSystem.FileSystem
@@ -430,8 +475,12 @@ const makeBuildTask = <P extends Record<string, unknown>>(
 			)
 			const candid = yield* fs.readFile(canisterConfig.candid)
 			yield* fs.writeFile(outCandidPath, candid)
+			return {
+				wasmPath: outWasmPath,
+				candidPath: outCandidPath,
+			}
 		}),
-		description: "some description",
+		description: "Build custom canister",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BUILD],
 		namedParams: {},
 		positionalParams: [],
@@ -536,7 +585,7 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 			yield* fs.makeDirectory(outDir, { recursive: true })
 			return canisterId
 		}),
-		description: "some description",
+		description: "Create custom canister",
 		// TODO:
 		tags: [Tags.CANISTER, Tags.CREATE, ...tags],
 		namedParams: {},
@@ -547,7 +596,7 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 
 class CustomCanisterBuilder<
 	I,
-	S extends CanisterScope<_SERVICE, D, P>,
+	S extends CanisterScope<_SERVICE, I, D, P>,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
 	Config extends CustomCanisterConfig,
@@ -565,7 +614,7 @@ class CustomCanisterBuilder<
 			| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<Config>),
 	): CustomCanisterBuilder<
 		I,
-		CanisterScope<_SERVICE, D, P>,
+		CanisterScope<_SERVICE, I, D, P>,
 		D,
 		P,
 		Config,
@@ -577,7 +626,7 @@ class CustomCanisterBuilder<
 				...this.#scope.children,
 				create: makeCreateTask<P>(canisterConfigOrFn, [Tags.CUSTOM]),
 			},
-		} satisfies CanisterScope<_SERVICE, D, P>
+		} satisfies CanisterScope<_SERVICE, I, D, P>
 		return new CustomCanisterBuilder(updatedScope)
 	}
 
@@ -588,7 +637,7 @@ class CustomCanisterBuilder<
 			| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<Config>),
 	): CustomCanisterBuilder<
 		I,
-		CanisterScope<_SERVICE, D, P>,
+		CanisterScope<_SERVICE, I, D, P>,
 		D,
 		P,
 		Config,
@@ -598,9 +647,9 @@ class CustomCanisterBuilder<
 			...this.#scope,
 			children: {
 				...this.#scope.children,
-				build: makeBuildTask<P>(canisterConfigOrFn),
+				build: makeCustomBuildTask<P>(canisterConfigOrFn),
 			},
-		} satisfies CanisterScope<_SERVICE, D, P>
+		} satisfies CanisterScope<_SERVICE, I, D, P>
 		return new CustomCanisterBuilder(updatedScope)
 	}
 
@@ -610,12 +659,18 @@ class CustomCanisterBuilder<
 			deps: ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>
 			mode: string
 		}) => I | Promise<I>,
-		{ customEncode }: { customEncode: undefined | ((args: I) => Effect.Effect<Uint8Array<ArrayBufferLike>>) } = {
+		{
+			customEncode,
+		}: {
+			customEncode:
+				| undefined
+				| ((args: I) => Effect.Effect<Uint8Array<ArrayBufferLike>>)
+		} = {
 			customEncode: undefined,
 		},
 	): CustomCanisterBuilder<
 		I,
-		CanisterScope<_SERVICE, D, P>,
+		CanisterScope<_SERVICE, I, D, P>,
 		D,
 		P,
 		Config,
@@ -625,38 +680,30 @@ class CustomCanisterBuilder<
 		const mode = "install"
 		// TODO: passing in I makes the return type: any
 		// TODO: we need to inject dependencies again! or they can be overwritten
-		const dependencies = this.#scope.children.install.dependsOn
-		const provide = this.#scope.children.install.dependencies
+		const dependencies = this.#scope.children.install_args.dependsOn
+		const provide = this.#scope.children.install_args.dependencies
 		const installArgsTask = {
 			...makeInstallArgsTask<
 				I,
 				ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>,
 				_SERVICE
-			>(installArgsFn, { customEncode }),
+			>(
+				installArgsFn,
+				{
+					bindings: this.#scope.children.bindings,
+				},
+				{ customEncode },
+			),
 			dependsOn: dependencies,
 			dependencies: provide,
 		}
-		const installTask = makeInstallTask<
-			I,
-			ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>,
-			_SERVICE
-		>()
 		const updatedScope = {
 			...this.#scope,
 			children: {
 				...this.#scope.children,
 				install_args: installArgsTask,
-				install: {
-					...installTask,
-					dependsOn: dependencies,
-					// dependencies: provide,
-					dependencies: {
-						...provide,
-						install_args: installArgsTask,
-					},
-				},
 			},
-		} satisfies CanisterScope<_SERVICE, D, P>
+		} satisfies CanisterScope<_SERVICE, I, D, P>
 
 		return new CustomCanisterBuilder(updatedScope)
 	}
@@ -665,7 +712,7 @@ class CustomCanisterBuilder<
 		providedDeps: ValidProvidedDeps<D, UP>,
 	): CustomCanisterBuilder<
 		I,
-		CanisterScope<_SERVICE, D, NP>,
+		CanisterScope<_SERVICE, I, D, NP>,
 		D,
 		NP,
 		Config,
@@ -673,32 +720,28 @@ class CustomCanisterBuilder<
 	> {
 		const finalDeps = normalizeDepsMap(providedDeps) as NP
 		const installArgsTask = {
-			// @ts-ignore
 			...this.#scope.children.install_args,
-			dependencies: finalDeps,
-		} as Task<I, D, NP>
+			// TODO: this can cause a naming collision
+			// with existing tasks... bindings, etc.
+			dependencies: {
+				...this.#scope.children.install_args.dependencies,
+				...finalDeps,
+			},
+		} as Task<
+			{
+				args: I
+				encodedArgs: Uint8Array<ArrayBufferLike>
+			},
+			D,
+			NP
+		>
 		const updatedScope = {
 			...this.#scope,
 			children: {
 				...this.#scope.children,
 				install_args: installArgsTask,
-				install: {
-					...this.#scope.children.install,
-					dependencies: {
-						...finalDeps,
-						install_args: installArgsTask,
-					},
-				} as Task<
-					{
-						canisterId: string
-						canisterName: string
-						actor: ActorSubclass<_SERVICE>
-					},
-					D,
-					NP
-				>,
 			},
-		} satisfies CanisterScope<_SERVICE, D, NP>
+		} satisfies CanisterScope<_SERVICE, I, D, NP>
 		return new CustomCanisterBuilder(updatedScope)
 	}
 
@@ -709,7 +752,7 @@ class CustomCanisterBuilder<
 		dependencies: UD,
 	): CustomCanisterBuilder<
 		I,
-		CanisterScope<_SERVICE, ND, P>,
+		CanisterScope<_SERVICE, I, ND, P>,
 		ND,
 		P,
 		Config,
@@ -717,33 +760,26 @@ class CustomCanisterBuilder<
 	> {
 		const updatedDeps = normalizeDepsMap(dependencies) as ND
 		const installArgsTask = {
-			// @ts-ignore
 			...this.#scope.children.install_args,
-			dependsOn: updatedDeps,
-		} as Task<I, ND, P>
+			dependsOn: {
+				...this.#scope.children.install_args.dependsOn,
+				...updatedDeps,
+			},
+		} as Task<
+			{
+				args: I
+				encodedArgs: Uint8Array<ArrayBufferLike>
+			},
+			ND,
+			P
+		>
 		const updatedScope = {
 			...this.#scope,
 			children: {
 				...this.#scope.children,
 				install_args: installArgsTask,
-				// TODO: add install_args to deps
-				install: {
-					...this.#scope.children.install,
-					dependsOn: {
-						...updatedDeps,
-						install_args: installArgsTask,
-					},
-				} as Task<
-					{
-						canisterId: string
-						canisterName: string
-						actor: ActorSubclass<_SERVICE>
-					},
-					ND,
-					P
-				>,
 			},
-		} satisfies CanisterScope<_SERVICE, ND, P>
+		} satisfies CanisterScope<_SERVICE, I, ND, P>
 		return new CustomCanisterBuilder(updatedScope)
 	}
 
@@ -754,34 +790,12 @@ class CustomCanisterBuilder<
 	): S {
 		// Otherwise we get a type error
 		const self = this as CustomCanisterBuilder<I, S, D, P, Config, _SERVICE>
-		const freshIdChildren = Record.map(self.#scope.children, (value) => ({
-			...value,
-			id: Symbol("task"),
-		}))
-		// TODO: this erases all links between the current tasks
-		// need to recreate them
-		// or we only do it here
-		const linkedChildren = {
-			...freshIdChildren,
-			install: {
-				...freshIdChildren.install,
-				dependsOn: {
-					...freshIdChildren.install.dependsOn,
-					// @ts-ignore
-					install_args: freshIdChildren.install_args,
-				},
-				dependencies: {
-					...freshIdChildren.install.dependencies,
-					// @ts-ignore
-					install_args: freshIdChildren.install_args,
-				},
-			},
-		}
+		const linkedChildren = linkChildren(self.#scope.children)
 		const finalScope = {
 			...self.#scope,
 			id: Symbol("scope"),
 			children: linkedChildren,
-		} satisfies CanisterScope<_SERVICE, D, P>
+		} satisfies CanisterScope<_SERVICE, I, D, P>
 		return finalScope
 	}
 }
@@ -795,41 +809,50 @@ export const customCanister = <_SERVICE = unknown, I = unknown>(
 		| CustomCanisterConfig,
 ): CustomCanisterBuilder<
 	I,
-	CanisterScope<_SERVICE>,
+	CanisterScope<_SERVICE, I, {}, {}>,
 	{},
 	{},
 	CustomCanisterConfig,
 	_SERVICE
 > => {
+	const createTask = makeCreateTask(canisterConfigOrFn, [Tags.CUSTOM])
+	const bindingsTask = makeCustomBindingsTask(canisterConfigOrFn)
+	const buildTask = makeCustomBuildTask(canisterConfigOrFn)
 	const installArgsTask = makeInstallArgsTask<
 		I,
 		Record<string, unknown>,
 		_SERVICE
-	>(() => [] as unknown as I)
+	>(() => [] as unknown as I, {
+		bindings: bindingsTask,
+	})
 	const initialScope = {
 		_tag: "scope",
 		id: Symbol("scope"),
 		tags: [Tags.CANISTER, Tags.CUSTOM],
-		description: "some description",
+		description: "Custom canister scope",
 		defaultTask: "deploy",
 		// TODO: default implementations
 		children: {
-			create: makeCreateTask(canisterConfigOrFn, [Tags.CUSTOM]),
-			bindings: makeCustomBindingsTask(canisterConfigOrFn),
-			build: makeBuildTask(canisterConfigOrFn),
-			// @ts-ignore
+			create: createTask,
+			bindings: bindingsTask,
+			build: buildTask,
 			install_args: installArgsTask,
-			install: makeInstallTask<I, Record<string, unknown>, _SERVICE>(),
+			install: makeInstallTask<I, Record<string, unknown>, _SERVICE>({
+				install_args: installArgsTask,
+				build: buildTask,
+				bindings: bindingsTask,
+				create: createTask,
+			}),
 			stop: makeStopTask(),
 			remove: makeRemoveTask(),
 			deploy: makeDeployTask([Tags.CUSTOM]),
 			status: makeCanisterStatusTask([Tags.CUSTOM]),
 		},
-	} satisfies CanisterScope<_SERVICE>
+	} satisfies CanisterScope<_SERVICE, I, {}, {}>
 
 	return new CustomCanisterBuilder<
 		I,
-		CanisterScope<_SERVICE>,
+		CanisterScope<_SERVICE, I, {}, {}>,
 		{},
 		{},
 		CustomCanisterConfig,
@@ -849,54 +872,6 @@ export const loadCanisterId = (taskPath: string) =>
 		}
 		return yield* Effect.fail(new Error("Canister ID not found"))
 	})
-
-export const canisterBuildGuard = Effect.gen(function* () {
-	const path = yield* Path.Path
-	const fs = yield* FileSystem.FileSystem
-	const appDir = yield* Config.string("APP_DIR")
-	const iceDirName = yield* Config.string("ICE_DIR_NAME")
-	// TODO: dont wanna pass around id everywhere
-	const { taskPath } = yield* TaskInfo
-	const canisterName = taskPath.split(":").slice(0, -1).join(":")
-	const didPath = path.join(
-		appDir,
-		iceDirName,
-		"canisters",
-		canisterName,
-		`${canisterName}.did`,
-	)
-	const isGzipped = yield* fs.exists(
-		path.join(
-			appDir,
-			iceDirName,
-			"canisters",
-			canisterName,
-			`${canisterName}.wasm.gz`,
-		),
-	)
-	const wasmPath = path.join(
-		appDir,
-		iceDirName,
-		"canisters",
-		canisterName,
-		isGzipped ? `${canisterName}.wasm.gz` : `${canisterName}.wasm`,
-	)
-	const didExists = yield* fs.exists(didPath)
-	if (!didExists) {
-		yield* Effect.fail(
-			new Error(
-				`Candid file not found: ${didPath}, ${canisterName}, taskPath: ${taskPath}`,
-			),
-		)
-	}
-	const wasmExists = yield* fs
-		.exists(wasmPath)
-		.pipe(Effect.mapError((e) => new Error("Wasm file not found")))
-	if (!wasmExists) {
-		yield* Effect.fail(new Error("Wasm file not found"))
-	}
-	return true
-})
 
 // TODO: Do more here?
 const scope = <T extends TaskTree>(description: string, children: T) => {
