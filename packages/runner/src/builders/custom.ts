@@ -123,7 +123,6 @@ export const makeInstallTask = <
 		canisterName: string
 		taskPath: string
 		mode: string
-		wasm: FileDigest
 		depCacheKeys: Record<string, string | undefined>
 	}
 	return {
@@ -208,7 +207,6 @@ export const makeInstallTask = <
 				canisterId: input.canisterId,
 				network: input.network,
 				mode: input.mode,
-				wasmHash: input.wasm.sha256,
 				depsHash: hashJson(input.depCacheKeys),
 			}
 			const cacheKey = hashJson(installInput)
@@ -222,36 +220,18 @@ export const makeInstallTask = <
 				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
 				const canisterId = yield* loadCanisterId(taskPath)
 				const { currentNetwork } = yield* TaskCtx
-				const path = yield* Path.Path
-				const appDir = yield* Config.string("APP_DIR")
-				const iceDirName = yield* Config.string("ICE_DIR_NAME")
 				// TODO: get from flags or args?
 				const mode = "install"
-				const wasmPath = path.join(
-					appDir,
-					iceDirName,
-					"canisters",
-					canisterName,
-					`${canisterName}.wasm`,
-				)
 				// TODO: input runs before the task is executed
 				// so how do we get the install args? from a previous run perhaps?
 				const taskRegistry = yield* TaskRegistry
 				// TODO: we need a separate cache for this?
-				const prevWasmDigest = undefined
-				const { fresh, digest: wasmDigest } = yield* Effect.tryPromise({
-					//
-					try: () => isArtifactCached(wasmPath, prevWasmDigest),
-					// TODO:
-					catch: Effect.fail,
-				})
 				const input = {
 					canisterId,
 					canisterName,
 					network: currentNetwork,
 					taskPath,
 					mode,
-					wasm: wasmDigest,
 					depCacheKeys,
 				} satisfies InstallInput
 				return input
@@ -327,6 +307,7 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 		canisterName: string
 		taskPath: string
 		wasm: FileDigest
+		candid: FileDigest
 		depCacheKeys: Record<string, string | undefined>
 	}
 	return {
@@ -386,6 +367,7 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 			const installInput = {
 				canisterId: input.canisterId,
 				wasmHash: input.wasm.sha256,
+				candidHash: input.candid.sha256,
 				depsHash: hashJson(input.depCacheKeys),
 			}
 			const cacheKey = hashJson(installInput)
@@ -408,6 +390,13 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 					canisterName,
 					`${canisterName}.wasm`,
 				)
+				const candidPath = path.join(
+					appDir,
+					iceDirName,
+					"canisters",
+					canisterName,
+					`${canisterName}.did`,
+				)
 				// TODO: we need a separate cache for this?
 				const prevWasmDigest = undefined
 				const { fresh, digest: wasmDigest } = yield* Effect.tryPromise({
@@ -416,11 +405,17 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 					// TODO:
 					catch: Effect.fail,
 				})
+				const prevCandidDigest = undefined
+				const { fresh: candidFresh, digest: candidDigest } = yield* Effect.tryPromise({
+					try: () => isArtifactCached(candidPath, prevCandidDigest),
+					catch: Effect.fail,
+				})
 				const input = {
 					canisterId,
 					canisterName,
 					taskPath,
 					wasm: wasmDigest,
+					candid: candidDigest,
 					depCacheKeys,
 				} satisfies BuildInput
 				return input
