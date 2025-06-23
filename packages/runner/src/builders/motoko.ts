@@ -50,8 +50,6 @@ export const makeMotokoBindingsTask = (deps: {
 		effect: Effect.gen(function* () {
 			const path = yield* Path.Path
 			const fs = yield* FileSystem.FileSystem
-			const appDir = yield* Config.string("APP_DIR")
-			const iceDirName = yield* Config.string("ICE_DIR_NAME")
 			const { taskPath } = yield* TaskInfo
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			const { dependencies } = yield* DependencyResults
@@ -270,31 +268,11 @@ class MotokoCanisterBuilder<
 			dependsOn: dependencies,
 			dependencies: provide,
 		}
-		// const installTask = makeInstallTask<
-		// 	I,
-		// 	ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>,
-		// 	_SERVICE
-		// >({
-		// 	install_args: installArgsTask,
-		// 	build: this.#scope.children.build,
-		// 	bindings: this.#scope.children.bindings,
-		// 	create: this.#scope.children.create,
-		// })
 		const updatedScope = {
 			...this.#scope,
 			children: {
 				...this.#scope.children,
 				install_args: installArgsTask,
-				// install: installTask,
-				// install: {
-				// 	...installTask,
-				// 	dependsOn: dependencies,
-				// 	// dependencies: provide,
-				// 	dependencies: {
-				// 		...provide,
-				// 		install_args: installArgsTask,
-				// 	},
-				// },
 			},
 		} satisfies CanisterScope<_SERVICE, I, D, P>
 		// TODO: use linkChildren here
@@ -314,7 +292,6 @@ class MotokoCanisterBuilder<
 	> {
 		const finalDeps = normalizeDepsMap(providedDeps) as NP
 		const installArgsTask = {
-			// @ts-ignore
 			...this.#scope.children.install_args,
 			dependencies: finalDeps,
 		} as Task<
@@ -329,47 +306,11 @@ class MotokoCanisterBuilder<
 		const updatedChildren = {
 			...this.#scope.children,
 			install_args: installArgsTask,
-			// install: {
-			// 	...this.#scope.children.install,
-			// 	dependencies: {
-			// 		...finalDeps,
-			// 		install_args: installArgsTask,
-			// 	},
-			// } as Task<
-			// 	{
-			// 		canisterId: string
-			// 		canisterName: string
-			// 		actor: ActorSubclass<_SERVICE>
-			// 	},
-			// 	D,
-			// 	NP
-			// >,
 		}
-		// const linkedChildren = linkChildren(updatedChildren)
 
 		const updatedScope = {
 			...this.#scope,
 			children: updatedChildren,
-			// children: linkedChildren,
-			// children: {
-			// 	...this.#scope.children,
-			// 	install_args: installArgsTask,
-			// 	install: {
-			// 		...this.#scope.children.install,
-			// 		dependencies: {
-			// 			...finalDeps,
-			// 			install_args: installArgsTask,
-			// 		},
-			// 	} as Task<
-			// 		{
-			// 			canisterId: string
-			// 			canisterName: string
-			// 			actor: ActorSubclass<_SERVICE>
-			// 		},
-			// 		D,
-			// 		NP
-			// 	>,
-			// },
 		} satisfies CanisterScope<_SERVICE, I, D, NP>
 		return new MotokoCanisterBuilder(updatedScope)
 	}
@@ -402,48 +343,8 @@ class MotokoCanisterBuilder<
 		const updatedChildren = {
 			...this.#scope.children,
 			install_args: installArgsTask,
-			// TODO: do we need this?
-			// install: {
-			// 	...this.#scope.children.install,
-			// 	dependsOn: {
-			// 		...updatedDependsOn,
-			// 		install_args: installArgsTask,
-			// 	},
-			// } as Task<
-			// 	{
-			// 		canisterId: string
-			// 		canisterName: string
-			// 		actor: ActorSubclass<_SERVICE>
-			// 	},
-			// 	ND,
-			// 	P
-			// >,
 		}
-		// const linkedChildren = linkChildren(updatedChildren)
 
-		// TODO: automate the process of linking
-		// const updatedScope = {
-		// 	...this.#scope,
-		// 	children: {
-		// 		...this.#scope.children,
-		// 		install_args: installArgsTask,
-		// 		install: {
-		// 			...this.#scope.children.install,
-		// 			dependsOn: {
-		// 				...updatedDeps,
-		// 				install_args: installArgsTask,
-		// 			},
-		// 		} as Task<
-		// 			{
-		// 				canisterId: string
-		// 				canisterName: string
-		// 				actor: ActorSubclass<_SERVICE>
-		// 			},
-		// 			ND,
-		// 			P
-		// 		>,
-		// 	},
-		// } satisfies CanisterScope<_SERVICE, ND, P>
 		const updatedScope = {
 			...this.#scope,
 			children: updatedChildren,
@@ -460,7 +361,7 @@ class MotokoCanisterBuilder<
 		const self = this as MotokoCanisterBuilder<I, S, D, P, Config, _SERVICE>
 
 		// TODO: can we do this in a type-safe way?
-		// so we get warnings about unlinked dependencies?
+		// so we get warnings about stale dependencies?
 		const linkedChildren = linkChildren(self.#scope.children)
 
 		const finalScope = {
@@ -504,7 +405,6 @@ export const motokoCanister = <
 			create: createTask,
 			build: buildTask,
 			bindings: bindingsTask,
-			// @ts-ignore
 			install_args: installArgsTask,
 			stop: makeStopTask(),
 			remove: makeRemoveTask(),

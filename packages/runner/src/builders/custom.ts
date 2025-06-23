@@ -396,7 +396,6 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 			// no deps
 		},
 		effect: Effect.gen(function* () {
-			const taskCtx = yield* TaskCtx
 			const fs = yield* FileSystem.FileSystem
 			const path = yield* Path.Path
 			const appDir = yield* Config.string("APP_DIR")
