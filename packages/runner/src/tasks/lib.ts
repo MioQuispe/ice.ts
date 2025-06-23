@@ -513,7 +513,7 @@ export const executeTasks = (
 								result = decodedResult
 								yield* Effect.logDebug("decoded result:", decodedResult)
 							} else {
-								result = encodedResult
+								result = JSON.parse(encodedResult as string)
 							}
 						} else {
 							// TODO: reading cache failed, why would this happen?

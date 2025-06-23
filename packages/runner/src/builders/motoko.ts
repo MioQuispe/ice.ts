@@ -6,6 +6,7 @@ import {
 	makeInstallTask,
 	makeCreateTask,
 	resolveConfig,
+	loadCanisterId,
 } from "./custom.js"
 import { DependencyResults, TaskInfo } from "../tasks/run.js"
 import { generateDIDJS, compileMotokoCanister } from "../canister.js"
@@ -14,6 +15,7 @@ import type {
 	CanisterScope,
 	DependencyMismatchError,
 	ExtractTaskEffectSuccess,
+	FileDigest,
 	IsValid,
 	NormalizeDeps,
 	TaskCtxShape,
@@ -24,6 +26,8 @@ import {
 	normalizeDepsMap,
 	Tags,
 	linkChildren,
+	hashJson,
+	isArtifactCached,
 } from "./lib.js"
 import { makeCanisterStatusTask, makeDeployTask, makeRemoveTask, makeStopTask } from "./lib.js"
 import type { ActorSubclass } from "../types/actor.js"
@@ -86,6 +90,14 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 		| ((args: { ctx: TaskCtxShape; deps: P }) => MotokoCanisterConfig)
 		| MotokoCanisterConfig,
 ) => {
+	type BuildInput = {
+		canisterId: string
+		canisterName: string
+		taskPath: string
+		wasm: FileDigest
+		candid: FileDigest
+		depCacheKeys: Record<string, string | undefined>
+	}
 	return {
 		_tag: "task",
 		id: Symbol("motokoCanister/build"),
@@ -133,35 +145,79 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 				canisterName,
 				wasmOutputFilePath,
 			)
-			yield* Effect.logDebug("Motoko canister built successfully")
+			yield* Effect.logDebug("Motoko canister built successfully", {
+				wasmPath: wasmOutputFilePath,
+				candidPath: outCandidPath,
+			})
 			return {
 				wasmPath: wasmOutputFilePath,
 				candidPath: outCandidPath,
 			}
 		}),
+		computeCacheKey: (task, input: BuildInput) => {
+			// TODO: pocket-ic could be restarted?
+			const installInput = {
+				canisterId: input.canisterId,
+				wasmHash: input.wasm.sha256,
+				candidHash: input.candid.sha256,
+				depsHash: hashJson(input.depCacheKeys),
+			}
+			const cacheKey = hashJson(installInput)
+			return cacheKey
+		},
+		input: (task) =>
+			Effect.gen(function* () {
+				const { taskPath } = yield* TaskInfo
+				const canisterName = taskPath.split(":").slice(0, -1).join(":")
+				const { dependencies } = yield* DependencyResults
+				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
+				const canisterId = yield* loadCanisterId(taskPath)
+				const path = yield* Path.Path
+				const appDir = yield* Config.string("APP_DIR")
+				const iceDirName = yield* Config.string("ICE_DIR_NAME")
+				const wasmPath = path.join(
+					appDir,
+					iceDirName,
+					"canisters",
+					canisterName,
+					`${canisterName}.wasm`,
+				)
+				const candidPath = path.join(
+					appDir,
+					iceDirName,
+					"canisters",
+					canisterName,
+					`${canisterName}.did`,
+				)
+				// TODO: we need a separate cache for this?
+				const prevWasmDigest = undefined
+				const { fresh, digest: wasmDigest } = yield* Effect.tryPromise({
+					//
+					try: () => isArtifactCached(wasmPath, prevWasmDigest),
+					// TODO:
+					catch: Effect.fail,
+				})
+				const prevCandidDigest = undefined
+				const { fresh: candidFresh, digest: candidDigest } = yield* Effect.tryPromise({
+					try: () => isArtifactCached(candidPath, prevCandidDigest),
+					catch: Effect.fail,
+				})
+				const input = {
+					canisterId,
+					canisterName,
+					taskPath,
+					wasm: wasmDigest,
+					candid: candidDigest,
+					depCacheKeys,
+				} satisfies BuildInput
+				return input
+			}),
 		description: "Build Motoko canister",
 		tags: [Tags.CANISTER, Tags.MOTOKO, Tags.BUILD],
 		namedParams: {},
 		positionalParams: [],
 		params: {},
 	} satisfies Task
-}
-
-const makeMotokoRemoveTask = (): Task => {
-	return {
-		_tag: "task",
-		id: Symbol("motokoCanister/remove"),
-		dependsOn: {},
-		dependencies: {},
-		effect: Effect.gen(function* () {
-			// yield* removeCanister(canisterId)
-		}),
-		description: "Remove Motoko canister",
-		tags: [Tags.CANISTER, Tags.MOTOKO, Tags.REMOVE],
-		namedParams: {},
-		positionalParams: [],
-		params: {},
-	}
 }
 
 class MotokoCanisterBuilder<

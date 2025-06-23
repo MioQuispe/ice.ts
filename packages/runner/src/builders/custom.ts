@@ -161,8 +161,7 @@ export const makeInstallTask = <
 			yield* Effect.logDebug("Loaded canister ID", { canisterId })
 			const fs = yield* FileSystem.FileSystem
 
-			// TODO: use dependencies instead of this
-			// depends on build & bindings tasks?
+			// TODO: 
 			// they can return the values we need perhaps? instead of reading from fs
 			// we need the wasm blob and candid DIDjs / idlFactory?
 			const wasmContent = yield* fs.readFile(wasmPath)
