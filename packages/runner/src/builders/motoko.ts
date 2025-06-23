@@ -4,7 +4,6 @@ import type { Task } from "../types/types.js"
 import { Path, FileSystem } from "@effect/platform"
 import {
 	makeInstallTask,
-	makeCreateTask,
 	resolveConfig,
 	loadCanisterId,
 } from "./custom.js"
@@ -29,6 +28,7 @@ import {
 	hashJson,
 	isArtifactCached,
 	hashConfig,
+	makeCreateTask,
 } from "./lib.js"
 import { makeCanisterStatusTask, makeDeployTask, makeRemoveTask, makeStopTask } from "./lib.js"
 import type { ActorSubclass } from "../types/actor.js"
@@ -66,9 +66,6 @@ export const makeMotokoBindingsTask = (deps: {
 			const { wasmPath, candidPath } = buildResult
 
 			yield* Effect.logDebug("Artifact paths", { wasmPath, candidPath })
-
-			// yield* fs.makeDirectory(path.dirname(didPath), { recursive: true })
-			// yield* fs.makeDirectory(path.dirname(wasmPath), { recursive: true })
 
 			const { didJS, didJSPath, didTSPath } = yield* generateDIDJS(
 				canisterName,

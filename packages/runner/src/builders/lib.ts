@@ -1,5 +1,6 @@
 import type { Task } from "../types/types.js"
 import { Config, Effect, Option, Record } from "effect"
+import { FileSystem } from "@effect/platform"
 import { getTaskByPath, getNodeByPath, TaskCtx } from "../tasks/lib.js"
 import { DependencyResults, runTask, TaskInfo } from "../tasks/run.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
@@ -16,12 +17,90 @@ import { TaskRegistry } from "../services/taskRegistry.js"
 import { IDL, JsonValue } from "@dfinity/candid"
 import { encodeArgs } from "../canister.js"
 import {
-	makeCreateTask,
 	makeCustomBuildTask,
 	makeBindingsTask,
 	loadCanisterId,
+	resolveConfig,
 } from "./custom.js"
 import type { CanisterStatusResult } from "../services/replica.js"
+
+type CreateConfig = {
+	canisterId?: string
+}
+export const makeCreateTask = <P extends Record<string, unknown>>(
+	canisterConfigOrFn:
+		| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<CreateConfig>)
+		| ((args: { ctx: TaskCtxShape; deps: P }) => CreateConfig)
+		| CreateConfig,
+	tags: string[] = [],
+): Task<string> => {
+	const id = Symbol("canister/create")
+	return {
+		_tag: "task",
+		id,
+		dependsOn: {},
+		dependencies: {},
+		effect: Effect.gen(function* () {
+			const path = yield* Path.Path
+			const fs = yield* FileSystem.FileSystem
+			const canisterIdsService = yield* CanisterIdsService
+			const taskCtx = yield* TaskCtx
+			const currentNetwork = taskCtx.currentNetwork
+			const { taskPath } = yield* TaskInfo
+			const canisterName = taskPath.split(":").slice(0, -1).join(":")
+			const storedCanisterIds = yield* canisterIdsService.getCanisterIds()
+			const storedCanisterId: string | undefined =
+				storedCanisterIds[canisterName]?.[currentNetwork]
+			yield* Effect.logDebug("makeCreateTask", { storedCanisterId })
+			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
+			const configCanisterId = canisterConfig?.canisterId
+			// TODO: handle all edge cases related to this. what happens
+			// if the user provides a new canisterId in the config? and so on
+			// and how about mainnet?
+			const resolvedCanisterId = storedCanisterId ?? configCanisterId
+			const {
+				roles: {
+					deployer: { identity },
+				},
+				replica,
+			} = yield* TaskCtx
+			const isAlreadyInstalled =
+				resolvedCanisterId &&
+				(yield* replica.getCanisterInfo({
+					canisterId: resolvedCanisterId,
+					identity,
+				})).status !== "not_installed"
+
+			yield* Effect.logDebug("makeCreateTask", {
+				isAlreadyInstalled,
+				resolvedCanisterId,
+			})
+
+			const canisterId = isAlreadyInstalled
+				? resolvedCanisterId
+				: yield* replica.createCanister({
+						canisterId: resolvedCanisterId,
+						identity,
+					})
+			const appDir = yield* Config.string("APP_DIR")
+			const iceDirName = yield* Config.string("ICE_DIR_NAME")
+			yield* canisterIdsService.setCanisterId({
+				canisterName,
+				network: taskCtx.currentNetwork,
+				canisterId,
+			})
+			const outDir = path.join(appDir, iceDirName, "canisters", canisterName)
+			yield* fs.makeDirectory(outDir, { recursive: true })
+			return canisterId
+		}),
+		description: "Create custom canister",
+		// TODO:
+		tags: [Tags.CANISTER, Tags.CREATE, ...tags],
+		namedParams: {},
+		positionalParams: [],
+		params: {},
+	} satisfies Task<string>
+}
 
 export function hashUint8(data: Uint8Array): string {
 	// noble/sha256 is universal (no Buffer, no crypto module)
