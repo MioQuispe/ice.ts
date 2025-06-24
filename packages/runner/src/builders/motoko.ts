@@ -2,8 +2,8 @@ import { Effect, Context, Config, Option, Record } from "effect"
 import type { Task } from "../types/types.js"
 // import mo from "motoko"
 import { Path, FileSystem } from "@effect/platform"
-import { makeInstallTask, resolveConfig, loadCanisterId } from "./custom.js"
 import { DependencyResults, TaskInfo } from "../tasks/run.js"
+// TODO: move to ./lib.ts
 import { generateDIDJS, compileMotokoCanister } from "../canister.js"
 import type {
 	AllowedDep,
@@ -25,12 +25,13 @@ import {
 	isArtifactCached,
 	hashConfig,
 	makeCreateTask,
-} from "./lib.js"
-import {
+	resolveConfig,
+	loadCanisterId,
 	makeCanisterStatusTask,
 	makeDeployTask,
 	makeRemoveTask,
 	makeStopTask,
+	makeInstallTask,
 } from "./lib.js"
 import type { ActorSubclass } from "../types/actor.js"
 

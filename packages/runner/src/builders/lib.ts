@@ -16,13 +16,50 @@ import { Path } from "@effect/platform"
 import { TaskRegistry } from "../services/taskRegistry.js"
 import { IDL, JsonValue } from "@dfinity/candid"
 import { encodeArgs } from "../canister.js"
-import {
-	makeCustomBuildTask,
-	makeBindingsTask,
-	loadCanisterId,
-	resolveConfig,
-} from "./custom.js"
+import { makeCustomBuildTask, makeBindingsTask } from "./custom.js"
+import { proxyActor } from "../utils/extension.js"
 import type { CanisterStatusResult } from "../services/replica.js"
+
+export const loadCanisterId = (taskPath: string) =>
+	Effect.gen(function* () {
+		const canisterName = taskPath.split(":").slice(0, -1).join(":")
+		const canisterIdsService = yield* CanisterIdsService
+		const canisterIds = yield* canisterIdsService.getCanisterIds()
+		const { currentNetwork } = yield* TaskCtx
+		const canisterId = canisterIds[canisterName]?.[currentNetwork]
+		if (canisterId) {
+			return canisterId as string
+		}
+		return yield* Effect.fail(new Error("Canister ID not found"))
+	})
+
+export const resolveConfig = <T, P extends Record<string, unknown>>(
+	configOrFn:
+		| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<T>)
+		| ((args: { ctx: TaskCtxShape; deps: P }) => T)
+		| T,
+) =>
+	Effect.gen(function* () {
+		const taskCtx = yield* TaskCtx
+		if (typeof configOrFn === "function") {
+			const configFn = configOrFn as (args: {
+				ctx: TaskCtxShape
+			}) => Promise<T> | T
+			const configResult = configFn({ ctx: taskCtx })
+			if (configResult instanceof Promise) {
+				return yield* Effect.tryPromise({
+					try: () => configResult,
+					catch: (error) => {
+						// TODO: proper error handling
+						console.error("Error resolving config function:", error)
+						return error instanceof Error ? error : new Error(String(error))
+					},
+				})
+			}
+			return configResult
+		}
+		return configOrFn
+	})
 
 type CreateConfig = {
 	canisterId?: string
@@ -173,7 +210,8 @@ export async function isArtifactCached(
 // TODO: support objects as well
 export function hashConfig(config: Function | object): string {
 	// 1. grab the transpiled source
-	let txt = typeof config === "function" ? config.toString() : JSON.stringify(config)
+	let txt =
+		typeof config === "function" ? config.toString() : JSON.stringify(config)
 
 	// 2. normalise line-endings and strip leading WS
 	txt = txt
@@ -243,6 +281,44 @@ export type ExtractTaskEffectSuccess<T extends Record<string, Task>> = {
 	[K in keyof T]: Effect.Effect.Success<T[K]["effect"]>
 }
 
+// TODO: create types
+export type CreateTask = ReturnType<typeof makeCreateTask>
+export type BindingsTask = ReturnType<typeof makeBindingsTask>
+export type BuildTask = ReturnType<typeof makeCustomBuildTask>
+export type InstallArgsTask<
+	I,
+	D extends Record<string, Task>,
+	P extends Record<string, Task>,
+> = Task<
+	{
+		args: I
+		encodedArgs: Uint8Array<ArrayBufferLike>
+	},
+	D,
+	P
+>
+// install_args: ReturnType<typeof makeInstallArgsTask>
+export type InstallTask<_SERVICE = unknown> = Task<{
+	canisterId: string
+	canisterName: string
+	actor: ActorSubclass<_SERVICE>
+}>
+// D,
+// P
+export type StopTask = Task<void>
+export type RemoveTask = Task<void>
+// TODO: same as install?
+export type DeployTask<_SERVICE = unknown> = Task<{
+	canisterId: string
+	canisterName: string
+	actor: ActorSubclass<_SERVICE>
+}>
+export type StatusTask = Task<{
+	canisterName: string
+	canisterId: string | undefined
+	status: CanisterStatus | { not_installed: null }
+}>
+
 // TODO: use Scope type
 export type CanisterScope<
 	_SERVICE = unknown,
@@ -259,38 +335,23 @@ export type CanisterScope<
 	// children: Record<string, Task>
 	children: {
 		// create: Task<string>
-		create: ReturnType<typeof makeCreateTask>
-		bindings: ReturnType<typeof makeBindingsTask>
-		build: ReturnType<typeof makeCustomBuildTask>
-		install_args: Task<
-			{
-				args: I
-				encodedArgs: Uint8Array<ArrayBufferLike>
-			},
+		create: CreateTask
+		bindings: BindingsTask
+		build: BuildTask
+		install_args: InstallArgsTask<
+			I,
 			D,
 			P
 		>
 		// install_args: ReturnType<typeof makeInstallArgsTask>
-		install: Task<{
-			canisterId: string
-			canisterName: string
-			actor: ActorSubclass<_SERVICE>
-		}>
+		install: InstallTask<_SERVICE>
 		// D,
 		// P
-		stop: Task<void>
-		remove: Task<void>
+		stop: StopTask
+		remove: RemoveTask
 		// TODO: same as install?
-		deploy: Task<{
-			canisterId: string
-			canisterName: string
-			actor: ActorSubclass<_SERVICE>
-		}>
-		status: Task<{
-			canisterName: string
-			canisterId: string | undefined
-			status: CanisterStatus | { not_installed: null }
-		}>
+		deploy: DeployTask<_SERVICE>
+		status: StatusTask
 	}
 }
 
@@ -479,7 +540,10 @@ export const makeStopTask = (): Task<void> => {
 				identity,
 			})
 			if (status === "stopped") {
-				yield* Effect.logDebug(`Canister ${canisterName} is already stopped or not installed`, status)
+				yield* Effect.logDebug(
+					`Canister ${canisterName} is already stopped or not installed`,
+					status,
+				)
 				return
 			}
 			yield* replica.stopCanister({
@@ -574,7 +638,12 @@ export const makeCanisterStatusTask = (
 			const canisterId = canisterIds[currentNetwork]
 			if (!canisterId) {
 				// TODO: fix format
-				return { canisterName, canisterId, status: "not_installed", info: undefined }
+				return {
+					canisterName,
+					canisterId,
+					status: "not_installed",
+					info: undefined,
+				}
 			}
 			// export interface canister_status_result {
 			//   'status' : { 'stopped' : null } |
@@ -628,6 +697,209 @@ export const makeCanisterStatusTask = (
 		canisterId: string | undefined
 		status: CanisterStatus
 		info: CanisterStatusResult | undefined
+	}>
+}
+
+export const makeInstallTask = <
+	I,
+	P extends Record<string, unknown>,
+	_SERVICE,
+>({
+	install_args,
+	build,
+	bindings,
+	create,
+}: {
+	install_args: Task<{
+		args: I
+		encodedArgs: Uint8Array<ArrayBufferLike>
+	}>
+	build: Task<{
+		wasmPath: string
+		candidPath: string
+	}>
+	bindings: Task<{
+		didJSPath: string
+		didTSPath: string
+	}>
+	create: Task<string>
+}): Task<{
+	canisterId: string
+	canisterName: string
+	actor: ActorSubclass<_SERVICE>
+}> => {
+	type InstallInput = {
+		network: string
+		canisterId: string
+		canisterName: string
+		taskPath: string
+		mode: string
+		depCacheKeys: Record<string, string | undefined>
+	}
+	return {
+		_tag: "task",
+		id: Symbol("customCanister/install"),
+		dependsOn: {},
+		dependencies: {
+			install_args,
+			build,
+			bindings,
+			create,
+		},
+		effect: Effect.gen(function* () {
+			yield* Effect.logDebug("Starting custom canister installation")
+			const taskCtx = yield* TaskCtx
+			const identity = taskCtx.roles.deployer.identity
+			const { replica, args } = taskCtx
+			const { dependencies } = yield* DependencyResults
+			// TODO: fix. also type should be inferred?
+			const argsTaskResult = dependencies.install_args.result as {
+				args: I
+				encodedArgs: Uint8Array<ArrayBufferLike>
+			}
+			const { didJSPath, didTSPath } = dependencies.bindings.result as {
+				didJSPath: string
+				didTSPath: string
+			}
+			const { wasmPath } = dependencies.build.result as {
+				wasmPath: string
+				candidPath: string
+			}
+			const { taskPath } = yield* TaskInfo
+			const canisterName = taskPath.split(":").slice(0, -1).join(":")
+
+			const canisterId = yield* loadCanisterId(taskPath)
+			yield* Effect.logDebug("Loaded canister ID", { canisterId })
+			const fs = yield* FileSystem.FileSystem
+
+			// TODO:
+			// they can return the values we need perhaps? instead of reading from fs
+			// we need the wasm blob and candid DIDjs / idlFactory?
+			const wasmContent = yield* fs.readFile(wasmPath)
+			const wasm = new Uint8Array(wasmContent)
+			const maxSize = 3670016
+			yield* Effect.logDebug(`Installing code for ${canisterId} at ${wasmPath}`)
+			yield* Effect.logDebug("argsTaskResult", argsTaskResult)
+			yield* replica.installCode({
+				canisterId,
+				wasm,
+				encodedArgs: argsTaskResult.encodedArgs,
+				identity,
+			})
+			yield* Effect.logDebug(`Code installed for ${canisterId}`)
+			yield* Effect.logDebug(`Canister ${canisterName} installed successfully`)
+			// TODO: can we type it somehow?
+			const canisterDID = yield* Effect.tryPromise({
+				try: () => import(didJSPath),
+				catch: Effect.fail,
+			})
+			const actor = yield* replica.createActor<_SERVICE>({
+				canisterId,
+				canisterDID,
+				identity,
+			})
+			return {
+				canisterId,
+				canisterName,
+				actor: proxyActor(canisterName, actor),
+			}
+		}),
+		description: "Install canister code",
+		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.INSTALL],
+		// TODO: allow passing in candid as a string from CLI
+		namedParams: {},
+		positionalParams: [],
+		params: {},
+		// TODO: add network?
+		computeCacheKey: (task, input: InstallInput) => {
+			// TODO: pocket-ic could be restarted?
+			const installInput = {
+				canisterId: input.canisterId,
+				network: input.network,
+				mode: input.mode,
+				depsHash: hashJson(input.depCacheKeys),
+			}
+			const cacheKey = hashJson(installInput)
+			return cacheKey
+		},
+		input: (task) =>
+			Effect.gen(function* () {
+				const { taskPath } = yield* TaskInfo
+				const canisterName = taskPath.split(":").slice(0, -1).join(":")
+				const { dependencies } = yield* DependencyResults
+				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
+				const canisterId = yield* loadCanisterId(taskPath)
+				const { currentNetwork } = yield* TaskCtx
+				// TODO: get from flags or args?
+				const mode = "install"
+				// TODO: input runs before the task is executed
+				// so how do we get the install args? from a previous run perhaps?
+				const taskRegistry = yield* TaskRegistry
+				// TODO: we need a separate cache for this?
+				const input = {
+					canisterId,
+					canisterName,
+					network: currentNetwork,
+					taskPath,
+					mode,
+					depCacheKeys,
+				} satisfies InstallInput
+				return input
+			}),
+		// TODO: fix generic type? we shouldnt have to type this
+		encode: (result: {
+			canisterId: string
+			canisterName: string
+			actor: ActorSubclass<_SERVICE>
+		}) =>
+			Effect.gen(function* () {
+				const encoded = JSON.stringify({
+					canisterId: result.canisterId,
+					canisterName: result.canisterName,
+				})
+				return encoded
+			}),
+		decode: (value) =>
+			Effect.gen(function* () {
+				const { canisterId, canisterName } = JSON.parse(value as string) as {
+					canisterId: string
+					canisterName: string
+				}
+				const {
+					replica,
+					roles: {
+						deployer: { identity },
+					},
+				} = yield* TaskCtx
+				const { dependencies } = yield* DependencyResults
+				const { didJSPath } = dependencies.bindings.result as {
+					didJSPath: string
+				}
+				// TODO: can we type it somehow?
+				const canisterDID = yield* Effect.tryPromise({
+					try: () => import(didJSPath),
+					catch: Effect.fail,
+				})
+				const actor = yield* replica.createActor<_SERVICE>({
+					canisterId,
+					canisterDID,
+					identity,
+				})
+				const decoded = {
+					canisterId,
+					canisterName,
+					actor: proxyActor(canisterName, actor),
+				} satisfies {
+					canisterId: string
+					canisterName: string
+					actor: ActorSubclass<_SERVICE>
+				}
+				return decoded
+			}),
+	} satisfies Task<{
+		canisterId: string
+		canisterName: string
+		actor: ActorSubclass<_SERVICE>
 	}>
 }
 
@@ -710,8 +982,12 @@ export const linkChildren = <A extends Record<string, Task>>(
 		// @ts-ignore
 		linked[k] = {
 			...t,
-			dependsOn: Record.map(t.dependsOn, (v, key) => key in linked ? linked[key as keyof A] : v),
-			dependencies: Record.map(t.dependencies, (v, key) => key in linked ? linked[key as keyof A] : v),
+			dependsOn: Record.map(t.dependsOn, (v, key) =>
+				key in linked ? linked[key as keyof A] : v,
+			),
+			dependencies: Record.map(t.dependencies, (v, key) =>
+				key in linked ? linked[key as keyof A] : v,
+			),
 		} as Task
 	}
 
