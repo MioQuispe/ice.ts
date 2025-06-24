@@ -171,9 +171,9 @@ export async function isArtifactCached(
  * normalising obvious sources of noise (WS, CRLF).
  */
 // TODO: support objects as well
-export function hashConfig(fn: Function | object): string {
+export function hashConfig(config: Function | object): string {
 	// 1. grab the transpiled source
-	let txt = typeof fn === "function" ? fn.toString() : JSON.stringify(fn)
+	let txt = typeof config === "function" ? config.toString() : JSON.stringify(config)
 
 	// 2. normalise line-endings and strip leading WS
 	txt = txt
@@ -281,7 +281,11 @@ export type CanisterScope<
 		stop: Task<void>
 		remove: Task<void>
 		// TODO: same as install?
-		deploy: Task<void>
+		deploy: Task<{
+			canisterId: string
+			canisterName: string
+			actor: ActorSubclass<_SERVICE>
+		}>
 		status: Task<{
 			canisterName: string
 			canisterId: string | undefined
@@ -627,7 +631,7 @@ export const makeCanisterStatusTask = (
 	}>
 }
 
-export const makeDeployTask = (tags: string[]): Task<void> => {
+export const makeDeployTask = <A>(tags: string[]): Task<A> => {
 	return {
 		_tag: "task",
 		// TODO: change
@@ -679,13 +683,14 @@ export const makeDeployTask = (tags: string[]): Task<void> => {
 			const result = yield* runTask(parentScope.children.install)
 			yield* Effect.logDebug("Canister deployed successfully")
 			// return canisterId
+			return result as A
 		}),
 		description: "Deploy canister code",
 		tags: [Tags.CANISTER, Tags.DEPLOY, ...tags],
 		namedParams: {},
 		positionalParams: [],
 		params: {},
-	} satisfies Task<void>
+	} satisfies Task<A>
 }
 
 export const linkChildren = <A extends Record<string, Task>>(

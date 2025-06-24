@@ -387,7 +387,6 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 				wasmHash: input.wasm.sha256,
 				candidHash: input.candid.sha256,
 				depsHash: hashJson(input.depCacheKeys),
-				// TODO: support objects as well
 				configHash: hashConfig(canisterConfigOrFn),
 			}
 			const cacheKey = hashJson(installInput)
@@ -731,7 +730,11 @@ export const customCanister = <_SERVICE = unknown, I = unknown>(
 			}),
 			stop: stopTask,
 			remove: removeTask,
-			deploy: makeDeployTask([Tags.CUSTOM]),
+			deploy: makeDeployTask<{
+				canisterId: string
+				canisterName: string
+				actor: ActorSubclass<_SERVICE>
+			}>([Tags.CUSTOM]),
 			status: makeCanisterStatusTask([Tags.CUSTOM]),
 		},
 	} satisfies CanisterScope<_SERVICE, I, {}, {}>

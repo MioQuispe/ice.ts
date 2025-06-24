@@ -2,11 +2,7 @@ import { Effect, Context, Config, Option, Record } from "effect"
 import type { Task } from "../types/types.js"
 // import mo from "motoko"
 import { Path, FileSystem } from "@effect/platform"
-import {
-	makeInstallTask,
-	resolveConfig,
-	loadCanisterId,
-} from "./custom.js"
+import { makeInstallTask, resolveConfig, loadCanisterId } from "./custom.js"
 import { DependencyResults, TaskInfo } from "../tasks/run.js"
 import { generateDIDJS, compileMotokoCanister } from "../canister.js"
 import type {
@@ -30,7 +26,12 @@ import {
 	hashConfig,
 	makeCreateTask,
 } from "./lib.js"
-import { makeCanisterStatusTask, makeDeployTask, makeRemoveTask, makeStopTask } from "./lib.js"
+import {
+	makeCanisterStatusTask,
+	makeDeployTask,
+	makeRemoveTask,
+	makeStopTask,
+} from "./lib.js"
 import type { ActorSubclass } from "../types/actor.js"
 
 type MotokoCanisterConfig = {
@@ -110,10 +111,8 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 ) => {
 	type BuildInput = {
 		canisterId: string
-		canisterName: string
 		taskPath: string
-		wasm: FileDigest
-		candid: FileDigest
+		src: Array<FileDigest>
 		depCacheKeys: Record<string, string | undefined>
 	}
 	return {
@@ -175,10 +174,11 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 		computeCacheKey: (task, input: BuildInput) => {
 			// TODO: pocket-ic could be restarted?
 			const installInput = {
+				taskPath: input.taskPath,
 				canisterId: input.canisterId,
-				wasmHash: input.wasm.sha256,
-				candidHash: input.candid.sha256,
 				depsHash: hashJson(input.depCacheKeys),
+				// TODO: should we hash all fields though?
+				srcHash: hashJson(input.src.map((s) => s.sha256)),
 			}
 			const cacheKey = hashJson(installInput)
 			return cacheKey
@@ -186,46 +186,34 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 		input: (task) =>
 			Effect.gen(function* () {
 				const { taskPath } = yield* TaskInfo
-				const canisterName = taskPath.split(":").slice(0, -1).join(":")
 				const { dependencies } = yield* DependencyResults
 				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
 				const canisterId = yield* loadCanisterId(taskPath)
+				const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
 				const path = yield* Path.Path
-				const appDir = yield* Config.string("APP_DIR")
-				const iceDirName = yield* Config.string("ICE_DIR_NAME")
-				const wasmPath = path.join(
-					appDir,
-					iceDirName,
-					"canisters",
-					canisterName,
-					`${canisterName}.wasm`,
-				)
-				const candidPath = path.join(
-					appDir,
-					iceDirName,
-					"canisters",
-					canisterName,
-					`${canisterName}.did`,
-				)
-				// TODO: we need a separate cache for this?
-				const prevWasmDigest = undefined
-				const { fresh, digest: wasmDigest } = yield* Effect.tryPromise({
-					//
-					try: () => isArtifactCached(wasmPath, prevWasmDigest),
-					// TODO:
-					catch: Effect.fail,
+				const fs = yield* FileSystem.FileSystem
+				const srcDir = path.dirname(canisterConfig.src)
+				const entries = yield* fs.readDirectory(srcDir, {
+					recursive: true,
 				})
-				const prevCandidDigest = undefined
-				const { fresh: candidFresh, digest: candidDigest } = yield* Effect.tryPromise({
-					try: () => isArtifactCached(candidPath, prevCandidDigest),
-					catch: Effect.fail,
-				})
+				const srcFiles = entries.filter((entry) => entry.endsWith(".mo"))
+				const prevSrcDigests: Array<FileDigest> = []
+				const srcDigests: Array<FileDigest> = []
+				for (const [index, file] of srcFiles.entries()) {
+					const prevSrcDigest = prevSrcDigests?.[index]
+					const filePath = path.join(srcDir, file)
+					const { fresh: srcFresh, digest: srcDigest } = yield* Effect.tryPromise(
+						{
+							try: () => isArtifactCached(filePath, prevSrcDigest),
+							catch: Effect.fail,
+						},
+					)
+					srcDigests.push(srcDigest)
+				}
 				const input = {
 					canisterId,
-					canisterName,
 					taskPath,
-					wasm: wasmDigest,
-					candid: candidDigest,
+					src: srcDigests,
 					depCacheKeys,
 				} satisfies BuildInput
 				return input
@@ -488,7 +476,11 @@ export const motokoCanister = <
 				bindings: bindingsTask,
 				create: createTask,
 			}),
-			deploy: makeDeployTask([Tags.MOTOKO]),
+			deploy: makeDeployTask<{
+				canisterId: string
+				canisterName: string
+				actor: ActorSubclass<_SERVICE>
+			}>([Tags.MOTOKO]),
 			status: makeCanisterStatusTask([Tags.MOTOKO]),
 		},
 	} satisfies CanisterScope<_SERVICE, I, {}, {}>
