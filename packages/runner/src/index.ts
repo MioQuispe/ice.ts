@@ -1,5 +1,5 @@
 import fs from "node:fs"
-import { Layer, ManagedRuntime, Logger, ConfigProvider, LogLevel, Effect } from "effect"
+import { Layer, ManagedRuntime, Logger, ConfigProvider, LogLevel, Effect, Context } from "effect"
 import { NodeContext } from "@effect/platform-node"
 import { DfxDefaultReplica, DfxReplica } from "./services/dfx.js"
 import type { ICECtx } from "./types/types.js"
@@ -98,21 +98,30 @@ const logLevelMap = {
 
 type MakeRuntimeArgs = {
 	globalArgs: { network: string; logLevel: string }
-	taskArgs?: {
+	// TODO: either this or taskArgs
+	// fix type
+	cliTaskArgs?: {
 		positionalArgs: string[]
 		namedArgs: Record<string, string>
 	}
+	taskArgs?: Record<string, unknown>
 	iceConfigServiceLayer?: Layer.Layer<
 		ICEConfigService,
 		Layer.Layer.Error<typeof ICEConfigService.Live>
 	>
 }
 
+export class TaskArgsService extends Context.Tag("TaskArgsService")<TaskArgsService, {
+	readonly taskArgs: Record<string, unknown>
+}>() {}
+
 export const makeRuntime = ({
 	globalArgs: rawGlobalArgs,
-	taskArgs = { positionalArgs: [], namedArgs: {} },
+	cliTaskArgs = { positionalArgs: [], namedArgs: {} },
+	taskArgs = {},
 	iceConfigServiceLayer,
 }: MakeRuntimeArgs) => {
+	// TODO: pass this in from outside instead
 	const globalArgs = GlobalArgs(rawGlobalArgs)
 	if (globalArgs instanceof type.errors) {
 		throw new Error(globalArgs.summary)
@@ -126,14 +135,15 @@ export const makeRuntime = ({
 					Layer.provide(
 						Layer.succeed(CLIFlags, {
 							globalArgs,
-							taskArgs,
+							taskArgs: cliTaskArgs,
 						}),
 					),
 				),
 			Layer.succeed(CLIFlags, {
 				globalArgs,
-				taskArgs,
+				taskArgs: cliTaskArgs,
 			}),
+			Layer.succeed(TaskArgsService, { taskArgs }),
 			Logger.pretty,
 			Logger.minimumLogLevel(logLevelMap[globalArgs.logLevel]),
 		),

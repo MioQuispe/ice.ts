@@ -22,7 +22,7 @@ import type {
 } from "./nns-governance/governance_latest.types.ts"
 import type {
 	_SERVICE as NNSLedgerService,
-	LedgerCanisterPayload as LedgerInitArgs,
+	LedgerCanisterPayload,
 } from "./nns-ledger/ledger-canister.types.ts"
 import type { _SERVICE as NNSGenesisTokenService } from "./nns-genesis-token/nns-genesis-token.types.ts"
 import type {
@@ -319,7 +319,7 @@ export const NNSRegistry = (
 			}
 		},
 	).installArgs(
-		async ({ ctx }) => {
+		async ({ ctx, mode }) => {
 			const initArgs =
 				typeof initArgsOrFn === "function"
 					? await initArgsOrFn({ ctx })
@@ -349,6 +349,15 @@ export const NNSRegistry = (
 			// )
 			// `]
 			// return ""
+
+			// TODO:
+			// if (mode === "upgrade") {
+			// 	return [
+			// 		{
+			// 			Upgrade: [],
+			// 		},
+			// 	]
+			// }
 			const initPayload: [RegistryCanisterInitPayload] = [
 				{
 					mutations: [
@@ -368,6 +377,7 @@ export const NNSRegistry = (
 			return initPayload
 		},
 		{
+			// TODO: add mode
 			customEncode: (args) =>
 				Effect.gen(function* () {
 					const init = ({ IDL }) => {
@@ -577,26 +587,43 @@ const NNSLedgerIds = {
 
 export const NNSLedger = (
 	initArgsOrFn?:
-		| LedgerInitArgs
-		| ((args: { ctx: TaskCtxShape }) => LedgerInitArgs)
-		| ((args: { ctx: TaskCtxShape }) => Promise<LedgerInitArgs>),
+		| LedgerCanisterPayload
+		| ((args: { ctx: TaskCtxShape }) => LedgerCanisterPayload)
+		| ((args: { ctx: TaskCtxShape }) => Promise<LedgerCanisterPayload>),
 ) => {
-	return customCanister<NNSLedgerService, [LedgerInitArgs]>(async ({ ctx }) => {
-		const initArgs =
-			typeof initArgsOrFn === "function"
-				? await initArgsOrFn({ ctx })
-				: initArgsOrFn
-		return {
-			canisterId: NNSLedgerIds.local,
-			wasm: path.resolve(__dirname, "./nns/nns-ledger/ledger-canister.opt.wasm"),
-			candid: path.resolve(__dirname, "./nns/nns-ledger/ledger-canister.did"),
-		}
-	}).installArgs(async ({ ctx }) => {
+	return customCanister<NNSLedgerService, [LedgerCanisterPayload]>(
+		async ({ ctx }) => {
+			const initArgs =
+				typeof initArgsOrFn === "function"
+					? await initArgsOrFn({ ctx })
+					: initArgsOrFn
+			return {
+				canisterId: NNSLedgerIds.local,
+				wasm: path.resolve(
+					__dirname,
+					"./nns/nns-ledger/ledger-canister.opt.wasm",
+				),
+				candid: path.resolve(__dirname, "./nns/nns-ledger/ledger-canister.did"),
+			}
+		},
+	).installArgs(async ({ ctx, mode }) => {
 		const initArgs =
 			typeof initArgsOrFn === "function"
 				? await initArgsOrFn({ ctx })
 				: initArgsOrFn
 		// TODO:
+		if (mode === "upgrade") {
+			return [
+				{
+					Upgrade: [],
+					// TODO: ??
+					// 					[{
+					//   'icrc1_minting_account' : [] | [Account],
+					//   'feature_flags' : [] | [FeatureFlags],
+					// 					}]
+				},
+			]
+		}
 		return [
 			{
 				Init: {
@@ -820,7 +847,7 @@ export const NNS = () =>
 		NNSDapp: NNSDapp().make(),
 		NNSSNSWasm: NNSSNSWasm().make(),
 		NNSRoot: NNSRoot().make(),
-		NNSRegistry: NNSRegistry().make(),
+		// NNSRegistry: NNSRegistry().make(),
 		NNSGovernance: NNSGovernance().make(),
 		NNSLedger: NNSLedger().make(),
 		NNSGenesisToken: NNSGenesisToken().make(),

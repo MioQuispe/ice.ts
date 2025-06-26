@@ -19,7 +19,7 @@ import { filterNodes, type ProgressUpdate } from "../tasks/lib.js"
 import { Tags } from "../builders/lib.js"
 import type { Task } from "../types/types.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
-import { DefaultReplica } from "../services/replica.js"
+import { CanisterStatus, DefaultReplica } from "../services/replica.js"
 import { Ed25519KeyIdentity } from "@dfinity/identity"
 import mri from "mri"
 
@@ -106,7 +106,7 @@ const runCommand = defineCommand({
 		s.start(`Running task... ${color.green(color.underline(args.taskPath))}`)
 		await makeRuntime({
 			globalArgs,
-			taskArgs: {
+			cliTaskArgs: {
 				positionalArgs,
 				namedArgs,
 			},
@@ -140,6 +140,7 @@ const deployRun = async ({
 }: { network: string; logLevel: string }) => {
 	const s = p.spinner()
 	s.start("Deploying all canisters...")
+	// TODO: mode
 	const globalArgs = {
 		network,
 		logLevel,
@@ -193,7 +194,7 @@ const canistersCreateCommand = defineCommand({
 	run: async ({ args }) => {
 		const globalArgs = getGlobalArgs("create")
 		const { network, logLevel } = globalArgs
-		// TODO: makeRuntime fn?
+		// TODO: mode
 		await makeRuntime({
 			globalArgs: {
 				network,
@@ -346,6 +347,7 @@ const canistersInstallCommand = defineCommand({
 	run: async ({ args }) => {
 		const globalArgs = getGlobalArgs("install")
 		const { network, logLevel } = globalArgs
+		// TODO: mode
 		await makeRuntime({
 			globalArgs: {
 				network,
@@ -527,7 +529,7 @@ const canistersStatusCommand = defineCommand({
 							Either.match(result, {
 								onLeft: (left) => `Error for canister: ${left}`,
 								onRight: (right) =>
-									right.status.status !== "not_installed"
+									right.status.status !== CanisterStatus.NOT_FOUND
 										? `
 ${color.underline(right.canisterName)}
   ID: ${right.canisterId}
@@ -541,7 +543,7 @@ ${color.underline(right.canisterName)}
 							}),
 						)
 						.join("\n")
-					// 							result._tag === "Right" && result.right.status.status !== "not_installed"
+					// 							result._tag === "Right" && result.right.status.status !== CanisterStatus.NOT_FOUND
 					// 								? `
 					// ${color.underline(result.right.canisterName)}
 					//   ID: ${result.right.canisterId}
@@ -857,43 +859,3 @@ export const runCli = async () => {
 	const cli = createMain(main)
 	cli()
 }
-
-// class RootCmd extends Command {
-// 	static paths = [Command.Default]
-// 	// static subCommands = [RunCmd, CanisterRoot, TaskPickerCommand];
-
-// 	network = Option.String("--network", "local")
-// 	logLevel = Option.String("--log-level", "info")
-
-// 	async execute() {
-// 		await deployRun({ network: this.network, logLevel: this.logLevel })
-// 	}
-// }
-// export const runCli = async () => {
-// 	// TODO: not in npm?
-// 	// const completion = await tab(main);
-// 	p.intro(`${color.bgCyan(color.black(" ICE CLI "))}`)
-// 	p.updateSettings({
-// 		aliases: {
-// 			w: "up",
-// 			s: "down",
-// 			a: "left",
-// 			d: "right",
-// 			j: "down",
-// 			k: "up",
-// 			h: "left",
-// 			l: "right",
-// 		},
-// 	})
-// 	const [node, app, ...args] = process.argv;
-// 	const cli = new Cli({
-// 		// binaryLabel: `ICE CLI`,
-// 		binaryName: `ice`,
-// 		// binaryVersion: `0.0.1`,
-// 		enableColors: true,
-// 	})
-// 	cli.register(RootCmd)
-// 	cli.runExit(args)
-// 	// runExit(cli, RootCmd)
-// 	// , { binaryName: "ICE CLI" }
-// }

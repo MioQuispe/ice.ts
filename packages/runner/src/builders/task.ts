@@ -375,6 +375,7 @@ const objTask = task()
 			canisterId: "123",
 			canisterName: "stringTask",
 			actor: {} as ActorSubclass<{}>,
+			mode: "upgrade" as const,
 		}
 	})
 	.make()

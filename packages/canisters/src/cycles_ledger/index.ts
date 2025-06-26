@@ -30,6 +30,13 @@ export const CyclesLedger = (
       wasm: path.resolve(__dirname, "./cycles_ledger/cycles_ledger.wasm.gz"),
     }
   }).installArgs(async ({ ctx, mode }) => {
+    if (mode === "upgrade") {
+      return [
+        {
+          Upgrade: []
+        }
+      ]
+    }
     return [
       {
         Init: {

@@ -17,7 +17,7 @@ import type { PlatformError } from "@effect/platform/Error"
 import os from "node:os"
 import psList from "ps-list"
 import {
-	type CanisterStatus,
+	CanisterStatus,
 	CanisterStatusError,
 	CanisterInstallError,
 	CanisterCreateError,
@@ -137,14 +137,14 @@ const dfxReplicaImpl = Effect.gen(function* () {
 				try: async () => {
 					// TODO: throw error instead? not sure
 					if (!canisterId) {
-						return { status: "not_installed" }
+						return { status: CanisterStatus.NOT_FOUND }
 					}
 					try {
 						return await mgmt.canister_status({
 							canister_id: Principal.fromText(canisterId),
 						})
 					} catch (error) {
-						return { status: "not_installed" }
+						return { status: { [CanisterStatus.NOT_FOUND]: null } }
 					}
 				},
 				catch: (error) => {
@@ -154,16 +154,16 @@ const dfxReplicaImpl = Effect.gen(function* () {
 				},
 			})
 
-			let canisterStatus: CanisterStatus = "not_installed"
-			switch (canisterInfo.status) {
-				case "not_installed":
-					canisterStatus = "not_installed"
+			let canisterStatus: CanisterStatus = CanisterStatus.NOT_FOUND
+			switch (Object.keys(canisterInfo.status)[0]) {
+				case CanisterStatus.NOT_FOUND:
+					canisterStatus = CanisterStatus.NOT_FOUND
 					break
-				case "stopped":
-					canisterStatus = "stopped"
+				case CanisterStatus.STOPPED:
+					canisterStatus = CanisterStatus.STOPPED
 					break
-				case "running":
-					canisterStatus = "running"
+				case CanisterStatus.RUNNING:
+					canisterStatus = CanisterStatus.RUNNING
 					break
 			}
 			// if (result.module_hash.length > 0) {
@@ -186,7 +186,7 @@ const dfxReplicaImpl = Effect.gen(function* () {
 				try: async () => {
 					// TODO: throw error instead? not sure
 					if (!canisterId) {
-						return { status: "not_installed" } as const
+						return { status: CanisterStatus.NOT_FOUND } as const
 					}
 					try {
 						const result = await mgmt.canister_status({
@@ -197,7 +197,7 @@ const dfxReplicaImpl = Effect.gen(function* () {
 							status: Object.keys(result.status)[0] as CanisterStatus,
 						}
 					} catch (error) {
-						return { status: "not_installed" } as const
+						return { status: CanisterStatus.NOT_FOUND } as const
 					}
 				},
 				catch: (error) => {
@@ -342,7 +342,7 @@ const dfxReplicaImpl = Effect.gen(function* () {
 						canisterId,
 						identity,
 					})
-					if (canisterStatus !== "not_installed") {
+					if (canisterStatus !== CanisterStatus.NOT_FOUND) {
 						return canisterId
 					}
 				}

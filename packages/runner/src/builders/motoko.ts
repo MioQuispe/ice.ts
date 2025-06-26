@@ -189,7 +189,15 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 				const { taskPath } = yield* TaskInfo
 				const { dependencies } = yield* DependencyResults
 				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
-				const canisterId = yield* loadCanisterId(taskPath)
+				const maybeCanisterId = yield* loadCanisterId(taskPath)
+				if (Option.isNone(maybeCanisterId)) {
+					return yield* Effect.fail(
+						new Error(
+							`Canister at ${taskPath} is not installed, cannot build`,
+						),
+					)
+				}
+				const canisterId = maybeCanisterId.value
 				const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
 				const path = yield* Path.Path
 				const fs = yield* FileSystem.FileSystem
@@ -323,6 +331,7 @@ class MotokoCanisterBuilder<
 				installArgsFn,
 				{
 					bindings: this.#scope.children.bindings,
+					create: this.#scope.children.create,
 				},
 				{ customEncode },
 			),
@@ -457,6 +466,7 @@ export const motokoCanister = <
 		_SERVICE
 	>(() => [] as unknown as I, {
 		bindings: bindingsTask,
+		create: createTask,
 	})
 	const initialScope = {
 		_tag: "scope",
@@ -477,11 +487,7 @@ export const motokoCanister = <
 				bindings: bindingsTask,
 				create: createTask,
 			}),
-			deploy: makeDeployTask<{
-				canisterId: string
-				canisterName: string
-				actor: ActorSubclass<_SERVICE>
-			}>([Tags.MOTOKO]),
+			deploy: makeDeployTask<_SERVICE>([Tags.MOTOKO]),
 			status: makeCanisterStatusTask([Tags.MOTOKO]),
 		},
 	} satisfies CanisterScope<_SERVICE, I, {}, {}>

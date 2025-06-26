@@ -64,7 +64,7 @@ export const ICRC1Ledger = (
       wasm: path.resolve(__dirname, `./${canisterName}/${canisterName}.wasm.gz`),
       candid: path.resolve(__dirname, `./${canisterName}/${canisterName}.did`),
     }
-  }).installArgs(async ({ ctx }) => {
+  }).installArgs(async ({ ctx, mode }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     const mintingAccount: Account = {
@@ -73,6 +73,11 @@ export const ICRC1Ledger = (
     }
     const controllerId = Principal.from(initArgs.controller_id)
     // TODO: proper types
+    if (mode === "upgrade") {
+      return [{
+        Upgrade: []
+      }]
+    }
     return [{
       Init: {
         // Opt({

@@ -197,7 +197,13 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 				const canisterName = taskPath.split(":").slice(0, -1).join(":")
 				const { dependencies } = yield* DependencyResults
 				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
-				const canisterId = yield* loadCanisterId(taskPath)
+				const maybeCanisterId = yield* loadCanisterId(taskPath)
+				if (Option.isNone(maybeCanisterId)) {
+					return yield* Effect.fail(
+						new Error(`Canister at ${taskPath} is not installed, cannot get input`),
+					)
+				}
+				const canisterId = maybeCanisterId.value
 				const path = yield* Path.Path
 				const appDir = yield* Config.string("APP_DIR")
 				const iceDirName = yield* Config.string("ICE_DIR_NAME")
@@ -329,8 +335,6 @@ class CustomCanisterBuilder<
 		Config,
 		_SERVICE
 	> {
-		// TODO: is this a flag, arg, or what?
-		const mode = "install"
 		// TODO: passing in I makes the return type: any
 		// TODO: we need to inject dependencies again! or they can be overwritten
 		const dependencies = this.#scope.children.install_args.dependsOn
@@ -344,6 +348,7 @@ class CustomCanisterBuilder<
 				installArgsFn,
 				{
 					bindings: this.#scope.children.bindings,
+					create: this.#scope.children.create,
 				},
 				{ customEncode },
 			),
@@ -479,6 +484,7 @@ export const customCanister = <_SERVICE = unknown, I = unknown>(
 		_SERVICE
 	>(() => [] as unknown as I, {
 		bindings: bindingsTask,
+		create: createTask,
 	})
 	const initialScope = {
 		_tag: "scope",
@@ -500,11 +506,7 @@ export const customCanister = <_SERVICE = unknown, I = unknown>(
 			}),
 			stop: stopTask,
 			remove: removeTask,
-			deploy: makeDeployTask<{
-				canisterId: string
-				canisterName: string
-				actor: ActorSubclass<_SERVICE>
-			}>([Tags.CUSTOM]),
+			deploy: makeDeployTask<_SERVICE>([Tags.CUSTOM]),
 			status: makeCanisterStatusTask([Tags.CUSTOM]),
 		},
 	} satisfies CanisterScope<_SERVICE, I, {}, {}>

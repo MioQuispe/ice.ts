@@ -20,11 +20,25 @@ export type ActorInterface<T = object> = {
 	[K in keyof T]: ActorMethod
 }
 
-export type CanisterStatus = "not_installed" | "stopped" | "running"
+export type CanisterStatus =
+	| "not_found"
+	// | "not_installed"
+	| "stopped"
+	| "stopping"
+	| "running"
 
-type log_visibility = { 'controllers' : null } |
-  { 'public' : null } |
-  { 'allowed_viewers' : Array<Principal> };
+export const CanisterStatus = {
+	NOT_FOUND: "not_found",
+	// NOT_INSTALLED: "not_installed",
+	STOPPED: "stopped",
+	STOPPING: "stopping",
+	RUNNING: "running",
+} as const
+
+type log_visibility =
+	| { controllers: null }
+	| { public: null }
+	| { allowed_viewers: Array<Principal> }
 
 type DefiniteCanisterSettings = {
 	freezing_threshold: bigint
@@ -36,21 +50,23 @@ type DefiniteCanisterSettings = {
 	compute_allocation: bigint
 }
 // TODO: clean this up
-export type CanisterStatusResult = {
-	status: "stopped" | "stopping" | "running"
-	memory_size: bigint
-	cycles: bigint
-	settings: DefiniteCanisterSettings
-	query_stats: {
-		response_payload_bytes_total: bigint
-		num_instructions_total: bigint
-		num_calls_total: bigint
-		request_payload_bytes_total: bigint
-	}
-	idle_cycles_burned_per_day: bigint
-	module_hash: [] | [Array<number>]
-	reserved_cycles: bigint
-} | { status: "not_installed" }
+export type CanisterStatusResult =
+	| {
+			status: Exclude<CanisterStatus, typeof CanisterStatus.NOT_FOUND>
+			memory_size: bigint
+			cycles: bigint
+			settings: DefiniteCanisterSettings
+			query_stats: {
+				response_payload_bytes_total: bigint
+				num_instructions_total: bigint
+				num_calls_total: bigint
+				request_payload_bytes_total: bigint
+			}
+			idle_cycles_burned_per_day: bigint
+			module_hash: [] | [Array<number>]
+			reserved_cycles: bigint
+	  }
+	| { status: typeof CanisterStatus.NOT_FOUND }
 
 export type CanisterInfo = CanisterStatusResult
 
@@ -104,6 +120,7 @@ export type ReplicaService = {
 		wasm: Uint8Array
 		encodedArgs: Uint8Array
 		identity: SignIdentity
+		mode: "install" | "reinstall" | "upgrade"
 		// TODO: progress callback?
 	}) => Effect.Effect<
 		void,

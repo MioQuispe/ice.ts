@@ -20,7 +20,10 @@ import os from "node:os"
 import psList from "ps-list"
 import { PocketIc, PocketIcServer, createActorClass } from "@dfinity/pic"
 import { PocketIcClient as CustomPocketIcClient } from "./pocket-ic-client.js"
-import { ChunkHash, encodeInstallCodeChunkedRequest } from "../../canisters/pic_management/index.js"
+import {
+	ChunkHash,
+	encodeInstallCodeChunkedRequest,
+} from "../../canisters/pic_management/index.js"
 import {
 	AgentError,
 	CanisterCreateError,
@@ -34,7 +37,10 @@ import {
 import { sha256 } from "js-sha256"
 import type { log_visibility } from "@dfinity/agent/lib/cjs/canisters/management_service.js"
 import * as url from "node:url"
-import { EffectivePrincipal, SubnetStateType } from "./pocket-ic-client-types.js"
+import {
+	EffectivePrincipal,
+	SubnetStateType,
+} from "./pocket-ic-client-types.js"
 import type * as ActorTypes from "../../types/actor.js"
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
@@ -211,14 +217,14 @@ export const picReplicaImpl = Effect.gen(function* () {
 				try: async () => {
 					// TODO: throw error instead? not sure
 					if (!canisterId) {
-						return { status: "not_installed" }
+						return { status: CanisterStatus.NOT_FOUND }
 					}
 					try {
 						return await mgmt.canister_status({
 							canister_id: Principal.fromText(canisterId),
 						})
 					} catch (error) {
-						return { status: "not_installed" }
+						return { status: CanisterStatus.NOT_FOUND }
 					}
 				},
 				catch: (error) => {
@@ -228,16 +234,16 @@ export const picReplicaImpl = Effect.gen(function* () {
 				},
 			})
 
-			let canisterStatus: CanisterStatus = "not_installed"
-			switch (canisterInfo.status) {
-				case "not_installed":
-					canisterStatus = "not_installed"
+			let canisterStatus: CanisterStatus = CanisterStatus.NOT_FOUND
+			switch (Object.keys(canisterInfo.status)[0]) {
+				case CanisterStatus.NOT_FOUND:
+					canisterStatus = CanisterStatus.NOT_FOUND
 					break
-				case "stopped":
-					canisterStatus = "stopped"
+				case CanisterStatus.STOPPED:
+					canisterStatus = CanisterStatus.STOPPED
 					break
-				case "running":
-					canisterStatus = "running"
+				case CanisterStatus.RUNNING:
+					canisterStatus = CanisterStatus.RUNNING
 					break
 			}
 			// if (result.module_hash.length > 0) {
@@ -254,36 +260,43 @@ export const picReplicaImpl = Effect.gen(function* () {
 	}: { canisterId: string; identity: SignIdentity }) =>
 		Effect.gen(function* () {
 			const mgmt = yield* getMgmt(identity)
-			const canisterInfo = yield* Effect.tryPromise({
-				try: async () => {
+
+			if (!canisterId) {
+				return {
+					status: CanisterStatus.NOT_FOUND,
+				} as const
+			}
+			const canisterStatusResult = yield* Effect.tryPromise({
+				try: () => {
 					// TODO: throw error instead? not sure
-					if (!canisterId) {
-						return { status: "not_installed" } as const
-					}
-					try {
-						const result = await mgmt.canister_status({
-							canister_id: Principal.fromText(canisterId),
-						})
-						return {
-							...result,
-							status: Object.keys(result.status)[0] as CanisterStatus,
-						}
-					} catch (error) {
-						return { status: "not_installed" } as const
-					}
+					const result = mgmt.canister_status({
+						canister_id: Principal.fromText(canisterId),
+					})
+					return result
 				},
 				catch: (error) => {
 					return new CanisterStatusError({
 						message: `Failed to get canister info: ${error instanceof Error ? error.message : String(error)}`,
 					})
 				},
-			})
-
-			// if (result.module_hash.length > 0) {
-			//   console.log(
-			//     `Canister ${canisterName} is already installed. Skipping deployment.`,
-			//   )
-			// }
+			}).pipe(
+				Effect.catchAll((error) => {
+					return new CanisterStatusError({
+						message: `Failed to get canister info: ${error instanceof Error ? error.message : String(error)}`,
+					})
+					// return Effect.succeed({
+					// 	status: CanisterStatus.NOT_FOUND,
+					// } as const)
+				}),
+			)
+			// TODO: maybe catch errors and return:
+			// return {
+			// 	status: CanisterStatus.NOT_FOUND,
+			// } as const
+			const canisterInfo = {
+				...canisterStatusResult,
+				status: Object.keys(canisterStatusResult.status)[0] as CanisterStatus,
+			}
 			return canisterInfo
 		})
 
@@ -314,26 +327,21 @@ export const picReplicaImpl = Effect.gen(function* () {
 		// 			}),
 		// 	}),
 
-		installCode: ({ canisterId, wasm, encodedArgs, identity }) =>
+		installCode: ({ canisterId, wasm, encodedArgs, identity, mode }) =>
 			Effect.gen(function* () {
 				const maxSize = 3670016
 				const isOverSize = wasm.length > maxSize
 				const wasmModuleHash = sha256.arrayBuffer(wasm)
 				const mgmt = yield* getMgmt(identity)
-				const canisterInfo = yield* getCanisterInfo({
-					canisterId,
-					identity,
-				})
 				const targetSubnetId = undefined
-				// const mode =
-				// 	canisterInfo.status === "not_installed" ? "install" : "reinstall"
-				// TODO: "install" doesnt work for certain canisters for some reason
-				const mode = "reinstall"
-
+				const modePayload: {
+					reinstall?: null
+					upgrade?: null
+					install?: null
+				} = { [mode]: null }
 				if (isOverSize) {
 					// TODO: proper error handling if fails?
 					const chunkSize = 1048576
-					// Maximum size: 1048576
 					const chunkHashes: ChunkHash[] = []
 					const chunkUploadEffects = []
 					for (let i = 0; i < wasm.length; i += chunkSize) {
@@ -365,107 +373,24 @@ export const picReplicaImpl = Effect.gen(function* () {
 					yield* Effect.all(chunkUploadEffects, {
 						concurrency: "unbounded",
 					})
+					// TODO: retry policy?
 
-					// TODO: not working!
 					yield* Effect.tryPromise({
 						try: () => {
-							// TODO: use pic.installCode instead
-							// pic.installCode({
-							// 	arg: encodedArgs.buffer,
-							// 	sender: identity.getPrincipal(),
-							// 	canisterId: Principal.fromText(canisterId),
-							// 	wasm: wasm.buffer,
-							// 	// targetSubnetId: nnsSubnet?.id!,
-							// }),
-
-							// mgmt.install_chunked_code({
-							// 	arg: Array.from(encodedArgs),
-							// 	target_canister: Principal.fromText(canisterId),
-							// 	sender_canister_version: Opt<bigint>(),
-							// 	mode: { reinstall: null },
-							// 	// TODO: upgrade mode / upgrade args
-							// 	// mode: { upgrade: [] },
-							// 	// export type canister_install_mode = { 'reinstall' : null } |
-							// 	//   {
-							// 	//     'upgrade' : [] | [
-							// 	//       {
-							// 	//         'wasm_memory_persistence' : [] | [
-							// 	//           { 'keep' : null } |
-							// 	//             { 'replace' : null }
-							// 	//         ],
-							// 	//         'skip_pre_upgrade' : [] | [boolean],
-							// 	//       }
-							// 	//     ]
-							// 	//   } |
-							// 	//   { 'install' : null };
-							// 	chunk_hashes_list: chunkHashes,
-							// 	store_canister: [],
-							// 	wasm_module_hash: wasmModuleHash,
-							// }),
-
-							// pic.installCodeChunked({
-							// 	arg: Array.from(encodedArgs),
-							// 	target_canister: Principal.fromText(canisterId),
-							// 	sender_canister_version: Opt<bigint>(),
-							// 	mode: { reinstall: null },
-							// 	// TODO: upgrade mode / upgrade args
-							// 	// mode: { upgrade: [] },
-							// 	// export type canister_install_mode = { 'reinstall' : null } |
-							// 	//   {
-							// 	//     'upgrade' : [] | [
-							// 	//       {
-							// 	//         'wasm_memory_persistence' : [] | [
-							// 	//           { 'keep' : null } |
-							// 	//             { 'replace' : null }
-							// 	//         ],
-							// 	//         'skip_pre_upgrade' : [] | [boolean],
-							// 	//       }
-							// 	//     ]
-							// 	//   } |
-							// 	//   { 'install' : null };
-							// 	chunk_hashes_list: chunkHashes,
-							// 	store_canister: [],
-							// 	wasm_module_hash: wasmModuleHash,
-							// }),
-
 							const payload = {
-								//   arg: encodedArgs,
-								//   canister_id: Principal.fromText(canisterId),
-								//   mode: {
-								// 	install: null,
-								//   },
-								//   wasm_module: new Uint8Array(wasm),
-
 								arg: encodedArgs,
 								canister_id: Principal.fromText(canisterId),
 								target_canister: Principal.fromText(canisterId),
 								sender_canister_version: Opt<bigint>(),
-								mode: { reinstall: null },
-								// TODO: upgrade mode / upgrade args
-								// mode: { upgrade: [] },
-								// export type canister_install_mode = { 'reinstall' : null } |
-								//   {
-								//     'upgrade' : [] | [
-								//       {
-								//         'wasm_memory_persistence' : [] | [
-								//           { 'keep' : null } |
-								//             { 'replace' : null }
-								//         ],
-								//         'skip_pre_upgrade' : [] | [boolean],
-								//       }
-								//     ]
-								//   } |
-								//   { 'install' : null };
+								mode: modePayload,
 								chunk_hashes_list: chunkHashes,
 								store_canister: Opt<Principal>(),
 								wasm_module_hash: new Uint8Array(wasmModuleHash),
 							}
-							console.log("payload", payload)
 							const encodedPayload = encodeInstallCodeChunkedRequest(payload)
 
-							// console.log("encoded payload", encodedPayload)
 							const req = {
-								canisterId: Principal.fromText('aaaaa-aa'),
+								canisterId: Principal.fromText("aaaaa-aa"),
 								sender: identity.getPrincipal(),
 								method: "install_chunked_code",
 								payload: encodedPayload,
@@ -475,7 +400,6 @@ export const picReplicaImpl = Effect.gen(function* () {
 										}
 									: undefined) as EffectivePrincipal,
 							}
-							console.log("sending update call", req)
 							return customPocketIcClient.updateCall(req)
 						},
 						catch: (error) =>
@@ -494,8 +418,16 @@ export const picReplicaImpl = Effect.gen(function* () {
 									wasm: wasm.buffer,
 									// targetSubnetId: nnsSubnet?.id!,
 								})
-							} else {
+							} else if (mode === "install") {
 								return pic.installCode({
+									arg: encodedArgs.buffer,
+									sender: identity.getPrincipal(),
+									canisterId: Principal.fromText(canisterId),
+									wasm: wasm.buffer,
+									// targetSubnetId: nnsSubnet?.id!,
+								})
+							} else {
+								return pic.upgradeCanister({
 									arg: encodedArgs.buffer,
 									sender: identity.getPrincipal(),
 									canisterId: Principal.fromText(canisterId),
@@ -504,30 +436,6 @@ export const picReplicaImpl = Effect.gen(function* () {
 								})
 							}
 						},
-						// TODO: BadIngressMessage doesnt stop due to polling
-						// mgmt.install_code({
-						// 	// arg: encodedArgs,
-						// 	arg: Array.from(encodedArgs),
-						// 	canister_id: Principal.fromText(canisterId),
-						// 	sender_canister_version: Opt<bigint>(),
-						// 	wasm_module: Array.from(wasm),
-						// 	mode: { reinstall: null },
-						// 	// TODO: upgrade mode / upgrade args
-						// 	// arg: Array.from(Uint8Array.from([])),
-						// 	// export type canister_install_mode = { 'reinstall' : null } |
-						// 	//   {
-						// 	//     'upgrade' : [] | [
-						// 	//       {
-						// 	//         'wasm_memory_persistence' : [] | [
-						// 	//           { 'keep' : null } |
-						// 	//             { 'replace' : null }
-						// 	//         ],
-						// 	//         'skip_pre_upgrade' : [] | [boolean],
-						// 	//       }
-						// 	//     ]
-						// 	//   } |
-						// 	//   { 'install' : null };
-						// }),
 						catch: (error) => {
 							return new CanisterInstallError({
 								message: `Failed to install code: ${error instanceof Error ? error.message : String(error)}`,
@@ -539,7 +447,6 @@ export const picReplicaImpl = Effect.gen(function* () {
 		createCanister: ({ canisterId, identity }) =>
 			Effect.gen(function* () {
 				// TODO: get stack trace somehow
-				// const mgmt = yield* getMgmt(identity)
 				const controller = identity.getPrincipal()
 				if (canisterId) {
 					// TODO: canisterId is set but its not created, causes error?
@@ -547,7 +454,8 @@ export const picReplicaImpl = Effect.gen(function* () {
 						canisterId,
 						identity,
 					})
-					if (canisterStatus !== "not_installed") {
+					// TODO: wrong!?
+					if (canisterStatus !== CanisterStatus.NOT_FOUND) {
 						return canisterId
 					}
 				}
@@ -586,49 +494,6 @@ export const picReplicaImpl = Effect.gen(function* () {
 				})
 				// pic.addCycles(createResult, 1_000_000_000_000_000)
 				return createResult.toText()
-
-				// const createResult = yield* Effect.tryPromise({
-				// 	try: () =>
-				// 		// // TODO: mainnet
-				// 		// mgmt.create_canister({
-				// 		//   settings: [
-				// 		//     {
-				// 		//       compute_allocation: Opt<bigint>(),
-				// 		//       memory_allocation: Opt<bigint>(),
-				// 		//       freezing_threshold: Opt<bigint>(),
-				// 		//       controllers: Opt<Principal[]>([identity.getPrincipal()]),
-				// 		//       reserved_cycles_limit: Opt<bigint>(),
-				// 		//       log_visibility: Opt<log_visibility>(),
-				// 		//       wasm_memory_limit: Opt<bigint>(),
-				// 		//     },
-				// 		//   ],
-				// 		//   sender_canister_version: Opt<bigint>(0n),
-				// 		// })
-				// 		// TODO: this only works on local
-				// 		mgmt.provisional_create_canister_with_cycles({
-				// 			settings: [
-				// 				{
-				// 					compute_allocation: Opt<bigint>(),
-				// 					memory_allocation: Opt<bigint>(),
-				// 					freezing_threshold: Opt<bigint>(),
-				// 					controllers: Opt<Principal[]>([controller]),
-				// 					reserved_cycles_limit: Opt<bigint>(),
-				// 					log_visibility: Opt<log_visibility>(),
-				// 					wasm_memory_limit: Opt<bigint>(),
-				// 				},
-				// 			],
-				// 			amount: Opt<bigint>(1_000_000_000_000_000_000n),
-				// 			specified_id: Opt<Principal>(
-				// 				canisterId ? Principal.fromText(canisterId) : undefined,
-				// 			),
-				// 			sender_canister_version: Opt<bigint>(0n),
-				// 		}) as Promise<{ canister_id: Principal }>,
-				// 	catch: (error) =>
-				// 		new CanisterCreateError({
-				// 			message: `Failed to create canister: ${error instanceof Error ? error.message : String(error)}`,
-				// 		}),
-				// })
-				// return createResult.canister_id.toText()
 			}),
 		stopCanister: ({ canisterId, identity }) =>
 			Effect.gen(function* () {

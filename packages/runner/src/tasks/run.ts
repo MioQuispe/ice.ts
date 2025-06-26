@@ -55,9 +55,9 @@ export const runTaskByPath = (
 		return yield* runTask(task, args, progressCb)
 	})
 
-export const runTask = (
-	task: Task<any>,
-	args: TaskParamsToArgs<Task> = {},
+export const runTask = <T extends Task>(
+	task: T,
+	args: TaskParamsToArgs<T> = {} as TaskParamsToArgs<T>,
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) =>
 	Effect.gen(function* () {
@@ -66,6 +66,7 @@ export const runTask = (
 		yield* Effect.logDebug("Got task path:", path)
 		const taskWithArgs = {
 			...task,
+			// TODO: this adds args: undefined. fix
 			args,
 		}
 		yield* Effect.logDebug("Collecting dependencies...")
@@ -78,5 +79,5 @@ export const runTask = (
 		yield* Effect.logDebug("Executing tasks...")
 		const results = yield* executeTasks(sortedTasks, progressCb)
 		yield* Effect.logDebug("Tasks executed")
-		return results.get(task.id)
+		return results.get(task.id) as Effect.Effect.Success<T["effect"]>
 	})
