@@ -134,6 +134,7 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 			const appDir = yield* Config.string("APP_DIR")
 			const iceDirName = yield* Config.string("ICE_DIR_NAME")
 			yield* Effect.logDebug("create Task: setting canisterId", canisterId)
+			// TODO: integrate with cache?
 			yield* canisterIdsService.setCanisterId({
 				canisterName,
 				network: taskCtx.currentNetwork,

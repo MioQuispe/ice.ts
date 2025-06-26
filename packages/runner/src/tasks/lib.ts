@@ -82,10 +82,17 @@ export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
 		}
 	}
 	readonly replica: ReplicaService
-	readonly runTask: <T extends Task>(
-		task: T,
-		args?: TaskParamsToArgs<T>,
-	) => Promise<Effect.Effect.Success<T["effect"]>>
+
+	readonly runTask: {
+		<T extends Task>(
+			task: T,
+		): Promise<Effect.Effect.Success<T["effect"]>>
+		<T extends Task>(
+			task: T,
+			args: TaskParamsToArgs<T>,
+		): Promise<Effect.Effect.Success<T["effect"]>>
+	}
+
 	readonly currentNetwork: string
 	readonly networks: {
 		[key: string]: {
@@ -250,7 +257,6 @@ export const resolveTaskArgs = (
 // 		named,
 // 	}
 // }
-
 
 /**
  * Topologically sorts tasks based on the "provide" field dependencies.
@@ -436,21 +442,21 @@ export const executeTasks = (
 				// TODO: this adds args: undefined somewhere...
 				if ("args" in task && Object.keys(task.args).length > 0) {
 					argsMap = task.args
-					yield* Effect.logDebug("if args in task", { argsMap, taskArgs, cliTaskArgs, task })
 				} else {
 					const resolvedTaskArgs = yield* resolveTaskArgs(task, cliTaskArgs)
 					// TODO: clean up
 					const hasTaskArgs = Object.keys(taskArgs).length > 0
-					argsMap = hasTaskArgs ? taskArgs : Object.fromEntries([
-						...Object.entries(resolvedTaskArgs.named).map(([name, arg]) => [
-							arg.param.name,
-							arg.arg,
-						]),
-						...Object.entries(resolvedTaskArgs.positional).map(
-							([index, arg]) => [index, arg.arg],
-						),
-					])
-					yield* Effect.logDebug("else args in task", { argsMap, hasTaskArgs, taskArgs, resolvedTaskArgs, cliTaskArgs })
+					argsMap = hasTaskArgs
+						? taskArgs
+						: Object.fromEntries([
+								...Object.entries(resolvedTaskArgs.named).map(([name, arg]) => [
+									arg.param.name,
+									arg.arg,
+								]),
+								...Object.entries(resolvedTaskArgs.positional).map(
+									([index, arg]) => [index, arg.arg],
+								),
+							])
 				}
 				const currentContext =
 					yield* Effect.context<
