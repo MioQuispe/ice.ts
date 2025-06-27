@@ -9,6 +9,7 @@ import {
 	Match,
 	Option,
 	Runtime,
+	Array as EffectArray,
 } from "effect"
 import { ICEConfigService } from "../services/iceConfig.js"
 import type {
@@ -31,6 +32,8 @@ import { DefaultConfig } from "../services/defaultConfig.js"
 import { CLIFlags } from "../services/cliFlags.js"
 import { StandardSchemaV1 } from "@standard-schema/spec"
 import { TaskRegistry } from "../services/taskRegistry.js"
+import { CanisterIdsService } from "src/services/canisterIds.js"
+import { NodeContext } from "@effect/platform-node"
 
 // const asyncRunTask = async <A>(task: Task): Promise<A> => {
 // 	const result = makeRuntime({
@@ -98,9 +101,7 @@ export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
 	readonly replica: ReplicaService
 
 	readonly runTask: {
-		<T extends Task>(
-			task: T,
-		): Promise<Effect.Effect.Success<T["effect"]>>
+		<T extends Task>(task: T): Promise<Effect.Effect.Success<T["effect"]>>
 		<T extends Task>(
 			task: T,
 			args: TaskParamsToArgs<T>,
@@ -151,21 +152,15 @@ export const getTaskPathById = (id: Symbol) =>
 	})
 
 export const collectDependencies = (
-	rootTasks: Task<
-		unknown,
-		Record<string, Task>,
-		Record<string, Task>,
-		unknown,
-		unknown,
-		unknown
-	>[],
+	rootTasks: Task[],
 	collected: Map<symbol, Task> = new Map(),
 ): Map<symbol, Task | (Task & { args: Record<string, unknown> })> => {
 	for (const rootTask of rootTasks) {
 		if (collected.has(rootTask.id)) continue
 		collected.set(rootTask.id, rootTask)
 		for (const key in rootTask.dependencies) {
-			const dependency = rootTask.dependencies[key]
+			// TODO: fix. no as?
+			const dependency = (rootTask.dependencies as Record<string, Task>)[key]
 			collectDependencies([dependency], collected)
 		}
 	}
@@ -366,24 +361,7 @@ export type ProgressUpdate<A> = {
 }
 
 export const executeTasks = (
-	tasks: (
-		| Task<
-				unknown,
-				Record<string, Task>,
-				Record<string, Task>,
-				unknown,
-				unknown,
-				unknown
-		  >
-		| (Task<
-				unknown,
-				Record<string, Task>,
-				Record<string, Task>,
-				unknown,
-				unknown,
-				unknown
-		  > & { args: Record<string, unknown> })
-	)[],
+	tasks: (Task | (Task & { args: Record<string, unknown> }))[],
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) =>
 	Effect.gen(function* () {
@@ -411,26 +389,22 @@ export const executeTasks = (
 		// Create a deferred for every task to hold its eventual result.
 		const deferredMap = new Map<
 			symbol,
-			Deferred.Deferred<
-				{
-					cacheKey: string | undefined
-					result: unknown
-				},
-				unknown
-			>
+			Deferred.Deferred<{
+				cacheKey: string | undefined
+				result: unknown
+			}>
+			// unknown
 		>()
 		for (const task of tasks) {
-			const deferred = yield* Deferred.make<
-				{
-					cacheKey: string | undefined
-					result: unknown
-				},
-				unknown
-			>()
+			const deferred = yield* Deferred.make<{
+				cacheKey: string | undefined
+				result: unknown
+			}>()
+			// unknown
 			deferredMap.set(task.id, deferred)
 		}
 		const results = new Map<symbol, unknown>()
-		const taskEffects = tasks.map((task) =>
+		const taskEffects = EffectArray.map(tasks, (task) =>
 			Effect.gen(function* () {
 				const dependencyResults: Record<
 					string,
@@ -440,7 +414,10 @@ export const executeTasks = (
 					}
 				> = {}
 				for (const dependencyName in task.dependencies) {
-					const providedTask = task.dependencies[dependencyName]
+					// TODO: fix. no as?
+					const providedTask = (task.dependencies as Record<string, Task>)[
+						dependencyName
+					]
 					const depDeferred = deferredMap.get(providedTask.id)
 					if (depDeferred) {
 						const depResult = yield* Deferred.await(depDeferred)
@@ -518,10 +495,9 @@ export const executeTasks = (
 							})
 							const result = runtime.runPromise(
 								// TODO: type runTask explicitly?
-								// @ts-ignore
 								runTask(task, args, progressCb),
 							)
-							return result as Promise<Effect.Effect.Success<T["effect"]>>
+							return result
 						},
 						replica: currentReplica,
 						currentNetwork,
@@ -581,7 +557,10 @@ export const executeTasks = (
 							if ("decode" in task) {
 								yield* Effect.logDebug("decoding result:", encodedResult)
 								const decodedResult = yield* task
-									.decode(encodedResult, Option.isSome(input) ? input.value : {})
+									.decode(
+										encodedResult,
+										Option.isSome(input) ? input.value : {},
+									)
 									.pipe(Effect.provide(taskLayer))
 								result = Option.some(decodedResult)
 								yield* Effect.logDebug("decoded result:", decodedResult)
@@ -615,7 +594,10 @@ export const executeTasks = (
 						const encodedResult =
 							"encode" in task
 								? yield* task
-										.encode(result.value, Option.isSome(input) ? input.value : {})
+										.encode(
+											result.value,
+											Option.isSome(input) ? input.value : {},
+										)
 										.pipe(Effect.provide(taskLayer))
 								: JSON.stringify(result.value)
 						yield* Effect.logDebug(

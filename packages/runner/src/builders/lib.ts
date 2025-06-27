@@ -330,8 +330,6 @@ export type InstallArgsTask<
 	},
 	D,
 	P,
-	unknown,
-	unknown,
 	InstallArgsInput
 >
 // install_args: ReturnType<typeof makeInstallArgsTask>
@@ -650,7 +648,7 @@ export const makeRemoveTask = ({
 		namedParams: {},
 		positionalParams: [],
 		params: {},
-	} satisfies Task<void>
+	} satisfies RemoveTask
 }
 
 export const makeCanisterStatusTask = (tags: string[]): StatusTask => {

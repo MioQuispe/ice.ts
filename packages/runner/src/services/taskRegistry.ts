@@ -1,6 +1,7 @@
 import { Effect, Layer, Context, Option } from "effect"
 import type { Task } from "../types/types.js"
 import { KeyValueStore } from "@effect/platform"
+import { PlatformError } from "@effect/platform/Error"
 
 export class TaskRegistry extends Context.Tag("TaskRegistry")<
 	TaskRegistry,
@@ -8,16 +9,15 @@ export class TaskRegistry extends Context.Tag("TaskRegistry")<
 		readonly set: (
 			cacheKey: string,
 			result: string | Uint8Array<ArrayBufferLike>,
-		) => Effect.Effect<void, unknown, unknown>
+		) => Effect.Effect<void, PlatformError>
 		readonly get: (
 			cacheKey: string,
 			format: "string" | "uint8array",
 		) => Effect.Effect<
 			Option.Option<string | Uint8Array<ArrayBufferLike>>,
-			unknown,
-			unknown
-		>
-		readonly has: (cacheKey: string) => Effect.Effect<boolean, unknown, unknown>
+			PlatformError
+		>,
+		readonly has: (cacheKey: string) => Effect.Effect<boolean, PlatformError>
 	}
 >() {
 	static Live = Layer.effect(

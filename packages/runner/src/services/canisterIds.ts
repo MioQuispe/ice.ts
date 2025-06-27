@@ -9,6 +9,7 @@ import {
 	Console,
 } from "effect"
 import { FileSystem, Path } from "@effect/platform"
+import { NodeContext } from "@effect/platform-node"
 
 /**
  * Represents the canister IDs stored in memory.
@@ -43,17 +44,15 @@ export class CanisterIdsService extends Context.Tag("CanisterIdsService")<
 			canisterName: string
 			network: string
 			canisterId: string
-		}) => Effect.Effect<void, unknown, unknown>
+		}) => Effect.Effect<void>
 		/**
 		 * Removes the canister ID for the given canister name.
 		 */
-		removeCanisterId: (
-			canisterName: string,
-		) => Effect.Effect<void, unknown, unknown>
+		removeCanisterId: (canisterName: string) => Effect.Effect<void>
 		/**
 		 * Flushes the in-memory canister IDs to the canister_ids.json file.
 		 */
-		flush: () => Effect.Effect<void, unknown, unknown>
+		flush: () => Effect.Effect<void>
 	}
 >() {
 	static readonly Live = Layer.scoped(
@@ -62,6 +61,9 @@ export class CanisterIdsService extends Context.Tag("CanisterIdsService")<
 			// Initialize the state from disk
 			const initialIds = yield* readInitialCanisterIds
 			const ref = yield* Ref.make(initialIds)
+			const fs = yield* FileSystem.FileSystem
+			const path = yield* Path.Path
+			const appDir = yield* Config.string("APP_DIR")
 			// Ref to store the last flushed canister IDs for change detection
 			//   const lastFlushedIdsRef = yield* Ref.make(initialIds)
 
@@ -69,9 +71,6 @@ export class CanisterIdsService extends Context.Tag("CanisterIdsService")<
 			 * Flushes in-memory canister IDs to disk only if there are changes.
 			 */
 			const flush = Effect.gen(function* () {
-				const fs = yield* FileSystem.FileSystem
-				const path = yield* Path.Path
-				const appDir = yield* Config.string("APP_DIR")
 				const canisterIdsPath = path.join(appDir, ".ice", "canister_ids.json")
 				const currentIds = yield* Ref.get(ref)
 				// const lastFlushedIds = yield* Ref.get(lastFlushedIdsRef)

@@ -9,6 +9,18 @@ import type { Principal } from "@dfinity/principal"
 import type { ReplicaService } from "../services/replica.js"
 import type { StandardSchemaV1 } from "@standard-schema/spec"
 import { type } from "arktype"
+import type { TaskCtx } from "../tasks/lib.js"
+import type { TaskInfo } from "../tasks/run.js"
+import type { DependencyResults } from "../tasks/run.js"
+import { NodeContext } from "@effect/platform-node"
+import { CanisterIdsService } from "../services/canisterIds.js"
+import { TaskRegistry } from "../services/taskRegistry.js"
+import { ICEConfigService } from "../services/iceConfig.js"
+import { Moc } from "../services/moc.js"
+import { DefaultConfig } from "../services/defaultConfig.js"
+import { CLIFlags } from "../services/cliFlags.js"
+import { TaskArgsService } from "../index.js"
+import { DefaultReplica } from "../services/replica.js"
 
 export type CanisterActor = {
 	actor: ActorSubclass<unknown>
@@ -148,7 +160,12 @@ export interface PositionalParam<T = unknown> extends TaskParam<T> {
 // })
 // export const positionalParamSchema = type.and(taskParamSchema)
 
-type EncodingFormat<E extends "string" | "uint8array" | undefined> = E extends undefined ? string : E extends "string" ? string : Uint8Array<ArrayBufferLike>
+type EncodingFormat<E extends "string" | "uint8array" | undefined> =
+	E extends undefined
+		? string
+		: E extends "string"
+			? string
+			: Uint8Array<ArrayBufferLike>
 
 // export const makeTask = <A, D extends Record<string, Task>, P extends Record<string, Task>, E, R, I>({
 // 	effect: Effect.Effect<A, E, R>,
@@ -184,9 +201,21 @@ export interface Task<
 	A = any,
 	D extends Record<string, Task> = {},
 	P extends Record<string, Task> = {},
-	E = any,
-	R = any,
 	I = any,
+	E = any,
+	R =
+		| TaskCtx
+		| TaskInfo
+		| TaskRegistry
+		| DependencyResults
+		| CanisterIdsService
+		| NodeContext.NodeContext
+		| ICEConfigService
+		| Moc
+		| DefaultConfig
+		| DefaultReplica
+		| CLIFlags
+		| TaskArgsService
 > {
 	_tag: "task"
 	readonly id: symbol // assigned by the builder
@@ -203,12 +232,18 @@ export interface Task<
 	// but it only supports .validate not encode/decode
 	// TODO: wrap fields in cache object
 	input?: () => Effect.Effect<I, E, R> // optional input
-	encode?: (value: A, input: I) => Effect.Effect<string | Uint8Array<ArrayBufferLike>>
+	encode?: (
+		value: A,
+		input: I,
+	) => Effect.Effect<string | Uint8Array<ArrayBufferLike>>
 	// TODO:
 	// encode?: (value: A, input: I) => Effect.Effect<EncodingFormat<Task["encodingFormat"]>>
 	encodingFormat?: "string" | "uint8array"
 	// TODO: infer type depending on encodingFormat
-	decode?: (value: string | Uint8Array<ArrayBufferLike>, input: I) => Effect.Effect<A, E, R>
+	decode?: (
+		value: string | Uint8Array<ArrayBufferLike>,
+		input: I,
+	) => Effect.Effect<A, E, R>
 	// TODO:
 	// decode?: (value: EncodingFormat<Task["encodingFormat"]>, input: I) => Effect.Effect<A, E, R>
 	computeCacheKey?: (input: I) => string

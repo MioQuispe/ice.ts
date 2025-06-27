@@ -8,7 +8,7 @@ import {
 	Chunk,
 } from "effect"
 import { ICEConfigService } from "../services/iceConfig.js"
-import { configMap } from "../index.js"
+import { configMap, TaskArgsService } from "../index.js"
 import { Tags } from "../builders/lib.js"
 import type { Task } from "../types/types.js"
 import { TaskRegistry } from "../services/taskRegistry.js"
@@ -21,14 +21,23 @@ import {
 	type ProgressUpdate,
 	TaskParamsToArgs,
 } from "./lib.js"
+import { CanisterIdsService } from "../services/canisterIds.js"
+import { NodeContext } from "@effect/platform-node"
+import { CLIFlags } from "../services/cliFlags.js"
+import { DefaultConfig } from "../services/defaultConfig.js"
+import { Moc } from "../services/moc.js"
+import { DefaultReplica } from "../services/replica.js"
 
 export class DependencyResults extends Context.Tag("DependencyResults")<
 	DependencyResults,
 	{
-		readonly dependencies: Record<string, {
-			cacheKey: string | undefined
-			result: unknown
-		}>
+		readonly dependencies: Record<
+			string,
+			{
+				cacheKey: string | undefined
+				result: unknown
+			}
+		>
 	}
 >() {}
 
@@ -55,7 +64,7 @@ export const runTaskByPath = (
 		return yield* runTask(task, args, progressCb)
 	})
 
-export const runTask = <T extends Task<any, any, any, any, any, any>>(
+export const runTask = <T extends Task>(
 	task: T,
 	args: TaskParamsToArgs<T> = {} as TaskParamsToArgs<T>,
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
@@ -77,7 +86,10 @@ export const runTask = <T extends Task<any, any, any, any, any, any>>(
 		const sortedTasks = topologicalSortTasks(collectedTasks)
 		yield* Effect.logDebug("Sorted tasks")
 		yield* Effect.logDebug("Executing tasks...")
-		const results = yield* executeTasks(sortedTasks, progressCb)
+		const results = yield* executeTasks(
+			sortedTasks,
+			progressCb,
+		)
 		yield* Effect.logDebug("Tasks executed")
 		return results.get(task.id) as Effect.Effect.Success<T["effect"]>
 	})
