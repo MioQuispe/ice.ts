@@ -9,6 +9,9 @@ import type {
 	FileDigest,
 	IsValid,
 	TaskCtxShape,
+	BindingsTask,
+	BuildTask,
+	CreateTask,
 } from "./lib.js"
 import {
 	resolveConfig,
@@ -31,6 +34,7 @@ import {
 	ValidProvidedDeps,
 	hashJson,
 } from "./lib.js"
+import { InstallModes } from "../services/replica.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
 import { proxyActor } from "../utils/extension.js"
 import { TaskInfo } from "../tasks/run.js"
@@ -53,10 +57,7 @@ export const makeBindingsTask = (
 		| ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)
 		| ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)
 		| CustomCanisterConfig,
-): Task<{
-	didJSPath: string
-	didTSPath: string
-}> => {
+): BindingsTask => {
 	type BindingsInput = {
 		taskPath: string
 		depCacheKeys: Record<string, string | undefined>
@@ -84,14 +85,14 @@ export const makeBindingsTask = (
 				didTSPath,
 			}
 		}),
-		computeCacheKey: (task, input: BindingsInput) => {
+		computeCacheKey: (input: BindingsInput) => {
 			return hashJson({
 				depsHash: hashJson(input.depCacheKeys),
 				taskPath: input.taskPath,
 				configHash: hashConfig(canisterConfigOrFn),
 			})
 		},
-		input: (task) =>
+		input: () =>
 			Effect.gen(function* () {
 				const { taskPath } = yield* TaskInfo
 				const { dependencies } = yield* DependencyResults
@@ -107,7 +108,7 @@ export const makeBindingsTask = (
 		namedParams: {},
 		positionalParams: [],
 		params: {},
-	} satisfies Task
+	} satisfies BindingsTask
 }
 
 export const makeCustomBuildTask = <P extends Record<string, unknown>>(
@@ -115,10 +116,7 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 		| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<CustomCanisterConfig>)
 		| ((args: { ctx: TaskCtxShape; deps: P }) => CustomCanisterConfig)
 		| CustomCanisterConfig,
-): Task<{
-	wasmPath: string
-	candidPath: string
-}> => {
+): BuildTask => {
 	type BuildInput = {
 		canisterId: string
 		canisterName: string
@@ -179,7 +177,7 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 				candidPath: outCandidPath,
 			}
 		}),
-		computeCacheKey: (task, input: BuildInput) => {
+		computeCacheKey: (input: BuildInput) => {
 			// TODO: pocket-ic could be restarted?
 			const installInput = {
 				canisterId: input.canisterId,
@@ -191,7 +189,7 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 			const cacheKey = hashJson(installInput)
 			return cacheKey
 		},
-		input: (task) =>
+		input: () =>
 			Effect.gen(function* () {
 				const { taskPath } = yield* TaskInfo
 				const canisterName = taskPath.split(":").slice(0, -1).join(":")
@@ -200,7 +198,9 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 				const maybeCanisterId = yield* loadCanisterId(taskPath)
 				if (Option.isNone(maybeCanisterId)) {
 					return yield* Effect.fail(
-						new Error(`Canister at ${taskPath} is not installed, cannot get input`),
+						new Error(
+							`Canister at ${taskPath} is not installed, cannot get input`,
+						),
 					)
 				}
 				const canisterId = maybeCanisterId.value
@@ -250,7 +250,7 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 		namedParams: {},
 		positionalParams: [],
 		params: {},
-	} satisfies Task<void>
+	}
 }
 
 class CustomCanisterBuilder<
@@ -316,7 +316,7 @@ class CustomCanisterBuilder<
 		installArgsFn: (args: {
 			ctx: TaskCtxShape
 			deps: ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>
-			mode: string
+			mode: InstallModes
 		}) => I | Promise<I>,
 		{
 			customEncode,
@@ -337,23 +337,27 @@ class CustomCanisterBuilder<
 	> {
 		// TODO: passing in I makes the return type: any
 		// TODO: we need to inject dependencies again! or they can be overwritten
-		const dependencies = this.#scope.children.install_args.dependsOn
-		const provide = this.#scope.children.install_args.dependencies
+
+		// TODO: add these to the task type
+		const dependsOn = this.#scope.children.install_args.dependsOn
+		const dependencies = this.#scope.children.install_args.dependencies
 		const installArgsTask = {
 			...makeInstallArgsTask<
 				I,
-				ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>,
-				_SERVICE
+				_SERVICE,
+				// // TODO: add bindings and create to the type
+				D,
+				P
 			>(
 				installArgsFn,
+				dependsOn,
 				{
+					...dependencies,
 					bindings: this.#scope.children.bindings,
 					create: this.#scope.children.create,
 				},
 				{ customEncode },
 			),
-			dependsOn: dependencies,
-			dependencies: provide,
 		}
 		const updatedScope = {
 			...this.#scope,
@@ -480,12 +484,17 @@ export const customCanister = <_SERVICE = unknown, I = unknown>(
 	const removeTask = makeRemoveTask({ stop: stopTask })
 	const installArgsTask = makeInstallArgsTask<
 		I,
-		Record<string, unknown>,
-		_SERVICE
-	>(() => [] as unknown as I, {
-		bindings: bindingsTask,
-		create: createTask,
-	})
+		_SERVICE,
+		{},
+		{}
+	>(
+		() => [] as unknown as I,
+		{},
+		{
+			bindings: bindingsTask,
+			create: createTask,
+		},
+	)
 	const initialScope = {
 		_tag: "scope",
 		id: Symbol("scope"),
@@ -520,7 +529,6 @@ export const customCanister = <_SERVICE = unknown, I = unknown>(
 		_SERVICE
 	>(initialScope)
 }
-
 
 // TODO: Do more here?
 const scope = <T extends TaskTree>(description: string, children: T) => {

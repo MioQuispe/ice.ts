@@ -2,6 +2,10 @@ import { type Effect, Context, Data } from "effect"
 import type { ActorSubclass, HttpAgent, SignIdentity } from "@dfinity/agent"
 import type { canister_status_result } from "src/canisters/management_latest/management.types.js"
 import { Principal } from "@dfinity/principal"
+import { type } from "arktype"
+
+export const InstallModes = type("'install' | 'upgrade' | 'reinstall'")
+export type InstallModes = type.infer<typeof InstallModes>
 // import { ActorInterface } from "@dfinity/pic"
 /**
  * Typesafe method of a canister.
@@ -120,7 +124,7 @@ export type ReplicaService = {
 		wasm: Uint8Array
 		encodedArgs: Uint8Array
 		identity: SignIdentity
-		mode: "install" | "reinstall" | "upgrade"
+		mode: InstallModes
 		// TODO: progress callback?
 	}) => Effect.Effect<
 		void,

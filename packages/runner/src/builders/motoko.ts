@@ -7,6 +7,8 @@ import { DependencyResults, TaskInfo } from "../tasks/run.js"
 import { generateDIDJS, compileMotokoCanister } from "../canister.js"
 import type {
 	AllowedDep,
+	BindingsTask,
+	BuildTask,
 	CanisterScope,
 	DependencyMismatchError,
 	ExtractTaskEffectSuccess,
@@ -33,6 +35,7 @@ import {
 	makeStopTask,
 	makeInstallTask,
 } from "./lib.js"
+import { InstallModes } from "../services/replica.js"
 import type { ActorSubclass } from "../types/actor.js"
 
 type MotokoCanisterConfig = {
@@ -41,11 +44,8 @@ type MotokoCanisterConfig = {
 }
 
 export const makeMotokoBindingsTask = (deps: {
-	build: Task<{
-		wasmPath: string
-		candidPath: string
-	}>
-}) => {
+	build: BuildTask
+}): BindingsTask => {
 	type BindingsInput = {
 		taskPath: string
 		depCacheKeys: Record<string, string | undefined>
@@ -79,13 +79,13 @@ export const makeMotokoBindingsTask = (deps: {
 				didTSPath,
 			}
 		}),
-		computeCacheKey: (task, input: BindingsInput) => {
+		computeCacheKey: (input: BindingsInput) => {
 			return hashJson({
 				depsHash: hashJson(input.depCacheKeys),
 				taskPath: input.taskPath,
 			})
 		},
-		input: (task) =>
+		input: () =>
 			Effect.gen(function* () {
 				const { taskPath } = yield* TaskInfo
 				const { dependencies } = yield* DependencyResults
@@ -101,7 +101,7 @@ export const makeMotokoBindingsTask = (deps: {
 		namedParams: {},
 		positionalParams: [],
 		params: {},
-	} satisfies Task
+	} satisfies BindingsTask
 }
 
 const makeMotokoBuildTask = <P extends Record<string, unknown>>(
@@ -109,7 +109,7 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 		| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<MotokoCanisterConfig>)
 		| ((args: { ctx: TaskCtxShape; deps: P }) => MotokoCanisterConfig)
 		| MotokoCanisterConfig,
-) => {
+): BuildTask => {
 	type BuildInput = {
 		canisterId: string
 		taskPath: string
@@ -172,7 +172,7 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 				candidPath: outCandidPath,
 			}
 		}),
-		computeCacheKey: (task, input: BuildInput) => {
+		computeCacheKey: (input: BuildInput) => {
 			// TODO: pocket-ic could be restarted?
 			const installInput = {
 				taskPath: input.taskPath,
@@ -184,7 +184,7 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 			const cacheKey = hashJson(installInput)
 			return cacheKey
 		},
-		input: (task) =>
+		input: () =>
 			Effect.gen(function* () {
 				const { taskPath } = yield* TaskInfo
 				const { dependencies } = yield* DependencyResults
@@ -232,7 +232,7 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 		namedParams: {},
 		positionalParams: [],
 		params: {},
-	} satisfies Task
+	}
 }
 
 class MotokoCanisterBuilder<
@@ -320,23 +320,27 @@ class MotokoCanisterBuilder<
 		const mode = "install"
 		// TODO: passing in I makes the return type: any
 		// TODO: we need to inject dependencies again! or they can be overwritten
-		const dependencies = this.#scope.children.install_args.dependsOn
-		const provide = this.#scope.children.install_args.dependencies
+		const dependsOn = this.#scope.children.install_args.dependsOn
+		const dependencies = this.#scope.children.install_args.dependencies
 		const installArgsTask = {
 			...makeInstallArgsTask<
 				I,
-				ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>,
-				_SERVICE
+				_SERVICE,
+				// TODO: add bindings and create to the type?
+				D,
+				P
 			>(
 				installArgsFn,
+				dependsOn,
 				{
+					...dependencies,
 					bindings: this.#scope.children.bindings,
 					create: this.#scope.children.create,
 				},
 				{ customEncode },
 			),
-			dependsOn: dependencies,
-			dependencies: provide,
+			// dependsOn,
+			// dependencies,
 		}
 		const updatedScope = {
 			...this.#scope,
@@ -462,12 +466,20 @@ export const motokoCanister = <
 	const removeTask = makeRemoveTask({ stop: stopTask })
 	const installArgsTask = makeInstallArgsTask<
 		I,
-		Record<string, unknown>,
-		_SERVICE
-	>(() => [] as unknown as I, {
-		bindings: bindingsTask,
-		create: createTask,
-	})
+		_SERVICE,
+		{},
+		{}
+		// {
+		// 	bindings: typeof bindingsTask,
+		// }
+	>(
+		() => [] as unknown as I,
+		{},
+		{
+			bindings: bindingsTask,
+			create: createTask,
+		},
+	)
 	const initialScope = {
 		_tag: "scope",
 		id: Symbol("scope"),

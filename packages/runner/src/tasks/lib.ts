@@ -58,8 +58,22 @@ export type ExtractArgsFromTaskParams<
 	[K in keyof TP]: StandardSchemaV1.InferOutput<TP[K]["type"]>
 }
 
+// export type TaskParamsToArgs<T extends Task> = {
+// 	[K in keyof T["params"]]: T["params"][K] extends TaskParam
+// 		? StandardSchemaV1.InferOutput<T["params"][K]["type"]>
+// 		: never
+// }
+
 export type TaskParamsToArgs<T extends Task> = {
-	[K in keyof T["params"]]: T["params"][K] extends TaskParam
+	[K in keyof T["params"] as T["params"][K] extends { isOptional: true }
+		? never
+		: K]: T["params"][K] extends TaskParam
+		? StandardSchemaV1.InferOutput<T["params"][K]["type"]>
+		: never
+} & {
+	[K in keyof T["params"] as T["params"][K] extends { isOptional: true }
+		? K
+		: never]?: T["params"][K] extends TaskParam
 		? StandardSchemaV1.InferOutput<T["params"][K]["type"]>
 		: never
 }
@@ -539,7 +553,7 @@ export const executeTasks = (
 					let input: Option.Option<unknown> = Option.none()
 					if ("input" in task) {
 						input = yield* task
-							.input(task)
+							.input()
 							.pipe(Effect.provide(taskLayer))
 							.pipe(
 								Effect.map((input) => Option.some(input)),
@@ -549,7 +563,7 @@ export const executeTasks = (
 							)
 					}
 					if (Option.isSome(input)) {
-						cacheKey = Option.some(task.computeCacheKey(task, input.value))
+						cacheKey = Option.some(task.computeCacheKey(input.value))
 					}
 					if (
 						Option.isSome(cacheKey) &&

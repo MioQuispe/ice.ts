@@ -26,6 +26,7 @@ import {
 	ValidProvidedDeps,
 } from "./lib.js"
 import { normalizeDepsMap } from "./lib.js"
+import { customCanister } from "./custom.js"
 
 type MergeTaskParams<
 	T extends Task,
@@ -294,6 +295,7 @@ class TaskBuilderClass<
 				})
 				return result
 			}),
+			// TODO: create a task constructor for this, which fixes the type errors
 		} satisfies Task
 
 		// TODO: unknown params?
@@ -307,6 +309,7 @@ class TaskBuilderClass<
 	}
 
 	make() {
+		// TODO: relink dependencies!!!
 		return {
 			...this.#task,
 			id: Symbol("task"),
@@ -410,24 +413,10 @@ const installArgsTask = task()
 	})
 	.make()
 
-const canScope = {
-	_tag: "scope",
-	id: Symbol("scope"),
-	tags: [],
-	description: "canScope",
-	defaultTask: "deploy",
-	children: {
-		install: objTask,
-		install_args: installArgsTask,
-		create: stringTask,
-		bindings: bindingsTask,
-		build: buildTask,
-		stop: objTask,
-		remove: objTask,
-		deploy: objTask,
-		status: makeCanisterStatusTask([]),
-	},
-} satisfies CanisterScope
+const canScope = customCanister({
+	wasm: "",
+	candid: "",
+}).make()
 
 /** Example B: task -> deps -> provide -> run -> make */
 const task2 = task("description of task2")

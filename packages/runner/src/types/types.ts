@@ -170,12 +170,13 @@ export interface Task<
 	// TODO: for caching. do we use standard schema here as well?
 	// but it only supports .validate not encode/decode
 	// TODO: wrap fields in cache object
-	input?: <T extends Task<A, D, P, E, R, I>>(task: T) => Effect.Effect<I, E, R> // optional input
+	input?: () => Effect.Effect<I, E, R> // optional input
 	// TODO: causes type errors. we shouldnt have to pass in the type here
 	encode?: (value: any) => Effect.Effect<string | Uint8Array<ArrayBufferLike>>
 	encodingFormat?: "string" | "uint8array"
+	// TODO: infer type depending on encodingFormat
 	decode?: (value: string | Uint8Array<ArrayBufferLike>) => Effect.Effect<A, E, R>
-	computeCacheKey?: <T extends Task<A, D, P, E, R, I>>(task: T, input: I) => string
+	computeCacheKey?: (input: I) => string
 }
 
 export type Scope = {
