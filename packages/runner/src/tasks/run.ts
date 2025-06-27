@@ -55,7 +55,7 @@ export const runTaskByPath = (
 		return yield* runTask(task, args, progressCb)
 	})
 
-export const runTask = <T extends Task>(
+export const runTask = <T extends Task<any, any, any, any, any, any>>(
 	task: T,
 	args: TaskParamsToArgs<T> = {} as TaskParamsToArgs<T>,
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},

@@ -5,7 +5,11 @@ import { getTaskByPath, getNodeByPath, TaskCtx } from "../tasks/lib.js"
 import { DependencyResults, runTask, TaskInfo } from "../tasks/run.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
 import { Principal } from "@dfinity/principal"
-import type { ExtractArgsFromTaskParams, TaskCtxShape, TaskParamsToArgs } from "../tasks/lib.js"
+import type {
+	ExtractArgsFromTaskParams,
+	TaskCtxShape,
+	TaskParamsToArgs,
+} from "../tasks/lib.js"
 import type { ActorSubclass } from "../types/actor.js"
 export type { TaskCtxShape }
 import { sha256 } from "@noble/hashes/sha2"
@@ -308,6 +312,12 @@ export type BuildTask = Task<{
 	wasmPath: string
 	candidPath: string
 }>
+
+type InstallArgsInput = {
+	installArgsFn: Function
+	depCacheKeys: Record<string, string | undefined>
+	mode: InstallModes
+}
 export type InstallArgsTask<
 	I,
 	D extends Record<string, Task>,
@@ -316,17 +326,24 @@ export type InstallArgsTask<
 	{
 		args: I
 		encodedArgs: Uint8Array<ArrayBufferLike>
+		mode: InstallModes
 	},
 	D,
-	P
+	P,
+	unknown,
+	unknown,
+	InstallArgsInput
 >
 // install_args: ReturnType<typeof makeInstallArgsTask>
-export type InstallTask<_SERVICE = unknown> = Omit<Task<{
-	canisterId: string
-	canisterName: string
-	actor: ActorSubclass<_SERVICE>
-	mode: InstallModes
-}>, "params"> & {
+export type InstallTask<_SERVICE = unknown> = Omit<
+	Task<{
+		canisterId: string
+		canisterName: string
+		actor: ActorSubclass<_SERVICE>
+		mode: InstallModes
+	}>,
+	"params"
+> & {
 	params: typeof installParams
 }
 
@@ -345,8 +362,8 @@ export type StatusTask = Task<{
 
 // TODO: use Scope type
 export type CanisterScope<
-	_SERVICE = unknown,
-	I = unknown,
+	_SERVICE = any,
+	I = any,
 	D extends Record<string, Task> = Record<string, Task>,
 	P extends Record<string, Task> = Record<string, Task>,
 > = {
@@ -848,7 +865,8 @@ const resolveMode = () => {
 
 export const makeInstallTask = <
 	I,
-	P extends Record<string, unknown>,
+	D extends Record<string, Task>,
+	P extends Record<string, Task>,
 	_SERVICE,
 >({
 	install_args,
@@ -856,19 +874,10 @@ export const makeInstallTask = <
 	bindings,
 	create,
 }: {
-	install_args: Task<{
-		args: I
-		encodedArgs: Uint8Array<ArrayBufferLike>
-	}>
-	build: Task<{
-		wasmPath: string
-		candidPath: string
-	}>
-	bindings: Task<{
-		didJSPath: string
-		didTSPath: string
-	}>
-	create: Task<string>
+	install_args: InstallArgsTask<I, D, P>
+	build: BuildTask
+	bindings: BindingsTask
+	create: CreateTask
 }): InstallTask<_SERVICE> => {
 	type InstallInput = {
 		network: string
@@ -1060,12 +1069,7 @@ export const makeInstallTask = <
 				return input
 			}),
 		// TODO: fix generic type? we shouldnt have to type this
-		encode: (result: {
-			canisterId: string
-			canisterName: string
-			actor: ActorSubclass<_SERVICE>
-			mode: InstallModes
-		}) =>
+		encode: (result, input) =>
 			Effect.gen(function* () {
 				const encoded = JSON.stringify({
 					canisterId: result.canisterId,
@@ -1074,7 +1078,7 @@ export const makeInstallTask = <
 				})
 				return encoded
 			}),
-		decode: (value) =>
+		decode: (value, input) =>
 			Effect.gen(function* () {
 				const { canisterId, canisterName, mode } = JSON.parse(
 					value as string,
@@ -1197,8 +1201,7 @@ export const makeInstallArgsTask = <
 	installArgsFn: (args: {
 		ctx: TaskCtxShape
 		mode: InstallModes
-		deps: ExtractTaskEffectSuccess<D> &
-			ExtractTaskEffectSuccess<P>
+		deps: ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>
 	}) => Promise<A> | A,
 	dependsOn: D,
 	dependencies: P & {
@@ -1220,11 +1223,6 @@ export const makeInstallArgsTask = <
 		// customInitIDL: undefined,
 	},
 ): InstallArgsTask<A, D, typeof dependencies> => {
-	type InstallArgsInput = {
-		installArgsFn: Function
-		depCacheKeys: Record<string, string | undefined>
-		mode: InstallModes
-	}
 	return {
 		_tag: "task",
 		id: Symbol("canister/installArgs"),
@@ -1253,8 +1251,7 @@ export const makeInstallArgsTask = <
 				const installFn = installArgsFn as (args: {
 					ctx: TaskCtxShape
 					mode: InstallModes
-					deps: ExtractTaskEffectSuccess<D> &
-						ExtractTaskEffectSuccess<P>
+					deps: ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>
 				}) => Promise<A> | A
 				// TODO: should it catch errors?
 				// TODO: handle different modes
@@ -1357,11 +1354,7 @@ export const makeInstallArgsTask = <
 				return input
 			}),
 		encodingFormat: customEncode ? "string" : "uint8array",
-		encode: (result: {
-			args: A
-			encodedArgs: Uint8Array<ArrayBufferLike>
-			mode: InstallModes
-		}) =>
+		encode: (result, input) =>
 			Effect.gen(function* () {
 				yield* Effect.logDebug("decoding:", result)
 				if (customEncode) {
@@ -1369,10 +1362,11 @@ export const makeInstallArgsTask = <
 					return JSON.stringify(result.args)
 				}
 				yield* Effect.logDebug("encoded:", result.encodedArgs)
+				// TODO: need to encode mode as well?
 				return result.encodedArgs
 			}),
 		// TODO: noEncodeArgs messes this up
-		decode: (prev) =>
+		decode: (prev, input) =>
 			Effect.gen(function* () {
 				// TODO: fix
 				const encoded = prev as Uint8Array<ArrayBufferLike>
@@ -1401,6 +1395,7 @@ export const makeInstallArgsTask = <
 					return {
 						encodedArgs: customEncoded,
 						args: decoded,
+						mode: input.mode,
 					}
 				}
 
@@ -1431,6 +1426,7 @@ export const makeInstallArgsTask = <
 				return {
 					encodedArgs: encoded,
 					args: decoded,
+					mode: input.mode,
 				}
 			}),
 	}
@@ -1557,3 +1553,29 @@ const providedTestScope = {
 		providedTask,
 	},
 }
+
+const encodingTask: Task = {
+	_tag: "task",
+	id: Symbol("test"),
+	effect: Effect.gen(function* () {}),
+	description: "",
+	tags: [],
+	dependsOn: {
+		test: testTask,
+	},
+	dependencies: {
+		test: testTask,
+	},
+	namedParams: {},
+	positionalParams: [],
+	params: {},
+	encodingFormat: "string",
+	encode: (result, input) =>
+		Effect.gen(function* () {
+			return JSON.stringify(result)
+		}),
+	// decode: (prev, input) =>
+	// 	Effect.gen(function* () {
+	// 		return JSON.parse(prev as unknown as string)
+	// 	}),
+} satisfies Task

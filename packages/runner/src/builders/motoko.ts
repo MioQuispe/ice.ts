@@ -13,6 +13,7 @@ import type {
 	DependencyMismatchError,
 	ExtractTaskEffectSuccess,
 	FileDigest,
+	InstallArgsTask,
 	IsValid,
 	NormalizeDeps,
 	TaskCtxShape,
@@ -192,9 +193,7 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 				const maybeCanisterId = yield* loadCanisterId(taskPath)
 				if (Option.isNone(maybeCanisterId)) {
 					return yield* Effect.fail(
-						new Error(
-							`Canister at ${taskPath} is not installed, cannot build`,
-						),
+						new Error(`Canister at ${taskPath} is not installed, cannot build`),
 					)
 				}
 				const canisterId = maybeCanisterId.value
@@ -211,12 +210,11 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 				for (const [index, file] of srcFiles.entries()) {
 					const prevSrcDigest = prevSrcDigests?.[index]
 					const filePath = path.join(srcDir, file)
-					const { fresh: srcFresh, digest: srcDigest } = yield* Effect.tryPromise(
-						{
+					const { fresh: srcFresh, digest: srcDigest } =
+						yield* Effect.tryPromise({
 							try: () => isArtifactCached(filePath, prevSrcDigest),
 							catch: Effect.fail,
-						},
-					)
+						})
 					srcDigests.push(srcDigest)
 				}
 				const input = {
@@ -368,14 +366,7 @@ class MotokoCanisterBuilder<
 		const installArgsTask = {
 			...this.#scope.children.install_args,
 			dependencies: finalDeps,
-		} as Task<
-			{
-				args: I
-				encodedArgs: Uint8Array<ArrayBufferLike>
-			},
-			D,
-			NP
-		>
+		} as InstallArgsTask<I, D, NP>
 
 		const updatedChildren = {
 			...this.#scope.children,
@@ -406,14 +397,7 @@ class MotokoCanisterBuilder<
 		const installArgsTask = {
 			...this.#scope.children.install_args,
 			dependsOn: updatedDependsOn,
-		} as Task<
-			{
-				args: I
-				encodedArgs: Uint8Array<ArrayBufferLike>
-			},
-			ND,
-			P
-		>
+		} as InstallArgsTask<I, ND, P>
 		const updatedChildren = {
 			...this.#scope.children,
 			install_args: installArgsTask,
@@ -493,7 +477,7 @@ export const motokoCanister = <
 			install_args: installArgsTask,
 			stop: stopTask,
 			remove: removeTask,
-			install: makeInstallTask<I, Record<string, unknown>, _SERVICE>({
+			install: makeInstallTask<I, {}, {}, _SERVICE>({
 				install_args: installArgsTask,
 				build: buildTask,
 				bindings: bindingsTask,

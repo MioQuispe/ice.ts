@@ -148,12 +148,44 @@ export interface PositionalParam<T = unknown> extends TaskParam<T> {
 // })
 // export const positionalParamSchema = type.and(taskParamSchema)
 
+type EncodingFormat<E extends "string" | "uint8array" | undefined> = E extends undefined ? string : E extends "string" ? string : Uint8Array<ArrayBufferLike>
+
+// export const makeTask = <A, D extends Record<string, Task>, P extends Record<string, Task>, E, R, I>({
+// 	effect: Effect.Effect<A, E, R>,
+// 	description: string,
+// 	tags: Array<string | symbol>,
+// 	dependsOn: D,
+// 	dependencies: P,
+// 	namedParams: Record<string, NamedParam>,
+// 	positionalParams: Array<PositionalParam>,
+// 	params: Record<string, NamedParam | PositionalParam>,
+// 	encode: (value: A, input: I) => Effect.Effect<string | Uint8Array<ArrayBufferLike>>,
+// 	decode: (value: string | Uint8Array<ArrayBufferLike>, input: I) => Effect.Effect<A, E, R>,
+// 	encodingFormat: "string" | "uint8array",
+// }) => {
+// 	return {
+// 		_tag: "task",
+// 		id: Symbol("task"),
+// 		effect,
+// 		description,
+// 		tags,
+// 		dependsOn,
+// 		dependencies,
+// 		namedParams,
+// 		positionalParams,
+// 		params,
+// 		encode,
+// 		decode,
+// 		encodingFormat,
+// 	} satisfies Task<A, D, P, E, R, I>
+// }
+
 export interface Task<
-	A = unknown,
+	A = any,
 	D extends Record<string, Task> = {},
 	P extends Record<string, Task> = {},
-	E = unknown,
-	R = unknown,
+	E = any,
+	R = any,
 	I = any,
 > {
 	_tag: "task"
@@ -171,11 +203,14 @@ export interface Task<
 	// but it only supports .validate not encode/decode
 	// TODO: wrap fields in cache object
 	input?: () => Effect.Effect<I, E, R> // optional input
-	// TODO: causes type errors. we shouldnt have to pass in the type here
-	encode?: (value: any) => Effect.Effect<string | Uint8Array<ArrayBufferLike>>
+	encode?: (value: A, input: I) => Effect.Effect<string | Uint8Array<ArrayBufferLike>>
+	// TODO:
+	// encode?: (value: A, input: I) => Effect.Effect<EncodingFormat<Task["encodingFormat"]>>
 	encodingFormat?: "string" | "uint8array"
 	// TODO: infer type depending on encodingFormat
-	decode?: (value: string | Uint8Array<ArrayBufferLike>) => Effect.Effect<A, E, R>
+	decode?: (value: string | Uint8Array<ArrayBufferLike>, input: I) => Effect.Effect<A, E, R>
+	// TODO:
+	// decode?: (value: EncodingFormat<Task["encodingFormat"]>, input: I) => Effect.Effect<A, E, R>
 	computeCacheKey?: (input: I) => string
 }
 

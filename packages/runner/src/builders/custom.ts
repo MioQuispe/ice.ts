@@ -12,6 +12,7 @@ import type {
 	BindingsTask,
 	BuildTask,
 	CreateTask,
+	InstallArgsTask,
 } from "./lib.js"
 import {
 	resolveConfig,
@@ -389,11 +390,8 @@ class CustomCanisterBuilder<
 				...this.#scope.children.install_args.dependencies,
 				...finalDeps,
 			},
-		} as Task<
-			{
-				args: I
-				encodedArgs: Uint8Array<ArrayBufferLike>
-			},
+		} as InstallArgsTask<
+			I,
 			D,
 			NP
 		>
@@ -427,11 +425,8 @@ class CustomCanisterBuilder<
 				...this.#scope.children.install_args.dependsOn,
 				...updatedDeps,
 			},
-		} as Task<
-			{
-				args: I
-				encodedArgs: Uint8Array<ArrayBufferLike>
-			},
+		} as InstallArgsTask<
+			I,
 			ND,
 			P
 		>
@@ -507,7 +502,7 @@ export const customCanister = <_SERVICE = unknown, I = unknown>(
 			bindings: bindingsTask,
 			build: buildTask,
 			install_args: installArgsTask,
-			install: makeInstallTask<I, Record<string, unknown>, _SERVICE>({
+			install: makeInstallTask<I, {}, {}, _SERVICE>({
 				install_args: installArgsTask,
 				build: buildTask,
 				bindings: bindingsTask,

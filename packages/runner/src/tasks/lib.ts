@@ -581,7 +581,7 @@ export const executeTasks = (
 							if ("decode" in task) {
 								yield* Effect.logDebug("decoding result:", encodedResult)
 								const decodedResult = yield* task
-									.decode(encodedResult)
+									.decode(encodedResult, Option.isSome(input) ? input.value : {})
 									.pipe(Effect.provide(taskLayer))
 								result = Option.some(decodedResult)
 								yield* Effect.logDebug("decoded result:", decodedResult)
@@ -615,7 +615,7 @@ export const executeTasks = (
 						const encodedResult =
 							"encode" in task
 								? yield* task
-										.encode(result.value)
+										.encode(result.value, Option.isSome(input) ? input.value : {})
 										.pipe(Effect.provide(taskLayer))
 								: JSON.stringify(result.value)
 						yield* Effect.logDebug(
