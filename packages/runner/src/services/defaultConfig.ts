@@ -1,20 +1,36 @@
 import { Context, Effect, Layer } from "effect"
-import { ICEConfig, ICEUser, InitializedICEConfig } from "../types/types.js"
 import { Ids } from "../ids.js"
-import { DefaultReplica, Replica } from "./replica.js"
-import { DfxReplica } from "./dfx.js"
-import { picReplicaImpl } from "./pic/pic.js"
-import { NodeContext } from "@effect/platform-node"
-import { configLayer } from "../index.js"
+import { ICEUser } from "../types/types.js"
+import { DefaultReplica, ReplicaService } from "./replica.js"
 
 // const DfxReplicaService = DfxReplica.pipe(
 // 	Layer.provide(NodeContext.layer),
 // 	Layer.provide(configLayer),
 // )
 
+
+export type InitializedDefaultConfig = {
+	users: {
+		default: ICEUser
+	}
+	roles: {
+		deployer: ICEUser
+		minter: ICEUser
+		controller: ICEUser
+		treasury: ICEUser
+	}
+	networks: {
+		[key: string]: {
+			replica: ReplicaService
+			host: string
+			port: number
+		}
+	}
+}
+
 export class DefaultConfig extends Context.Tag("DefaultConfig")<
 	DefaultConfig,
-	ICEConfig
+	InitializedDefaultConfig
 >() {
 	static readonly Live = Layer.effect(
 		DefaultConfig,
@@ -45,17 +61,11 @@ export class DefaultConfig extends Context.Tag("DefaultConfig")<
 			const defaultUsers = {
 				default: defaultUser,
 			}
-			// const defaultRoles = {
-			// 	deployer: defaultUsers.default,
-			// 	minter: defaultUsers.default,
-			// 	controller: defaultUsers.default,
-			// 	treasury: defaultUsers.default,
-			// }
 			const defaultRoles = {
-				deployer: "default",
-				minter: "default",
-				controller: "default",
-				treasury: "default",
+				deployer: defaultUsers.default,
+				minter: defaultUsers.default,
+				controller: defaultUsers.default,
+				treasury: defaultUsers.default,
 			}
 
 			return {

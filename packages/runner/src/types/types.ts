@@ -1,26 +1,21 @@
-import type { Effect, Option, Schema } from "effect"
 import type {
 	ActorSubclass,
-	Agent,
-	Identity,
-	SignIdentity,
+	SignIdentity
 } from "@dfinity/agent"
-import type { Principal } from "@dfinity/principal"
-import type { ReplicaService } from "../services/replica.js"
-import type { StandardSchemaV1 } from "@standard-schema/spec"
-import { type } from "arktype"
-import type { TaskCtx } from "../tasks/lib.js"
-import type { TaskInfo } from "../tasks/run.js"
-import type { DependencyResults } from "../tasks/run.js"
 import { NodeContext } from "@effect/platform-node"
+import type { StandardSchemaV1 } from "@standard-schema/spec"
+import type { Effect } from "effect"
+import { TaskArgsService } from "../index.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
-import { TaskRegistry } from "../services/taskRegistry.js"
+import { CLIFlags } from "../services/cliFlags.js"
+import { DefaultConfig } from "../services/defaultConfig.js"
 import { ICEConfigService } from "../services/iceConfig.js"
 import { Moc } from "../services/moc.js"
-import { DefaultConfig } from "../services/defaultConfig.js"
-import { CLIFlags } from "../services/cliFlags.js"
-import { TaskArgsService } from "../index.js"
+import type { ReplicaService } from "../services/replica.js"
 import { DefaultReplica } from "../services/replica.js"
+import { TaskRegistry } from "../services/taskRegistry.js"
+import type { TaskCtx } from "../tasks/lib.js"
+import type { DependencyResults, TaskInfo } from "../tasks/run.js"
 
 export type CanisterActor = {
 	actor: ActorSubclass<unknown>
@@ -66,12 +61,17 @@ export type ICEConfig = {
 	}
 }
 
+export type DefaultRoles = "deployer" | "minter" | "controller" | "treasury"
+
 export type InitializedICEConfig = {
 	users: {
 		[key: string]: ICEUser
 	}
 	roles: {
 		deployer: ICEUser
+		minter: ICEUser
+		controller: ICEUser
+		treasury: ICEUser
 		[key: string]: ICEUser
 	}
 	networks: {

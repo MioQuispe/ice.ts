@@ -30,7 +30,9 @@
 				"useShorthandFunctionType": "off"
 			},
 			"complexity": {
-				"noBannedTypes": "off"
+				"noBannedTypes": "off",
+				"noUselessFragments": "off",
+				"useLiteralKeys": "off"
 			},
 			"correctness": {
 				"useYield": "off"

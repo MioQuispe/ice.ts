@@ -55,8 +55,8 @@ export function parseCallSite(errStack: string): { file?: string; line?: number 
       // or if there's a file:// scheme, you might do:
       // const match = l.match(/\((?:file:\/\/)?([^:]+):(\d+):(\d+)\)/)
       if (match) {
-        const file = match[1]
-        const line = Number.parseInt(match[2])
+        const file = match[1] as string
+        const line = Number.parseInt(match[2] as string)
         return { file, line }
       }
     }

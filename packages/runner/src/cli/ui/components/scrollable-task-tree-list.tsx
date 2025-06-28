@@ -1,9 +1,9 @@
-import React, { useState, useMemo } from "react";
 import { Box, useInput, useStdout } from "ink";
-import { TaskList, TaskListItem } from "./Task.js";
-import type { Task, TaskTree, Scope } from "../../../types/types.js";
+import React, { useMemo, useState } from "react";
+import type { Scope, Task, TaskTree } from "../../../types/types.js";
 import { useICE } from "../index.js"; // import runTask from context
 import type { StateOthers } from "./Task.js";
+import { TaskList, TaskListItem } from "./Task.js";
 
 /**
  * A flattened representation of a task tree item.
@@ -40,7 +40,7 @@ export const flattenTaskTree = (
     taskTree.children
   ) {
     for (const key of Object.keys(taskTree.children)) {
-      const node = taskTree.children[key];
+      const node = taskTree.children[key]!;
       const fullPath = [...path, key];
       flattened.push({
         key: fullPath.join(":"),
@@ -143,7 +143,7 @@ export const FlatScrollableTaskTreeList: React.FC<{
   useInput((input, key) => {
     // When the user presses Enter or space, check if the selected item is a task.
     if (key.return || input === " ") {
-      const selectedItem = flattenedTasks[selectedIndex];
+      const selectedItem = flattenedTasks[selectedIndex]!;
       const isTask =
         typeof selectedItem.node === "object" &&
         selectedItem.node !== null &&
@@ -231,19 +231,19 @@ export const ScrollableTaskTreeList: React.FC<{
         const fullPath = [...path, key];
         // If this element is the selected one, set a "selected" state.
         const state = index === selectedIndex ? "selected" : "pending";
-        if (node._tag === "task") {
+        if (node?._tag === "task") {
           return (
             <TaskListItem
               key={fullPath.join(":")}
-              label={fullPath[fullPath.length - 1]}
+              label={fullPath[fullPath.length - 1]!}
               state={state}
             />
           );
         }
-        if (node._tag === "scope") {
+        if (node?._tag === "scope") {
           return (
             <Box key={fullPath.join(":")} flexDirection="column">
-              <TaskListItem isExpanded label={fullPath[fullPath.length - 1]} state={state} />
+              <TaskListItem isExpanded label={fullPath[fullPath.length - 1]!} state={state} />
               {/* Render nested tasks as non-scrollable */}
               <Box marginLeft={2}>
                 <TaskTreeList
@@ -315,19 +315,19 @@ export const TaskTreeList: React.FC<{
             ? (taskTree as Scope).children[key]
             : (taskTree as TaskTree)[key];
         const fullPath = [...path, key];
-        if (node._tag === "task") {
+        if (node?._tag === "task") {
           return (
             <TaskListItem
               key={fullPath.join(":")}
-              label={fullPath[fullPath.length - 1]}
+              label={fullPath[fullPath.length - 1]!}
               state="pending"
             />
           );
         }
-        if (node._tag === "scope") {
+        if (node?._tag === "scope") {
           return (
             <Box key={fullPath.join(":")} flexDirection="column">
-              <TaskListItem isExpanded label={fullPath[fullPath.length - 1]} state="pending" />
+              <TaskListItem isExpanded label={fullPath[fullPath.length - 1]!} state="pending" />
               <Box marginLeft={2}>
                 <TaskTreeList
                   taskTree={node.children}

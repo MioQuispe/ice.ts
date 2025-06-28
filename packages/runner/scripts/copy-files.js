@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // This script copies .wasm, .did, .types.ts, and .did.js files from the src folder to the dist folder
-import { createRequire } from 'module';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 const require = createRequire(import.meta.url);
 const shell = require('shelljs');
-import path from 'node:path';
 
 const patterns = [
   'src/services/pic/pocket-ic',

@@ -1,9 +1,8 @@
-import React, { isValidElement, Children, useState, useEffect } from "react"
-import type { FC, ReactElement, ReactNode } from "react"
-import isUnicodeSupported from "is-unicode-supported"
-import { Text, Box } from "ink"
 import spinners from "cli-spinners"
-import figures, { mainSymbols, fallbackSymbols, replaceSymbols } from "figures"
+import figures from "figures"
+import { Box, Text } from "ink"
+import type { FC, ReactElement, ReactNode } from "react"
+import { Children, isValidElement, useEffect, useState } from "react"
 
 // const symbols = {
 //   arrowRight: "→",

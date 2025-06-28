@@ -1,40 +1,34 @@
+import type { SignIdentity } from "@dfinity/agent"
+import { StandardSchemaV1 } from "@standard-schema/spec"
 import {
-	Chunk,
 	ConfigProvider,
 	Context,
 	Data,
 	Deferred,
 	Effect,
+	Array as EffectArray,
+	Layer,
 	ManagedRuntime,
 	Match,
-	Option,
-	Runtime,
-	Record,
-	Array as EffectArray,
+	Option
 } from "effect"
+import { configMap, makeRuntime, TaskArgsService } from "../index.js"
+import { CLIFlags } from "../services/cliFlags.js"
+import { DefaultConfig, InitializedDefaultConfig } from "../services/defaultConfig.js"
 import { ICEConfigService } from "../services/iceConfig.js"
+import { type ReplicaService } from "../services/replica.js"
+import { TaskRegistry } from "../services/taskRegistry.js"
 import type {
-	ICEConfig,
+	ICEUser,
 	NamedParam,
 	PositionalParam,
+	Scope,
+	Task,
 	TaskParam,
 	TaskTree,
+	TaskTreeNode
 } from "../types/types.js"
-import type { Scope } from "../types/types.js"
-import type { TaskTreeNode } from "../types/types.js"
-import type { Task } from "../types/types.js"
-import type { SignIdentity } from "@dfinity/agent"
 import { DependencyResults, runTask, TaskInfo } from "./run.js"
-import { Layer } from "effect"
-import { configMap, TaskArgsService } from "../index.js"
-import { makeRuntime } from "../index.js"
-import { type ReplicaService } from "../services/replica.js"
-import { DefaultConfig } from "../services/defaultConfig.js"
-import { CLIFlags } from "../services/cliFlags.js"
-import { StandardSchemaV1 } from "@standard-schema/spec"
-import { TaskRegistry } from "../services/taskRegistry.js"
-import { CanisterIdsService } from "src/services/canisterIds.js"
-import { NodeContext } from "@effect/platform-node"
 
 type ExtractNamedParams<
 	TP extends Record<string, NamedParam | PositionalParam>,
@@ -84,11 +78,10 @@ export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
 		}
 	}
 	readonly roles: {
-		deployer: {
-			identity: SignIdentity
-			principal: string
-			accountId: string
-		}
+		deployer: ICEUser
+		minter: ICEUser
+		controller: ICEUser
+		treasury: ICEUser
 		[name: string]: {
 			identity: SignIdentity
 			principal: string
@@ -405,18 +398,23 @@ export const executeTasks = (
 				new Error(`No replica found for network: ${currentNetwork}`),
 			)
 		}
-		const currentUsers = config?.users ?? defaultConfig.users
+		const currentUsers = config?.users ?? {}
 		const networks = config?.networks ?? defaultConfig.networks
 		// TODO: merge with defaultConfig.roles
-		const initializedRoles = 
-			Object.fromEntries(
-					Object.entries(config?.roles ?? {}).map(([name, user]) => {
-						// TODO: causes undefined
-						return [name, currentUsers[user]]
-					}),
-				)
 
-		const resolvedRoles = {
+		const initializedRoles: Record<string, ICEUser> = {}
+		for (const [name, user] of Object.entries(config?.roles ?? {})) {
+			if (!currentUsers[user]) {
+				return yield* Effect.fail(
+					new Error(`User ${user} not found in current users`),
+				)
+			}
+			initializedRoles[name] = currentUsers[user]
+		}
+
+		const resolvedRoles: {
+			[key: string]: ICEUser
+		} & InitializedDefaultConfig["roles"] = {
 			...defaultConfig.roles,
 			...initializedRoles,
 		}
@@ -756,8 +754,8 @@ export const findNodeInTree = (tree: TaskTree, path: string[]) =>
 		let current: TaskTree | TaskTreeNode = tree
 		for (const segment of path) {
 			if (!("_tag" in current)) {
-				if (!(segment in current)) {
-					yield* Effect.fail(
+				if (!current[segment]) {
+					return yield* Effect.fail(
 						new TaskNotFoundError({
 							message: `Segment "${segment}" not found in tree at path: ${path.join(":")}`,
 						}),
@@ -765,8 +763,8 @@ export const findNodeInTree = (tree: TaskTree, path: string[]) =>
 				}
 				current = current[segment]
 			} else if (current._tag === "scope") {
-				if (!(segment in current.children)) {
-					yield* Effect.fail(
+				if (!current.children[segment]) {
+					return yield* Effect.fail(
 						new TaskNotFoundError({
 							message: `Segment "${segment}" not found in scope children at path: ${path.join(":")}`,
 						}),
@@ -774,7 +772,7 @@ export const findNodeInTree = (tree: TaskTree, path: string[]) =>
 				}
 				current = current.children[segment] as TaskTreeNode
 			} else {
-				yield* Effect.fail(
+				return yield* Effect.fail(
 					new TaskNotFoundError({
 						message: `Cannot traverse into node with tag "${current._tag}" at segment "${segment}" at path: ${path.join(":")}`,
 					}),
@@ -796,7 +794,14 @@ export const findTaskInTaskTree = (
 			if (!("_tag" in node)) {
 				if (isLastKey) {
 					// TODO: this is all then
-					const taskTree = node as TaskTree
+					const taskTree = node
+					if (!taskTree[key]) {
+						return yield* Effect.fail(
+							new TaskNotFoundError({
+								message: `Segment "${key}" not found in tree at path: ${keys.join(":")}`,
+							}),
+						)
+					}
 					node = taskTree[key]
 
 					if (node._tag === "task") {
@@ -814,6 +819,13 @@ export const findTaskInTaskTree = (
 						}),
 					)
 				} else {
+					if (!node[key]) {
+						return yield* Effect.fail(
+							new TaskNotFoundError({
+								message: `Segment "${key}" not found in tree at path: ${keys.join(":")}`,
+							}),
+						)
+					}
 					node = node[key]
 				}
 			} else if (node._tag === "task") {
@@ -827,6 +839,13 @@ export const findTaskInTaskTree = (
 				)
 			} else if (node._tag === "scope") {
 				if (isLastKey) {
+					if (!node.children[key]) {
+						return yield* Effect.fail(
+							new TaskNotFoundError({
+								message: `Segment "${key}" not found in scope children at path: ${keys.join(":")}`,
+							}),
+						)
+					}
 					node = node.children[key]
 
 					if (node._tag === "task") {

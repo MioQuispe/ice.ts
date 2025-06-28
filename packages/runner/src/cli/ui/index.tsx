@@ -1,54 +1,45 @@
+import { NodeContext } from "@effect/platform-node"
 import {
   Effect,
-  Console,
-  Match,
-  Option,
-  SubscriptionRef,
-  Stream,
-  Fiber,
-  ManagedRuntime,
   Layer,
   Logger,
   LogLevel,
+  ManagedRuntime,
+  Stream,
+  SubscriptionRef
 } from "effect"
-import { Spinner, ProgressBar, UnorderedList } from "@inkjs/ui"
-import React, {
-  useState,
-  useEffect,
-  useSyncExternalStore,
-  createContext,
-  useContext,
-} from "react"
 import {
   Box,
   render,
   Text,
-  Static,
+  useApp,
+  useFocus,
   useFocusManager,
   useInput,
-  useFocus,
-  useApp,
-  useStdout,
+  useStdout
 } from "ink"
-import type {
-  ICEConfigFile,
-  Scope,
-  Task,
-  TaskTree,
-  TaskTreeNode,
-  ICEConfig,
-} from "../../types/types.js"
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from "react"
+import { DefaultsLayer, TaskArgsService } from "../../index.js"
+import { CLIFlags } from "../../services/cliFlags.js"
+import { ICEConfigService } from "../../services/iceConfig.js"
 import { filterNodes } from "../../tasks/lib.js"
 import { runTaskByPath } from "../../tasks/run.js"
+import type {
+  ICEConfig,
+  Scope,
+  Task,
+  TaskTree
+} from "../../types/types.js"
 import { TaskList, TaskListItem, type StateOthers } from "./components/Task.js"
 import {
-  FlatScrollableTaskTreeList,
-  ScrollableTaskTreeList,
+  FlatScrollableTaskTreeList
 } from "./components/scrollable-task-tree-list.js"
-import { ICEConfigService } from "../../services/iceConfig.js"
-import { DefaultsLayer, TaskArgsService } from "../../index.js"
-import { NodeContext } from "@effect/platform-node"
-import { CLIFlags } from "../../services/cliFlags.js"
 
 export const TUILayer = Layer.mergeAll(
   DefaultsLayer,
@@ -266,12 +257,12 @@ const TaskTreeList = ({
         // const state = fullPath.includes("cap") ? "loading" : "pending"
         // TODO: get task state and allow running tasks
         const state = "pending"
-        if (node._tag === "task") {
+        if (node?._tag === "task") {
           return (
             <>
               <TaskTreeListItem
                 key={fullPath.join(":")}
-                label={fullPath[fullPath.length - 1]}
+                label={fullPath[fullPath.length - 1]!}
                 task={node}
                 path={fullPath}
               />
@@ -281,13 +272,13 @@ const TaskTreeList = ({
             </>
           )
         }
-        if (node._tag === "scope") {
+        if (node?._tag === "scope") {
           return (
             <>
               <TaskListItem
                 key={fullPath.join(":")}
                 isExpanded
-                label={fullPath[fullPath.length - 1]}
+                label={fullPath[fullPath.length - 1]!}
               >
                 <TaskTreeList
                   key={fullPath.join(":")}
@@ -299,6 +290,7 @@ const TaskTreeList = ({
             </>
           )
         }
+        return null
       })}
     </TaskList>
   )
