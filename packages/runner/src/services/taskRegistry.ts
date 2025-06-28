@@ -1,7 +1,6 @@
-import { Effect, Layer, Context, Option } from "effect"
-import type { Task } from "../types/types.js"
 import { KeyValueStore } from "@effect/platform"
 import { PlatformError } from "@effect/platform/Error"
+import { Context, Effect, Layer, Option } from "effect"
 
 export class TaskRegistry extends Context.Tag("TaskRegistry")<
 	TaskRegistry,
@@ -16,7 +15,7 @@ export class TaskRegistry extends Context.Tag("TaskRegistry")<
 		) => Effect.Effect<
 			Option.Option<string | Uint8Array<ArrayBufferLike>>,
 			PlatformError
-		>,
+		>
 		readonly has: (cacheKey: string) => Effect.Effect<boolean, PlatformError>
 	}
 >() {

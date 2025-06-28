@@ -9,6 +9,7 @@ import {
   ManagedRuntime,
   Layer,
   Logger,
+  LogLevel,
 } from "effect"
 import { Spinner, ProgressBar, UnorderedList } from "@inkjs/ui"
 import React, {
@@ -39,9 +40,42 @@ import type {
 } from "../../types/types.js"
 import { filterNodes } from "../../tasks/lib.js"
 import { runTaskByPath } from "../../tasks/run.js"
-import { TUILayer } from "../../index.js"
 import { TaskList, TaskListItem, type StateOthers } from "./components/Task.js"
-import { FlatScrollableTaskTreeList, ScrollableTaskTreeList } from "./components/scrollable-task-tree-list.js"
+import {
+  FlatScrollableTaskTreeList,
+  ScrollableTaskTreeList,
+} from "./components/scrollable-task-tree-list.js"
+import { ICEConfigService } from "../../services/iceConfig.js"
+import { DefaultsLayer, TaskArgsService } from "../../index.js"
+import { NodeContext } from "@effect/platform-node"
+import { CLIFlags } from "../../services/cliFlags.js"
+
+export const TUILayer = Layer.mergeAll(
+  DefaultsLayer,
+  ICEConfigService.Live.pipe(
+    Layer.provide(NodeContext.layer),
+    Layer.provide(
+      Layer.succeed(CLIFlags, {
+        globalArgs: { network: "local", logLevel: "debug" },
+        taskArgs: {
+          positionalArgs: [],
+          namedArgs: {},
+        },
+      }),
+    ),
+  ),
+  Layer.succeed(CLIFlags, {
+    globalArgs: { network: "local", logLevel: "debug" },
+    taskArgs: {
+      positionalArgs: [],
+      namedArgs: {},
+    },
+  }),
+  Layer.succeed(TaskArgsService, {
+    taskArgs: {},
+  }),
+  Logger.minimumLogLevel(LogLevel.Debug),
+)
 
 export function useSynchronizedState<T>(defaultState: T) {
   const [subscriptionRef] = useState(() =>
@@ -61,12 +95,16 @@ export function useSynchronizedState<T>(defaultState: T) {
   return [value, subscriptionRef] as const
 }
 
-export const StaticLogs: React.FC<{ logs: string[]; maxHeight?: number }> = ({ logs, maxHeight }) => {
-  const { stdout } = useStdout();
+export const StaticLogs: React.FC<{ logs: string[]; maxHeight?: number }> = ({
+  logs,
+  maxHeight,
+}) => {
+  const { stdout } = useStdout()
   // Use the provided maxHeight if available; if not, use stdout.rows minus a margin.
-  const viewHeight: number = maxHeight ?? (stdout ? Math.max(stdout.rows - 5, 1) : 10);
+  const viewHeight: number =
+    maxHeight ?? (stdout ? Math.max(stdout.rows - 5, 1) : 10)
   // Slice to only show the last `viewHeight` lines of logs.
-  const visibleLogs: string[] = logs.slice(-viewHeight);
+  const visibleLogs: string[] = logs.slice(-viewHeight)
 
   return (
     <Box flexDirection="column" height={viewHeight}>
@@ -74,8 +112,8 @@ export const StaticLogs: React.FC<{ logs: string[]; maxHeight?: number }> = ({ l
         <Text key={index}>{log}</Text>
       ))}
     </Box>
-  );
-};
+  )
+}
 
 export const TaskTreeListItem = <A, E, R, I>({
   label,
@@ -184,7 +222,8 @@ const ICEProvider: React.FC<{
   })
 
   const runTask = async (path: string[]) => {
-    // @ts-ignore
+    // TODO: create taskArgs / cliflags layers here instead?
+    // makeRuntime?
     await runtime.runPromise(runTaskByPath(path.join(":")))
   }
 
@@ -298,11 +337,17 @@ const Logs = () => {
   )
 }
 
-const UI = ({ config, taskTree }: { config: Partial<ICEConfig>; taskTree: TaskTree }) => {
-  const { logs } = useICE();
+const UI = ({
+  config,
+  taskTree,
+}: {
+  config: Partial<ICEConfig>
+  taskTree: TaskTree
+}) => {
+  const { logs } = useICE()
   // Determine the available height for the logs panel.
   // For example, if you want the logs panel to be 10 rows high:
-  const containerHeight = 35;
+  const containerHeight = 35
   return (
     <Box margin={2} rowGap={2} flexDirection="row">
       <Box width="50%">
@@ -319,7 +364,7 @@ const UI = ({ config, taskTree }: { config: Partial<ICEConfig>; taskTree: TaskTr
         </Box>
       </Box>
     </Box>
-  );
+  )
 }
 
 const CliApp = ({

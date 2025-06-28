@@ -17,6 +17,7 @@ import type {
 	IsValid,
 	NormalizeDeps,
 	TaskCtxShape,
+	TaskReturnValue,
 	ValidProvidedDeps,
 } from "./lib.js"
 import {
@@ -62,10 +63,15 @@ export const makeMotokoBindingsTask = (deps: {
 			const fs = yield* FileSystem.FileSystem
 			const { taskPath } = yield* TaskInfo
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
-			const { dependencies } = yield* DependencyResults
+			const { dependencies } = (yield* DependencyResults) as {
+				dependencies: {
+					[K in keyof typeof deps]: {
+						result: TaskReturnValue<typeof deps[K]>
+						cacheKey: string | undefined
+					}
+				}
+			}
 			const { result: buildResult } = dependencies.build
-			// TODO: types
-			// @ts-ignore
 			const { wasmPath, candidPath } = buildResult
 
 			yield* Effect.logDebug("Artifact paths", { wasmPath, candidPath })
@@ -234,7 +240,7 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 }
 
 class MotokoCanisterBuilder<
-	I,
+	I extends unknown[],
 	S extends CanisterScope<_SERVICE, I, D, P>,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
@@ -433,7 +439,7 @@ class MotokoCanisterBuilder<
 
 export const motokoCanister = <
 	_SERVICE = unknown,
-	I = unknown,
+	I extends unknown[] = unknown[],
 	P extends Record<string, unknown> = Record<string, unknown>,
 >(
 	canisterConfigOrFn:

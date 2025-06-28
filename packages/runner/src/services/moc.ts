@@ -19,7 +19,7 @@ export class Moc extends Context.Tag("Moc")<
       const commandExecutor = yield* CommandExecutor.CommandExecutor
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
-      const mocPath = process.env.DFX_MOC_PATH
+      const mocPath = process.env["DFX_MOC_PATH"]
       const command = Command.make("dfx", "cache", "show")
       const dfxCachePath = `${(yield* commandExecutor.string(command)).trim()}/moc`
       const resolvedMocPath = mocPath || dfxCachePath || "moc"

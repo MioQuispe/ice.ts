@@ -125,6 +125,7 @@ export const picReplicaImpl = Effect.gen(function* () {
 				message: `Failed to create custom pocket-ic client: ${error instanceof Error ? error.message : String(error)}`,
 			}),
 	})
+	// Needed because the constructor is set as private, but we need to instantiate it this way
 	// @ts-ignore
 	const pic: PocketIc = new PocketIc(customPocketIcClient)
 

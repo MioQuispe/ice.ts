@@ -28,6 +28,15 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "baseUrl": ".",
+
+    "noUncheckedIndexedAccess": true,       // adds | undefined when indexing arrays/objects
+    "noPropertyAccessFromIndexSignature": true, // ban obj.foo when only [key: string] exists
+    "useUnknownInCatchVariables": true,     // catch (e: unknown) instead of any
+    "noImplicitReturns": true,              // every code-path must return a value
+    "noFallthroughCasesInSwitch": true,     // disallow fall-through
+    "noImplicitOverride": true,             // require explicit `override` (harmless if you avoid classes)
+
+
     "plugins": [
       {
         "name": "@effect/language-service"

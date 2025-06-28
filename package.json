@@ -9,9 +9,9 @@
     "packages/didc_js/pkg"
   ],
   "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
-    "@effect/language-service": "^0.16.5",
-    "prettier": "^3.5.3",
+    "@biomejs/biome": "^2.0.6",
+    "@effect/language-service": "^0.23.3",
+    "prettier": "^3.6.2",
     "typescript": "^5.8.3"
   },
   "engines": {

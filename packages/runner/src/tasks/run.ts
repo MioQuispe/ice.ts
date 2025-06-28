@@ -9,7 +9,7 @@ import {
 } from "effect"
 import { ICEConfigService } from "../services/iceConfig.js"
 import { configMap, TaskArgsService } from "../index.js"
-import { Tags } from "../builders/lib.js"
+import { Tags, TaskReturnValue } from "../builders/lib.js"
 import type { Task } from "../types/types.js"
 import { TaskRegistry } from "../services/taskRegistry.js"
 import {
@@ -86,10 +86,7 @@ export const runTask = <T extends Task>(
 		const sortedTasks = topologicalSortTasks(collectedTasks)
 		yield* Effect.logDebug("Sorted tasks")
 		yield* Effect.logDebug("Executing tasks...")
-		const results = yield* executeTasks(
-			sortedTasks,
-			progressCb,
-		)
+		const results = yield* executeTasks(sortedTasks, progressCb)
 		yield* Effect.logDebug("Tasks executed")
 		return results.get(task.id) as Effect.Effect.Success<T["effect"]>
 	})

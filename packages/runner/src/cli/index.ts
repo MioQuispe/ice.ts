@@ -32,7 +32,7 @@ function moduleHashToHexString(moduleHash: [] | [number[]]): string {
 	return `0x${hexString}`
 }
 
-const getGlobalArgs = (cmdName: string) => {
+const getGlobalArgs = (cmdName: string): { network: string; logLevel: string } => {
 	const runIndex = process.argv.indexOf(cmdName)
 	// TODO: simplify this
 	if (runIndex === -1) {
@@ -41,16 +41,16 @@ const getGlobalArgs = (cmdName: string) => {
 			string: ["logLevel", "network"],
 		})
 		return {
-			network: argv?.network ?? "local",
-			logLevel: argv?.logLevel ?? "info",
+			network: argv?.["network"] ?? "local",
+			logLevel: argv?.["logLevel"] ?? "info",
 		}
 	}
 	const argv = mri(process.argv.slice(2, runIndex + 2), {
 		string: ["logLevel", "network"],
 	})
-	const globalArgs: { network: string; logLevel: string } = {
-		network: argv?.network ?? "local",
-		logLevel: argv?.logLevel ?? "info",
+	const globalArgs = {
+		network: argv?.["network"] ?? "local",
+		logLevel: argv?.["logLevel"] ?? "info",
 	}
 	return globalArgs
 }
@@ -111,7 +111,6 @@ const runCommand = defineCommand({
 				namedArgs,
 			},
 		}).runPromise(
-			// @ts-ignore
 			runTaskByPath(args.taskPath),
 		)
 		s.stop(`Finished task: ${color.green(color.underline(args.taskPath))}`)
@@ -148,7 +147,6 @@ const deployRun = async ({
 	await makeRuntime({
 		globalArgs,
 	}).runPromise(
-		// @ts-ignore
 		Effect.gen(function* () {
 			const { taskTree } = yield* ICEConfigService
 			const tasksWithPath = (yield* filterNodes(
@@ -201,7 +199,6 @@ const canistersCreateCommand = defineCommand({
 				logLevel,
 			},
 		}).runPromise(
-			// @ts-ignore
 			Effect.gen(function* () {
 				const s = p.spinner()
 				s.start("Creating all canisters")
@@ -251,7 +248,6 @@ const canistersBuildCommand = defineCommand({
 				logLevel,
 			},
 		}).runPromise(
-			// @ts-ignore
 			Effect.gen(function* () {
 				const s = p.spinner()
 				s.start("Building all canisters")
@@ -302,7 +298,6 @@ const canistersBindingsCommand = defineCommand({
 				logLevel,
 			},
 		}).runPromise(
-			// @ts-ignore
 			Effect.gen(function* () {
 				const s = p.spinner()
 				s.start("Generating bindings for all canisters")
@@ -354,7 +349,6 @@ const canistersInstallCommand = defineCommand({
 				logLevel,
 			},
 		}).runPromise(
-			// @ts-ignore
 			Effect.gen(function* () {
 				const s = p.spinner()
 				s.start("Installing all canisters")
@@ -405,7 +399,6 @@ const canistersStopCommand = defineCommand({
 				logLevel,
 			},
 		}).runPromise(
-			// @ts-ignore
 			Effect.gen(function* () {
 				const s = p.spinner()
 				s.start("Stopping all canisters")
@@ -503,7 +496,7 @@ const canistersStatusCommand = defineCommand({
 									// TODO: currentNetwork
 									const network = "local"
 									const canisterInfo = canisterIdsMap[canisterName]
-									const canisterId = canisterInfo[network]
+									const canisterId = canisterInfo?.[network]
 									if (!canisterId) {
 										throw new DeploymentError({
 											message: `No canister ID found for ${canisterName} on network ${network}`,
@@ -643,7 +636,6 @@ const canisterCommand = defineCommand({
 					logLevel,
 				},
 			}).runPromise(
-				// @ts-ignore
 				Effect.gen(function* () {
 					const { taskTree } = yield* ICEConfigService
 					const canisterScopesWithPath = yield* filterNodes(
@@ -744,7 +736,6 @@ const taskCommand = defineCommand({
 					logLevel,
 				},
 			}).runPromise(
-				// @ts-ignore
 				Effect.gen(function* () {
 					const { taskTree } = yield* ICEConfigService
 					const tasksWithPath = yield* filterNodes(

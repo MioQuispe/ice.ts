@@ -9,6 +9,7 @@ import {
 	Match,
 	Option,
 	Runtime,
+	Record,
 	Array as EffectArray,
 } from "effect"
 import { ICEConfigService } from "../services/iceConfig.js"
@@ -34,15 +35,6 @@ import { StandardSchemaV1 } from "@standard-schema/spec"
 import { TaskRegistry } from "../services/taskRegistry.js"
 import { CanisterIdsService } from "src/services/canisterIds.js"
 import { NodeContext } from "@effect/platform-node"
-
-// const asyncRunTask = async <A>(task: Task): Promise<A> => {
-// 	const result = makeRuntime({
-// 		network: "local",
-// 		logLevel: "debug",
-// 		// @ts-ignore
-// 	}).runPromise(runTask(task))
-// 	return result as A
-// }
 
 type ExtractNamedParams<
 	TP extends Record<string, NamedParam | PositionalParam>,
@@ -92,6 +84,11 @@ export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
 		}
 	}
 	readonly roles: {
+		deployer: {
+			identity: SignIdentity
+			principal: string
+			accountId: string
+		}
 		[name: string]: {
 			identity: SignIdentity
 			principal: string
@@ -159,8 +156,10 @@ export const collectDependencies = (
 		if (collected.has(rootTask.id)) continue
 		collected.set(rootTask.id, rootTask)
 		for (const key in rootTask.dependencies) {
-			// TODO: fix. no as?
+			// TODO: fix? Task dependencies are {}, cant be indexed.
+			// But Record<string, Task> as default is circular. not allowed
 			const dependency = (rootTask.dependencies as Record<string, Task>)[key]
+			if (!dependency) continue
 			collectDependencies([dependency], collected)
 		}
 	}
@@ -216,7 +215,15 @@ export const resolveTaskArgs = (
 			}
 		> = {}
 		for (const [name, param] of Object.entries(task.namedParams)) {
-			const arg = yield* resolveArg(param, namedArgs[name])
+			const namedArg = namedArgs[name]
+			if (!namedArg) {
+				return yield* Effect.fail(
+					new TaskArgsParseError({
+						message: `Missing named argument: ${name}`,
+					}),
+				)
+			}
+			const arg = yield* resolveArg(param, namedArg)
 			named[name] = {
 				arg,
 				param,
@@ -231,7 +238,22 @@ export const resolveTaskArgs = (
 		> = {}
 		for (const index in task.positionalParams) {
 			const param = task.positionalParams[index]
-			const arg = yield* resolveArg(param, positionalArgs[index])
+			const positionalArg = positionalArgs[index]
+			if (!param) {
+				return yield* Effect.fail(
+					new TaskArgsParseError({
+						message: `Missing positional argument: ${index}`,
+					}),
+				)
+			}
+			if (!positionalArg) {
+				return yield* Effect.fail(
+					new TaskArgsParseError({
+						message: `Missing positional argument: ${index}`,
+					}),
+				)
+			}
+			const arg = yield* resolveArg(param, positionalArg)
 			positional[param.name] = {
 				arg,
 				param,
@@ -292,8 +314,9 @@ export const topologicalSortTasks = <A, E, R, I>(
 
 	// Build the graph using the "provide" field.
 	for (const [id, task] of tasks.entries()) {
-		for (const key in task.dependencies) {
-			const providedTask = task.dependencies[key]
+		for (const [key, providedTask] of Object.entries(
+			task.dependencies as Record<string, Task>,
+		)) {
 			const depId = providedTask.id
 			// Only consider provided dependencies that are in our tasks map.
 			if (tasks.has(depId)) {
@@ -360,6 +383,8 @@ export type ProgressUpdate<A> = {
 	error?: unknown
 }
 
+// TODO: 1 task per time. its used like that anyway
+// rename to executeTask
 export const executeTasks = (
 	tasks: (Task | (Task & { args: Record<string, unknown> }))[],
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
@@ -374,17 +399,27 @@ export const executeTasks = (
 		const currentNetworkConfig =
 			config?.networks?.[currentNetwork] ??
 			defaultConfig.networks[currentNetwork]
-		const currentReplica = currentNetworkConfig.replica
+		const currentReplica = currentNetworkConfig?.replica
+		if (!currentReplica) {
+			return yield* Effect.fail(
+				new Error(`No replica found for network: ${currentNetwork}`),
+			)
+		}
 		const currentUsers = config?.users ?? defaultConfig.users
 		const networks = config?.networks ?? defaultConfig.networks
 		// TODO: merge with defaultConfig.roles
-		const initializedRoles = config?.roles
-			? Object.fromEntries(
-					Object.entries(config.roles).map(([name, user]) => {
+		const initializedRoles = 
+			Object.fromEntries(
+					Object.entries(config?.roles ?? {}).map(([name, user]) => {
+						// TODO: causes undefined
 						return [name, currentUsers[user]]
 					}),
 				)
-			: defaultConfig.roles
+
+		const resolvedRoles = {
+			...defaultConfig.roles,
+			...initializedRoles,
+		}
 
 		// Create a deferred for every task to hold its eventual result.
 		const deferredMap = new Map<
@@ -413,11 +448,9 @@ export const executeTasks = (
 						result: unknown
 					}
 				> = {}
-				for (const dependencyName in task.dependencies) {
-					// TODO: fix. no as?
-					const providedTask = (task.dependencies as Record<string, Task>)[
-						dependencyName
-					]
+				for (const [dependencyName, providedTask] of Object.entries(
+					task.dependencies as Record<string, Task>,
+				)) {
 					const depDeferred = deferredMap.get(providedTask.id)
 					if (depDeferred) {
 						const depResult = yield* Deferred.await(depDeferred)
@@ -430,7 +463,6 @@ export const executeTasks = (
 				// TODO: also handle dynamic calls from other tasks
 				// this is purely for the cli
 				let argsMap: Record<string, unknown>
-				// TODO: this adds args: undefined somewhere...
 				if ("args" in task && Object.keys(task.args).length > 0) {
 					argsMap = task.args
 				} else {
@@ -506,7 +538,7 @@ export const executeTasks = (
 							...defaultConfig.users,
 							...currentUsers,
 						},
-						roles: initializedRoles,
+						roles: resolvedRoles,
 						// TODO: taskArgs
 						// what format? we need to check the task itself
 						args: argsMap,
@@ -771,8 +803,6 @@ export const findTaskInTaskTree = (
 						return node as Task
 					} else if (node._tag === "scope") {
 						if ("defaultTask" in node) {
-							// TODO: fix
-							// @ts-ignore
 							const taskName = node.defaultTask
 							return node.children[taskName] as Task
 						}
@@ -804,7 +834,6 @@ export const findTaskInTaskTree = (
 					}
 					if ("defaultTask" in node) {
 						const taskName = node.defaultTask
-						// @ts-ignore
 						return node.children[taskName] as Task
 					}
 					return yield* Effect.fail(

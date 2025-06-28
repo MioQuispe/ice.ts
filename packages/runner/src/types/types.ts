@@ -42,7 +42,7 @@ export type ReplicaConfig = {
 	type: "pocketic" | "dfx"
 }
 
-type ICEUser = {
+export type ICEUser = {
 	identity: SignIdentity
 	principal: string
 	accountId: string
@@ -71,6 +71,7 @@ export type InitializedICEConfig = {
 		[key: string]: ICEUser
 	}
 	roles: {
+		deployer: ICEUser
 		[key: string]: ICEUser
 	}
 	networks: {

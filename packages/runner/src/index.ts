@@ -1,22 +1,29 @@
-import fs from "node:fs"
-import { Layer, ManagedRuntime, Logger, ConfigProvider, LogLevel, Effect, Context } from "effect"
 import { NodeContext } from "@effect/platform-node"
-import { DfxDefaultReplica, DfxReplica } from "./services/dfx.js"
-import type { ICECtx } from "./types/types.js"
-import { Moc } from "./services/moc.js"
-import { TaskRegistry } from "./services/taskRegistry.js"
-import { ICEConfigService } from "./services/iceConfig.js"
-import { picReplicaImpl } from "./services/pic/pic.js"
-import { CanisterIdsService } from "./services/canisterIds.js"
-import type { ICEConfig } from "./types/types.js"
-import { DefaultReplica } from "./services/replica.js"
-import { DefaultConfig } from "./services/defaultConfig.js"
-import { CLIFlags } from "./services/cliFlags.js"
+import { layerFileSystem } from "@effect/platform/KeyValueStore"
+import { StandardSchemaV1 } from "@standard-schema/spec"
 import { type } from "arktype"
+import {
+	ConfigProvider,
+	Context,
+	Layer,
+	Logger,
+	LogLevel,
+	ManagedRuntime,
+} from "effect"
+import fs from "node:fs"
+import { CanisterIdsService } from "./services/canisterIds.js"
+import { CLIFlags } from "./services/cliFlags.js"
+import { DefaultConfig } from "./services/defaultConfig.js"
+import { DfxReplica } from "./services/dfx.js"
+import { ICEConfigService } from "./services/iceConfig.js"
+import { Moc } from "./services/moc.js"
+import { picReplicaImpl } from "./services/pic/pic.js"
+import { DefaultReplica } from "./services/replica.js"
+import { TaskRegistry } from "./services/taskRegistry.js"
+import type { ICEConfig, ICECtx } from "./types/types.js"
+
 export * from "./builders/index.js"
 export * from "./ids.js"
-import { StandardSchemaV1 } from "@standard-schema/spec"
-import { layerFileSystem, layerMemory } from "@effect/platform/KeyValueStore"
 
 export const Ice = (
 	configOrFn:
@@ -68,23 +75,6 @@ export const DefaultsLayer = Layer.mergeAll(
 	),
 )
 
-export const TUILayer = Layer.mergeAll(
-	DefaultsLayer,
-	ICEConfigService.Live.pipe(
-		Layer.provide(NodeContext.layer),
-		Layer.provide(
-			Layer.succeed(CLIFlags, {
-				globalArgs: { network: "local", logLevel: "debug" },
-				taskArgs: {
-					positionalArgs: [],
-					namedArgs: {},
-				},
-			}),
-		),
-	),
-	Logger.minimumLogLevel(LogLevel.Debug),
-)
-
 const GlobalArgs = type({
 	network: "string",
 	logLevel: "'debug' | 'info' | 'error'",
@@ -111,9 +101,12 @@ type MakeRuntimeArgs = {
 	>
 }
 
-export class TaskArgsService extends Context.Tag("TaskArgsService")<TaskArgsService, {
-	readonly taskArgs: Record<string, unknown>
-}>() {}
+export class TaskArgsService extends Context.Tag("TaskArgsService")<
+	TaskArgsService,
+	{
+		readonly taskArgs: Record<string, unknown>
+	}
+>() {}
 
 export const makeRuntime = ({
 	globalArgs: rawGlobalArgs,
@@ -150,6 +143,7 @@ export const makeRuntime = ({
 	)
 }
 
-export { runCli } from "./cli/index.js"
 export { Opt } from "./canister.js"
+export { runCli } from "./cli/index.js"
 export type { TaskCtxShape } from "./tasks/lib.js"
+

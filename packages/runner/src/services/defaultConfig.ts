@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { InitializedICEConfig } from "../types/types.js"
+import { ICEConfig, ICEUser, InitializedICEConfig } from "../types/types.js"
 import { Ids } from "../ids.js"
 import { DefaultReplica, Replica } from "./replica.js"
 import { DfxReplica } from "./dfx.js"
@@ -14,7 +14,7 @@ import { configLayer } from "../index.js"
 
 export class DefaultConfig extends Context.Tag("DefaultConfig")<
 	DefaultConfig,
-	InitializedICEConfig
+	ICEConfig
 >() {
 	static readonly Live = Layer.effect(
 		DefaultConfig,
@@ -45,22 +45,22 @@ export class DefaultConfig extends Context.Tag("DefaultConfig")<
 			const defaultUsers = {
 				default: defaultUser,
 			}
+			// const defaultRoles = {
+			// 	deployer: defaultUsers.default,
+			// 	minter: defaultUsers.default,
+			// 	controller: defaultUsers.default,
+			// 	treasury: defaultUsers.default,
+			// }
 			const defaultRoles = {
 				deployer: "default",
 				minter: "default",
 				controller: "default",
 				treasury: "default",
 			}
-            // TODO: types
-			const initializedRoles = Object.fromEntries(
-				Object.entries(defaultRoles).map(([name, user]) => {
-					return [name, defaultUsers.default]
-				}),
-            )
 
 			return {
 				users: defaultUsers,
-				roles: initializedRoles,
+				roles: defaultRoles,
                 networks: defaultNetworks,
 			}
 		}),
