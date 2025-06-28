@@ -1,32 +1,17 @@
 import {
-	ConfigProvider,
 	Context,
-	Effect,
-	Layer,
-	Option,
-	Stream,
-	Chunk,
+	Effect
 } from "effect"
-import { ICEConfigService } from "../services/iceConfig.js"
-import { configMap, TaskArgsService } from "../index.js"
-import { Tags, TaskReturnValue } from "../builders/lib.js"
 import type { Task } from "../types/types.js"
-import { TaskRegistry } from "../services/taskRegistry.js"
 import {
+	collectDependencies,
+	executeTasks,
 	getTaskByPath,
 	getTaskPathById,
-	topologicalSortTasks,
-	executeTasks,
-	collectDependencies,
 	type ProgressUpdate,
 	TaskParamsToArgs,
+	topologicalSortTasks,
 } from "./lib.js"
-import { CanisterIdsService } from "../services/canisterIds.js"
-import { NodeContext } from "@effect/platform-node"
-import { CLIFlags } from "../services/cliFlags.js"
-import { DefaultConfig } from "../services/defaultConfig.js"
-import { Moc } from "../services/moc.js"
-import { DefaultReplica } from "../services/replica.js"
 
 export class DependencyResults extends Context.Tag("DependencyResults")<
 	DependencyResults,

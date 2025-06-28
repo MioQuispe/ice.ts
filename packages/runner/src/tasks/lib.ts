@@ -12,11 +12,12 @@ import {
 	Match,
 	Option
 } from "effect"
-import { configMap, makeRuntime, TaskArgsService } from "../index.js"
+import { configMap, makeRuntime } from "../index.js"
 import { CLIFlags } from "../services/cliFlags.js"
 import { DefaultConfig, InitializedDefaultConfig } from "../services/defaultConfig.js"
 import { ICEConfigService } from "../services/iceConfig.js"
 import { type ReplicaService } from "../services/replica.js"
+import { TaskArgsService } from "../services/taskArgs.js"
 import { TaskRegistry } from "../services/taskRegistry.js"
 import type {
 	ICEUser,
@@ -166,11 +167,18 @@ export class TaskArgsParseError extends Data.TaggedError("TaskArgsParseError")<{
 // Helper function to validate a single parameter
 const resolveArg = <T = unknown>(
 	param: PositionalParam<T> | NamedParam<T>, // Adjust type as per your actual schema structure
-	arg: string,
+	arg: string | undefined,
 ): Effect.Effect<T | undefined, TaskArgsParseError> => {
 	// TODO: arg might be undefined
-	if (arg === undefined && param.isOptional) {
-		return Effect.succeed(param.default)
+	if (!arg) {
+		if (param.isOptional) {
+			return Effect.succeed(param.default)
+		}
+		return Effect.fail(
+			new TaskArgsParseError({
+				message: `Missing argument for ${param.name}`,
+			}),
+		)
 	}
 	const value = param.parse(arg) ?? param.default
 	const outputType = param.type["~standard"].types?.output
@@ -209,13 +217,6 @@ export const resolveTaskArgs = (
 		> = {}
 		for (const [name, param] of Object.entries(task.namedParams)) {
 			const namedArg = namedArgs[name]
-			if (!namedArg) {
-				return yield* Effect.fail(
-					new TaskArgsParseError({
-						message: `Missing named argument: ${name}`,
-					}),
-				)
-			}
 			const arg = yield* resolveArg(param, namedArg)
 			named[name] = {
 				arg,
@@ -233,13 +234,6 @@ export const resolveTaskArgs = (
 			const param = task.positionalParams[index]
 			const positionalArg = positionalArgs[index]
 			if (!param) {
-				return yield* Effect.fail(
-					new TaskArgsParseError({
-						message: `Missing positional argument: ${index}`,
-					}),
-				)
-			}
-			if (!positionalArg) {
 				return yield* Effect.fail(
 					new TaskArgsParseError({
 						message: `Missing positional argument: ${index}`,

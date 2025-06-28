@@ -4,11 +4,10 @@ import { StandardSchemaV1 } from "@standard-schema/spec"
 import { type } from "arktype"
 import {
 	ConfigProvider,
-	Context,
 	Layer,
 	Logger,
 	LogLevel,
-	ManagedRuntime,
+	ManagedRuntime
 } from "effect"
 import fs from "node:fs"
 import { CanisterIdsService } from "./services/canisterIds.js"
@@ -19,6 +18,7 @@ import { ICEConfigService } from "./services/iceConfig.js"
 import { Moc } from "./services/moc.js"
 import { picReplicaImpl } from "./services/pic/pic.js"
 import { DefaultReplica } from "./services/replica.js"
+import { TaskArgsService } from "./services/taskArgs.js"
 import { TaskRegistry } from "./services/taskRegistry.js"
 import type { ICEConfig, ICECtx } from "./types/types.js"
 
@@ -75,6 +75,33 @@ export const DefaultsLayer = Layer.mergeAll(
 	),
 )
 
+export const TUILayer = Layer.mergeAll(
+  DefaultsLayer,
+  ICEConfigService.Live.pipe(
+    Layer.provide(NodeContext.layer),
+    Layer.provide(
+      Layer.succeed(CLIFlags, {
+        globalArgs: { network: "local", logLevel: "debug" },
+        taskArgs: {
+          positionalArgs: [],
+          namedArgs: {},
+        },
+      }),
+    ),
+  ),
+  Layer.succeed(CLIFlags, {
+    globalArgs: { network: "local", logLevel: "debug" },
+    taskArgs: {
+      positionalArgs: [],
+      namedArgs: {},
+    },
+  }),
+  Layer.succeed(TaskArgsService, {
+    taskArgs: {},
+  }),
+  Logger.minimumLogLevel(LogLevel.Debug),
+)
+
 const GlobalArgs = type({
 	network: "string",
 	logLevel: "'debug' | 'info' | 'error'",
@@ -100,13 +127,6 @@ type MakeRuntimeArgs = {
 		Layer.Layer.Error<typeof ICEConfigService.Live>
 	>
 }
-
-export class TaskArgsService extends Context.Tag("TaskArgsService")<
-	TaskArgsService,
-	{
-		readonly taskArgs: Record<string, unknown>
-	}
->() {}
 
 export const makeRuntime = ({
 	globalArgs: rawGlobalArgs,
