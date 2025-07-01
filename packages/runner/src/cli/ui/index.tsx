@@ -68,14 +68,14 @@ export const StaticLogs: React.FC<{ logs: string[]; maxHeight?: number }> = ({
 	)
 }
 
-export const TaskTreeListItem = <A, E, R, I>({
+export const TaskTreeListItem = <A, E, R>({
 	label,
 	task,
 	path,
 	...props
 }: {
 	label: string
-	task: Task<A, Record<string, Task>, Record<string, Task>, E, R, I>
+	task: Task<A, Record<string, Task>, Record<string, Task>, E, R>
 	path: string[]
 }) => {
 	const { isFocused } = useFocus()

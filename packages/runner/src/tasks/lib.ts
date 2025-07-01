@@ -1,5 +1,6 @@
 import type { SignIdentity } from "@dfinity/agent"
 import { StandardSchemaV1 } from "@standard-schema/spec"
+import { match } from "arktype"
 import {
 	ConfigProvider,
 	Context,
@@ -10,16 +11,20 @@ import {
 	Layer,
 	ManagedRuntime,
 	Match,
-	Option
+	Option,
 } from "effect"
 import { configMap, makeRuntime } from "../index.js"
 import { CLIFlags } from "../services/cliFlags.js"
-import { DefaultConfig, InitializedDefaultConfig } from "../services/defaultConfig.js"
+import {
+	DefaultConfig,
+	InitializedDefaultConfig,
+} from "../services/defaultConfig.js"
 import { ICEConfigService } from "../services/iceConfig.js"
 import { type ReplicaService } from "../services/replica.js"
 import { TaskArgsService } from "../services/taskArgs.js"
 import { TaskRegistry } from "../services/taskRegistry.js"
 import type {
+	CachedTask,
 	ICEUser,
 	NamedParam,
 	PositionalParam,
@@ -27,7 +32,7 @@ import type {
 	Task,
 	TaskParam,
 	TaskTree,
-	TaskTreeNode
+	TaskTreeNode,
 } from "../types/types.js"
 import { DependencyResults, runTask, TaskInfo } from "./run.js"
 
@@ -284,12 +289,9 @@ export const resolveTaskArgs = (
  * @returns An array of tasks sorted in execution order.
  * @throws Error if a cycle is detected.
  */
-export const topologicalSortTasks = <A, E, R, I>(
-	tasks: Map<
-		symbol,
-		Task<A, Record<string, Task>, Record<string, Task>, E, R, I>
-	>,
-): Task<A, Record<string, Task>, Record<string, Task>, E, R, I>[] => {
+export const topologicalSortTasks = <A, E, R>(
+	tasks: Map<symbol, Task<A, Record<string, Task>, Record<string, Task>, E, R>>,
+): Task<A, Record<string, Task>, Record<string, Task>, E, R>[] => {
 	const indegree = new Map<symbol, number>()
 	const adjList = new Map<symbol, symbol[]>()
 
@@ -328,8 +330,7 @@ export const topologicalSortTasks = <A, E, R, I>(
 		Record<string, Task>,
 		Record<string, Task>,
 		E,
-		R,
-		I
+		R
 	>[] = []
 	while (queue.length > 0) {
 		const currentId = queue.shift()
@@ -369,6 +370,20 @@ export type ProgressUpdate<A> = {
 	result?: A
 	error?: unknown
 }
+
+const isCachedTask = match
+	.in<Task | CachedTask>()
+	.case(
+		{
+			computeCacheKey: "Function",
+			input: "Function",
+			encode: "Function",
+			decode: "Function",
+			encodingFormat: "'string' | 'uint8array'",
+		},
+		(t) => Option.some(t as CachedTask),
+	)
+	.default((t) => Option.none())
 
 // TODO: 1 task per time. its used like that anyway
 // rename to executeTask
@@ -548,58 +563,40 @@ export const executeTasks = (
 				// TODO: simplify?
 				let result: Option.Option<unknown> = Option.none()
 				let cacheKey: Option.Option<string> = Option.none()
-				if ("computeCacheKey" in task) {
-					yield* Effect.logDebug("computeCacheKey in task", taskPath)
-					let input: Option.Option<unknown> = Option.none()
-					if ("input" in task) {
-						input = yield* task
-							.input()
-							.pipe(Effect.provide(taskLayer))
-							.pipe(
-								Effect.map((input) => Option.some(input)),
-								Effect.catchAll((error) => {
-									return Effect.succeed(Option.none())
-								}),
-							)
-					}
-					if (Option.isSome(input)) {
-						cacheKey = Option.some(task.computeCacheKey(input.value))
-					}
+
+				const maybeCachedTask = isCachedTask(task)
+
+				if (Option.isSome(maybeCachedTask)) {
+					const cachedTask = maybeCachedTask.value
+					const input = yield* cachedTask.input().pipe(Effect.provide(taskLayer))
+					cacheKey = Option.some(cachedTask.computeCacheKey(input))
 					if (
 						Option.isSome(cacheKey) &&
 						(yield* taskRegistry.has(cacheKey.value))
 					) {
 						yield* Effect.logDebug(`Cache hit for cacheKey: ${cacheKey}`)
-						const encodingFormat =
-							"encodingFormat" in task ? task.encodingFormat : "string"
+						const encodingFormat = cachedTask.encodingFormat
 						const maybeResult = yield* taskRegistry.get(
 							cacheKey.value,
 							encodingFormat,
 						)
 						if (Option.isSome(maybeResult)) {
 							const encodedResult = maybeResult.value
-							if ("decode" in task) {
-								yield* Effect.logDebug("decoding result:", encodedResult)
-								const decodedResult = yield* task
-									.decode(
-										encodedResult,
-										Option.isSome(input) ? input.value : {},
-									)
-									.pipe(Effect.provide(taskLayer))
-								result = Option.some(decodedResult)
-								yield* Effect.logDebug("decoded result:", decodedResult)
-							} else {
-								result = Option.some(JSON.parse(encodedResult as string))
-							}
+							yield* Effect.logDebug("decoding result:", encodedResult)
+							const decodedResult = yield* cachedTask
+								.decode(encodedResult, input)
+								.pipe(Effect.provide(taskLayer))
+							result = Option.some(decodedResult)
+							yield* Effect.logDebug("decoded result:", decodedResult)
 						} else {
 							// TODO: reading cache failed, why would this happen?
 							// get rid of this and just throw?
 							result = Option.some(
-								yield* task.effect.pipe(Effect.provide(taskLayer)),
+								yield* cachedTask.effect.pipe(Effect.provide(taskLayer)),
 							)
 						}
 					} else {
-						result = yield* task.effect.pipe(
+						result = yield* cachedTask.effect.pipe(
 							Effect.provide(taskLayer),
 							Effect.map((result) => Option.some(result)),
 							// Effect.catchAll((error) => {
@@ -614,24 +611,18 @@ export const executeTasks = (
 							)
 						}
 						// TODO: fix. maybe not json stringify?
-						yield* Effect.logDebug("encoding result:", result.value)
-						const encodedResult =
-							"encode" in task
-								? yield* task
-										.encode(
-											result.value,
-											Option.isSome(input) ? input.value : {},
-										)
-										.pipe(Effect.provide(taskLayer))
-								: JSON.stringify(result.value)
-						yield* Effect.logDebug(
-							"encoded result",
-							"with type:",
-							typeof encodedResult,
-							"with value:",
-							encodedResult,
-						)
 						if (Option.isSome(cacheKey)) {
+							yield* Effect.logDebug("encoding result:", result.value)
+							const encodedResult = yield* cachedTask
+								.encode(result.value, input)
+								.pipe(Effect.provide(taskLayer))
+							yield* Effect.logDebug(
+								"encoded result",
+								"with type:",
+								typeof encodedResult,
+								"with value:",
+								encodedResult,
+							)
 							yield* taskRegistry.set(cacheKey.value, encodedResult)
 						} else {
 							// ????

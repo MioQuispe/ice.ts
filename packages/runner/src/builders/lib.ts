@@ -1,34 +1,28 @@
-import type { Task } from "../types/types.js"
-import { Config, Effect, Option, Record } from "effect"
-import { FileSystem } from "@effect/platform"
-import { getTaskByPath, getNodeByPath, TaskCtx } from "../tasks/lib.js"
-import { DependencyResults, runTask, TaskInfo } from "../tasks/run.js"
-import { CanisterIdsService } from "../services/canisterIds.js"
-import { Principal } from "@dfinity/principal"
-import type {
-	ExtractArgsFromTaskParams,
-	TaskCtxShape,
-	TaskParamsToArgs,
-} from "../tasks/lib.js"
-import type { ActorSubclass } from "../types/actor.js"
-export type { TaskCtxShape }
+import { IDL } from "@dfinity/candid"
+import { FileSystem, Path } from "@effect/platform"
 import { sha256 } from "@noble/hashes/sha2"
-import { utf8ToBytes, bytesToHex } from "@noble/hashes/utils"
-import { readFileSync, statSync } from "node:fs"
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils"
+import { StandardSchemaV1 } from "@standard-schema/spec"
+import { type } from "arktype"
+import { Config, Effect, Option, Record } from "effect"
+import { readFileSync } from "node:fs"
 import { stat } from "node:fs/promises"
-import { Path } from "@effect/platform"
-import { TaskRegistry } from "../services/taskRegistry.js"
-import { IDL, JsonValue } from "@dfinity/candid"
 import { encodeArgs } from "../canister.js"
-import { makeCustomBuildTask, makeBindingsTask } from "./custom.js"
-import { proxyActor } from "../utils/extension.js"
+import { CanisterIdsService } from "../services/canisterIds.js"
 import {
 	CanisterStatus,
 	type CanisterStatusResult,
 	InstallModes,
 } from "../services/replica.js"
-import { type } from "arktype"
-import { StandardSchemaV1 } from "@standard-schema/spec"
+import { TaskRegistry } from "../services/taskRegistry.js"
+import type { TaskCtxShape } from "../tasks/lib.js"
+import { getNodeByPath, TaskCtx } from "../tasks/lib.js"
+import { DependencyResults, runTask, TaskInfo } from "../tasks/run.js"
+import type { ActorSubclass } from "../types/actor.js"
+import type { CachedTask, Task } from "../types/types.js"
+import { proxyActor } from "../utils/extension.js"
+import { MotokoBindingsTask, MotokoBuildTask } from "./motoko.js"
+export type { TaskCtxShape }
 
 export const loadCanisterId = (taskPath: string) =>
 	Effect.gen(function* () {
@@ -249,31 +243,37 @@ export function hashConfig(config: Function | object): string {
 }
 
 export type MergeTaskDependsOn<
-	T extends Task,
+	T extends { dependsOn: Record<string, Task> },
 	ND extends Record<string, Task>,
-> = {
-	[K in keyof T]: K extends "dependsOn" ? T[K] & ND : T[K]
-} & Partial<
-	Pick<
-		Task,
-		"computeCacheKey" | "input" | "decode" | "encode" | "encodingFormat"
-	>
->
+> = Omit<T, "dependsOn"> & {
+	dependsOn: T["dependsOn"] & ND
+}
+// > = {
+// 	[K in keyof T]: K extends "dependsOn" ? T[K] & ND : T[K]
+// } & Partial<
+// 	Pick<
+// 		Task,
+// 		"computeCacheKey" | "input" | "decode" | "encode" | "encodingFormat"
+// 	>
+// >
 
 export type MergeTaskDependencies<
-	T extends Task,
-	NP extends Record<string, Task>,
-> = {
-	[K in keyof T]: K extends "dependencies" ? T[K] & NP : T[K]
-} & Partial<
-	Pick<
-		Task,
-		"computeCacheKey" | "input" | "decode" | "encode" | "encodingFormat"
-	>
->
+	T extends { dependencies: Record<string, Task> },
+	P extends Record<string, Task>,
+> = Omit<T, "dependencies"> & {
+	dependencies: T["dependencies"] & P
+}
+// > = {
+// 	[K in keyof T]: K extends "dependencies" ? T[K] & NP : T[K]
+// } & Partial<
+// 	Pick<
+// 		Task,
+// 		"computeCacheKey" | "input" | "decode" | "encode" | "encodingFormat"
+// 	>
+// >
 
 export type MergeScopeDependsOn<
-	S extends CanisterScope,
+	S extends CanisterScopeSimple,
 	D extends Record<string, Task>,
 > = Omit<S, "children"> & {
 	children: Omit<S["children"], "install_args"> & {
@@ -289,7 +289,7 @@ export type MergeScopeDependsOn<
 // }
 
 export type MergeScopeDependencies<
-	S extends CanisterScope,
+	S extends CanisterScopeSimple,
 	D extends Record<string, Task>,
 > = Omit<S, "children"> & {
 	children: Omit<S["children"], "install_args"> & {
@@ -308,25 +308,40 @@ export type ExtractTaskEffectSuccess<T extends Record<string, Task>> = {
 
 // TODO: create types
 export type CreateTask = Task<string>
-export type BindingsTask = Task<{
-	didJSPath: string
-	didTSPath: string
-}>
-export type BuildTask = Task<{
-	wasmPath: string
-	candidPath: string
-}>
+export type BindingsTask = CachedTask<
+	{
+		didJSPath: string
+		didTSPath: string
+	},
+	{},
+	{},
+	{
+		taskPath: string
+		depCacheKeys: Record<string, string | undefined>
+	}
+>
+export type BuildTask = CachedTask<
+	{
+		wasmPath: string
+		candidPath: string
+	},
+	{},
+	{},
+	{
+		canisterId: string
+		canisterName: string
+		taskPath: string
+		wasm: FileDigest
+		candid: FileDigest
+		depCacheKeys: Record<string, string | undefined>
+	}
+>
 
-type InstallArgsInput = {
-	installArgsFn: Function
-	depCacheKeys: Record<string, string | undefined>
-	mode: InstallModes
-}
 export type InstallArgsTask<
 	I,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
-> = Task<
+> = CachedTask<
 	{
 		args: I
 		encodedArgs: Uint8Array<ArrayBufferLike>
@@ -334,16 +349,36 @@ export type InstallArgsTask<
 	},
 	D,
 	P,
-	InstallArgsInput
+	{
+		installArgsFn: Function
+		depCacheKeys: Record<string, string | undefined>
+		mode: InstallModes
+	}
 >
 // install_args: ReturnType<typeof makeInstallArgsTask>
-export type InstallTask<_SERVICE = unknown> = Omit<
-	Task<{
-		canisterId: string
-		canisterName: string
-		actor: ActorSubclass<_SERVICE>
-		mode: InstallModes
-	}>,
+export type InstallTask<
+	_SERVICE = unknown,
+	D extends Record<string, Task> = {},
+	P extends Record<string, Task> = {},
+> = Omit<
+	CachedTask<
+		{
+			canisterId: string
+			canisterName: string
+			actor: ActorSubclass<_SERVICE>
+			mode: InstallModes
+		},
+		D,
+		P,
+		{
+			network: string
+			canisterId: string
+			canisterName: string
+			taskPath: string
+			mode: string
+			depCacheKeys: Record<string, string | undefined>
+		}
+	>,
 	"params"
 > & {
 	params: typeof installParams
@@ -354,7 +389,21 @@ export type InstallTask<_SERVICE = unknown> = Omit<
 export type StopTask = Task<void>
 export type RemoveTask = Task<void>
 // TODO: same as install?
-export type DeployTask<_SERVICE = unknown> = InstallTask<_SERVICE>
+export type DeployTask<
+	_SERVICE = unknown,
+	D extends Record<string, Task> = {},
+	P extends Record<string, Task> = {},
+> = Task<
+	{
+		canisterId: string
+		canisterName: string
+		actor: ActorSubclass<_SERVICE>
+		mode: InstallModes
+	},
+	D,
+	P
+>
+// InstallTask<_SERVICE>
 export type StatusTask = Task<{
 	canisterName: string
 	canisterId: string | undefined
@@ -383,14 +432,39 @@ export type CanisterScope<
 		build: BuildTask
 		install_args: InstallArgsTask<I, D, P>
 		// install_args: ReturnType<typeof makeInstallArgsTask>
-		install: InstallTask<_SERVICE>
+		install: InstallTask<_SERVICE, D, P>
 		// D,
 		// P
 		stop: StopTask
 		remove: RemoveTask
-		// TODO: same as install?
 		deploy: DeployTask<_SERVICE>
 		status: StatusTask
+	}
+}
+
+export type CanisterScopeSimple = {
+	_tag: "scope"
+	id: symbol
+	tags: Array<string | symbol>
+	description: string
+	defaultTask: "deploy"
+	// only limited to tasks
+	// children: Record<string, Task>
+	children: {
+		// create: Task<string>
+		create: Task
+		bindings: Task
+		build: Task
+		install_args: Task
+		// install_args: ReturnType<typeof makeInstallArgsTask>
+		install: Task
+		// D,
+		// P
+		stop: Task
+		remove: Task
+		// TODO: same as install?
+		deploy: Task
+		status: Task
 	}
 }
 
@@ -439,7 +513,7 @@ export type CompareTaskEffects<
 		: never
 	: never
 
-export type AllowedDep = Task | CanisterScope
+export type AllowedDep = Task | CanisterScopeSimple
 
 /**
  * If T is already a Task, it stays the same.
@@ -447,7 +521,7 @@ export type AllowedDep = Task | CanisterScope
  */
 export type NormalizeDep<T> = T extends Task
 	? T
-	: T extends CanisterScope
+	: T extends CanisterScopeSimple
 		? T["children"]["install"] extends Task
 			? T["children"]["install"]
 			: never
@@ -465,17 +539,17 @@ export type NormalizeDep<T> = T extends Task
 export type NormalizeDeps<Deps extends Record<string, AllowedDep>> = {
 	[K in keyof Deps]: Deps[K] extends Task
 		? Deps[K]
-		: Deps[K] extends CanisterScope
+		: Deps[K] extends CanisterScopeSimple
 			? Deps[K]["children"]["install"]
 			: never
 }
 
 export type ValidProvidedDeps<
 	D extends Record<string, AllowedDep>,
-	NP extends Record<string, AllowedDep>,
-> = CompareTaskEffects<NormalizeDeps<D>, NormalizeDeps<NP>> extends never
+	P extends Record<string, AllowedDep>,
+> = CompareTaskEffects<NormalizeDeps<D>, NormalizeDeps<P>> extends never
 	? never
-	: NP
+	: P
 
 export type CompareTaskReturnValues<T extends Task> = T extends {
 	effect: Effect.Effect<infer S, any, any>
@@ -510,12 +584,12 @@ export type DepBuilder<T> = Exclude<
 		: never
 	: never
 
-export type DependencyMismatchError<S extends CanisterScope> = {
+export type DependencyMismatchError<S extends CanisterScopeSimple> = {
 	// This property key is your custom error message.
 	"[ICE-ERROR: Dependency mismatch. Please provide all required dependencies.]": true
 }
 
-export type UniformScopeCheck<S extends CanisterScope> = S extends {
+export type UniformScopeCheck<S extends CanisterScopeSimple> = S extends {
 	children: {
 		install_args: infer C
 	}
@@ -526,7 +600,7 @@ export type UniformScopeCheck<S extends CanisterScope> = S extends {
 	: DependencyMismatchError<S>
 
 // Compute a boolean flag from our check.
-export type IsValid<S extends CanisterScope> =
+export type IsValid<S extends CanisterScopeSimple> =
 	UniformScopeCheck<S> extends DependencyMismatchError<S> ? false : true
 
 //
@@ -534,7 +608,7 @@ export type IsValid<S extends CanisterScope> =
 //
 
 // TODO: arktype match?
-export function normalizeDep(dep: Task | CanisterScope): Task {
+export function normalizeDep(dep: Task | CanisterScopeSimple): Task {
 	if ("_tag" in dep && dep._tag === "task") return dep
 	if ("_tag" in dep && dep._tag === "scope" && dep.children?.install)
 		return dep.children.install as Task
@@ -606,11 +680,7 @@ export const makeStopTask = (): StopTask => {
 	} satisfies Task<void>
 }
 
-export const makeRemoveTask = ({
-	stop,
-}: {
-	stop: Task<void>
-}): RemoveTask => {
+export const makeRemoveTask = ({ stop }: { stop: Task<void> }): RemoveTask => {
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/remove"),
@@ -870,18 +940,10 @@ export const makeInstallTask = <
 	_SERVICE,
 >(deps: {
 	install_args: InstallArgsTask<I, D, P>
-	build: BuildTask
-	bindings: BindingsTask
+	build: BuildTask | MotokoBuildTask
+	bindings: BindingsTask | MotokoBindingsTask
 	create: CreateTask
-}): InstallTask<_SERVICE> => {
-	type InstallInput = {
-		network: string
-		canisterId: string
-		canisterName: string
-		taskPath: string
-		mode: string
-		depCacheKeys: Record<string, string | undefined>
-	}
+}): InstallTask<_SERVICE, {}, typeof deps> => {
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/install"),
@@ -1002,7 +1064,7 @@ export const makeInstallTask = <
 		description: "Install canister code",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.INSTALL],
 		// TODO: add network?
-		computeCacheKey: (input: InstallInput) => {
+		computeCacheKey: (input) => {
 			// TODO: pocket-ic could be restarted?
 			const installInput = {
 				canisterId: input.canisterId,
@@ -1053,9 +1115,10 @@ export const makeInstallTask = <
 					taskPath,
 					mode,
 					depCacheKeys,
-				} satisfies InstallInput
+				}
 				return input
 			}),
+		encodingFormat: "string",
 		// TODO: fix generic type? we shouldnt have to type this
 		encode: (result, input) =>
 			Effect.gen(function* () {
@@ -1107,7 +1170,7 @@ export const makeInstallTask = <
 				}
 				return decoded
 			}),
-	} satisfies InstallTask<_SERVICE>
+	}
 }
 
 export const makeDeployTask = <_SERVICE>(
@@ -1296,7 +1359,7 @@ export const makeInstallArgsTask = <
 		description: "Generate install args",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.INSTALL_ARGS, Tags.HIDDEN],
 		// TODO: add network?
-		computeCacheKey: (input: InstallArgsInput) => {
+		computeCacheKey: (input) => {
 			// const installArgsInput = {
 			// 	argFnHash: input.argFnHash,
 			// 	depsHash: input.depsHash,
@@ -1340,7 +1403,7 @@ export const makeInstallArgsTask = <
 					installArgsFn,
 					depCacheKeys,
 					mode,
-				} satisfies InstallArgsInput
+				}
 				yield* Effect.logDebug("input:", input)
 				return input
 			}),
@@ -1545,7 +1608,7 @@ const providedTestScope = {
 	},
 }
 
-const encodingTask: Task = {
+const encodingTask = {
 	_tag: "task",
 	id: Symbol("test"),
 	effect: Effect.gen(function* () {}),
@@ -1565,8 +1628,10 @@ const encodingTask: Task = {
 		Effect.gen(function* () {
 			return JSON.stringify(result)
 		}),
-	// decode: (prev, input) =>
-	// 	Effect.gen(function* () {
-	// 		return JSON.parse(prev as unknown as string)
-	// 	}),
-} satisfies Task
+	decode: (prev, input) =>
+		Effect.gen(function* () {
+			return JSON.parse(prev as unknown as string)
+		}),
+	computeCacheKey: (input) => "",
+	input: () => Effect.succeed({}),
+} satisfies CachedTask

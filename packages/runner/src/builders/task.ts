@@ -1,32 +1,29 @@
+import { StandardSchemaV1 } from "@standard-schema/spec"
+import { match, type } from "arktype"
+import { Effect, Record } from "effect"
+import { TaskCtx } from "../tasks/lib.js"
+import { DependencyResults, TaskInfo } from "../tasks/run.js"
+import type { ActorSubclass } from "../types/actor.js"
 import type {
 	InputNamedParam,
 	InputPositionalParam,
 	Task,
 } from "../types/types.js"
-import { Effect, Option, Record } from "effect"
+import { NamedParam, PositionalParam } from "../types/types.js"
+import { patchGlobals } from "../utils/extension.js"
+import { customCanister } from "./custom.js"
 import type {
 	ExtractTaskEffectSuccess,
-	MergeTaskDependsOn,
 	MergeTaskDependencies,
-	CanisterScope,
+	MergeTaskDependsOn,
 } from "./lib.js"
-import { TaskCtx } from "../tasks/lib.js"
-import { TaskInfo } from "../tasks/run.js"
-import { DependencyResults } from "../tasks/run.js"
-import { patchGlobals } from "../utils/extension.js"
-import { Tags, type TaskCtxShape } from "./lib.js"
-import { NamedParam, PositionalParam } from "../types/types.js"
-import { match, type } from "arktype"
-import { StandardSchemaV1 } from "@standard-schema/spec"
-import type { ActorSubclass } from "../types/actor.js"
 import {
 	AllowedDep,
-	makeCanisterStatusTask,
 	NormalizeDeps,
+	normalizeDepsMap,
 	ValidProvidedDeps,
+	type TaskCtxShape,
 } from "./lib.js"
-import { normalizeDepsMap } from "./lib.js"
-import { customCanister } from "./custom.js"
 
 type MergeTaskParams<
 	T extends Task,
@@ -225,17 +222,14 @@ class TaskBuilderClass<
 		>
 	}
 
-	deps<NP extends Record<string, AllowedDep>>(
-		providedDeps: ValidProvidedDeps<T["dependsOn"], NP>,
+	deps<UP extends Record<string, AllowedDep>, NP extends NormalizeDeps<UP>>(
+		providedDeps: ValidProvidedDeps<T["dependsOn"], UP>,
 	) {
-		const finalDeps = normalizeDepsMap(providedDeps) as NormalizeDeps<NP>
+		const updatedDeps = normalizeDepsMap(providedDeps) as NP
 		const updatedTask = {
 			...this.#task,
-			dependencies: finalDeps,
-		} satisfies Task as MergeTaskDependencies<
-			T,
-			NormalizeDeps<ValidProvidedDeps<T["dependsOn"], NP>>
-		>
+			dependencies: updatedDeps,
+		} satisfies Task as MergeTaskDependencies<T, NP>
 		return new TaskBuilderClass(updatedTask) as TaskBuilderOmit<
 			S | "deps",
 			typeof updatedTask,
@@ -282,9 +276,7 @@ class TaskBuilderClass<
 							fn({
 								args: taskCtx.args as ExtractArgsFromTaskParams<TP>,
 								ctx: taskCtx as TaskCtxShape<ExtractArgsFromTaskParams<TP>>,
-								deps: deps as ExtractTaskEffectSuccess<
-									T["dependencies"]
-								> &
+								deps: deps as ExtractTaskEffectSuccess<T["dependencies"]> &
 									ExtractTaskEffectSuccess<T["dependsOn"]>,
 							}),
 						),
@@ -402,7 +394,8 @@ const buildTask = task()
 			wasmPath: "wasmPath",
 			candidPath: "candidPath",
 		}
-	}).make()
+	})
+	.make()
 
 const installArgsTask = task()
 	.run(async (ctx) => {

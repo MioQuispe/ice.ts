@@ -1,51 +1,42 @@
-import { Effect, Context, Data, Config, Match, Option, Record } from "effect"
+import { Config, Effect, Option, Record } from "effect"
 import type { Scope, Task, TaskTree } from "../types/types.js"
 // import mo from "motoko"
-import { Path, FileSystem } from "@effect/platform"
+import { FileSystem, Path } from "@effect/platform"
+import { InstallModes } from "../services/replica.js"
+import { DependencyResults, TaskInfo } from "../tasks/run.js"
 import type {
+	BindingsTask,
+	BuildTask,
 	CanisterScope,
 	DependencyMismatchError,
 	ExtractTaskEffectSuccess,
-	FileDigest,
-	IsValid,
-	TaskCtxShape,
-	BindingsTask,
-	BuildTask,
-	CreateTask,
 	InstallArgsTask,
+	InstallTask,
+	IsValid,
+	TaskCtxShape
 } from "./lib.js"
 import {
-	resolveConfig,
-	loadCanisterId,
-	digestFile,
+	AllowedDep,
 	hashConfig,
+	hashJson,
 	isArtifactCached,
 	linkChildren,
-	makeInstallArgsTask,
-	makeCreateTask,
-	makeInstallTask,
-	Tags,
-	AllowedDep,
+	loadCanisterId,
 	makeCanisterStatusTask,
+	makeCreateTask,
 	makeDeployTask,
+	makeInstallArgsTask,
+	makeInstallTask,
 	makeRemoveTask,
 	makeStopTask,
 	NormalizeDeps,
 	normalizeDepsMap,
-	ValidProvidedDeps,
-	hashJson,
+	resolveConfig,
+	Tags,
+	ValidProvidedDeps
 } from "./lib.js"
-import { InstallModes } from "../services/replica.js"
-import { CanisterIdsService } from "../services/canisterIds.js"
-import { proxyActor } from "../utils/extension.js"
-import { TaskInfo } from "../tasks/run.js"
-import { TaskCtx } from "../tasks/lib.js"
-import { DependencyResults } from "../tasks/run.js"
 // TODO: move to lib.ts
-import { generateDIDJS, encodeArgs } from "../canister.js"
-import { ActorSubclass } from "../types/actor.js"
-import { TaskRegistry } from "../services/taskRegistry.js"
-import { JsonValue } from "@dfinity/candid"
+import { generateDIDJS } from "../canister.js"
 
 type CustomCanisterConfig = {
 	wasm: string
@@ -59,10 +50,6 @@ export const makeBindingsTask = (
 		| ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)
 		| CustomCanisterConfig,
 ): BindingsTask => {
-	type BindingsInput = {
-		taskPath: string
-		depCacheKeys: Record<string, string | undefined>
-	}
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/bindings"),
@@ -86,7 +73,7 @@ export const makeBindingsTask = (
 				didTSPath,
 			}
 		}),
-		computeCacheKey: (input: BindingsInput) => {
+		computeCacheKey: (input) => {
 			return hashJson({
 				depsHash: hashJson(input.depCacheKeys),
 				taskPath: input.taskPath,
@@ -101,9 +88,12 @@ export const makeBindingsTask = (
 				const input = {
 					taskPath,
 					depCacheKeys,
-				} satisfies BindingsInput
+				}
 				return input
 			}),
+		encode: (value) => Effect.succeed(JSON.stringify(value)),
+		decode: (value) => Effect.succeed(JSON.parse(value as string)),
+		encodingFormat: "string",
 		description: "Generate bindings for custom canister",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BINDINGS],
 		namedParams: {},
@@ -118,14 +108,6 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 		| ((args: { ctx: TaskCtxShape; deps: P }) => CustomCanisterConfig)
 		| CustomCanisterConfig,
 ): BuildTask => {
-	type BuildInput = {
-		canisterId: string
-		canisterName: string
-		taskPath: string
-		wasm: FileDigest
-		candid: FileDigest
-		depCacheKeys: Record<string, string | undefined>
-	}
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/build"),
@@ -178,7 +160,7 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 				candidPath: outCandidPath,
 			}
 		}),
-		computeCacheKey: (input: BuildInput) => {
+		computeCacheKey: (input) => {
 			// TODO: pocket-ic could be restarted?
 			const installInput = {
 				canisterId: input.canisterId,
@@ -243,9 +225,12 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 					wasm: wasmDigest,
 					candid: candidDigest,
 					depCacheKeys,
-				} satisfies BuildInput
+				}
 				return input
 			}),
+		encode: (value) => Effect.succeed(JSON.stringify(value)),
+		decode: (value) => Effect.succeed(JSON.parse(value as string)),
+		encodingFormat: "string",
 		description: "Build custom canister",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BUILD],
 		namedParams: {},
@@ -394,11 +379,21 @@ class CustomCanisterBuilder<
 			D,
 			NP
 		>
+		const installTask = {
+			...this.#scope.children.install,
+			// TODO: this can cause a naming collision
+			// with existing tasks... bindings, etc.
+			dependencies: {
+				...this.#scope.children.install.dependencies,
+				...finalDeps,
+			},
+		} as InstallTask<_SERVICE, D, NP>
 		const updatedScope = {
 			...this.#scope,
 			children: {
 				...this.#scope.children,
 				install_args: installArgsTask,
+				install: installTask,
 			},
 		} satisfies CanisterScope<_SERVICE, I, D, NP>
 		return new CustomCanisterBuilder(updatedScope)
@@ -429,11 +424,19 @@ class CustomCanisterBuilder<
 			ND,
 			P
 		>
+		const installTask = {
+			...this.#scope.children.install,
+			dependsOn: {
+				...this.#scope.children.install.dependsOn,
+				...updatedDeps,
+			},
+		} as InstallTask<_SERVICE, ND, P>
 		const updatedScope = {
 			...this.#scope,
 			children: {
 				...this.#scope.children,
 				install_args: installArgsTask,
+				install: installTask,
 			},
 		} satisfies CanisterScope<_SERVICE, I, ND, P>
 		return new CustomCanisterBuilder(updatedScope)

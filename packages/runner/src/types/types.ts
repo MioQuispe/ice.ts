@@ -117,23 +117,6 @@ export interface PositionalParam<T = unknown> extends TaskParam<T> {
 	isFlag: false
 }
 
-// // Helper type that compares two types for equality.
-// type IsEqual<T, U> =
-//   (<V>() => V extends T ? 1 : 2) extends
-//   (<V>() => V extends U ? 1 : 2)
-//     ? true
-//     : false;
-
-// type IsSubType<T, U> = T extends U ? true : false;
-
-// // Assertion type used in tests. If T and U aren’t equal, this will result in a compile-time error.
-// type AssertEqual<T, U> = IsEqual<T, U> extends true ? true : never;
-// type AssertSubType<T, U> = IsSubType<T, U> extends true ? true : never;
-
-// // Usage examples:
-// type TestSuccess = AssertEqual<{ a: number }, { a: number }>; // OK, resolves to true
-// // type TestFailure = AssertEqual<number, string>; // Uncommenting this line causes a compile-time error
-
 // export const TaskParam = type("<t>", {
 // 	schema: "object",
 // 	"description?": "string",
@@ -161,12 +144,6 @@ export interface PositionalParam<T = unknown> extends TaskParam<T> {
 // })
 // export const positionalParamSchema = type.and(taskParamSchema)
 
-type EncodingFormat<E extends "string" | "uint8array" | undefined> =
-	E extends undefined
-		? string
-		: E extends "string"
-			? string
-			: Uint8Array<ArrayBufferLike>
 
 // export const makeTask = <A, D extends Record<string, Task>, P extends Record<string, Task>, E, R, I>({
 // 	effect: Effect.Effect<A, E, R>,
@@ -195,16 +172,16 @@ type EncodingFormat<E extends "string" | "uint8array" | undefined> =
 // 		encode,
 // 		decode,
 // 		encodingFormat,
-// 	} satisfies Task<A, D, P, E, R, I>
+// 	} satisfies Task<A, D, P, E, R>
 // }
 
 export interface Task<
-	A = any,
+	out A = unknown,
 	D extends Record<string, Task> = {},
 	P extends Record<string, Task> = {},
-	I = any,
-	E = any,
-	R =
+	// TODO:
+	out E = unknown,
+	out R =
 		| TaskCtx
 		| TaskInfo
 		| TaskRegistry
@@ -229,25 +206,41 @@ export interface Task<
 	namedParams: Record<string, NamedParam>
 	positionalParams: Array<PositionalParam>
 	params: Record<string, NamedParam | PositionalParam>
-	// TODO: for caching. do we use standard schema here as well?
-	// but it only supports .validate not encode/decode
-	// TODO: wrap fields in cache object
-	input?: () => Effect.Effect<I, E, R> // optional input
-	encode?: (
+}
+
+
+export type CachedTask<
+	A = unknown,
+	D extends Record<string, Task> = {},
+	P extends Record<string, Task> = {},
+	Input = unknown,
+	// TODO:
+	E = unknown,
+	R =
+		| TaskCtx
+		| TaskInfo
+		| TaskRegistry
+		| DependencyResults
+		| CanisterIdsService
+		| NodeContext.NodeContext
+		| ICEConfigService
+		| Moc
+		| DefaultConfig
+		| DefaultReplica
+		| CLIFlags
+		| TaskArgsService
+> = Task<A, D, P, E, R> & {
+	input: () => Effect.Effect<Input, E, R> // optional input
+	encode: (
 		value: A,
-		input: I,
+		input: Input,
 	) => Effect.Effect<string | Uint8Array<ArrayBufferLike>>
-	// TODO:
-	// encode?: (value: A, input: I) => Effect.Effect<EncodingFormat<Task["encodingFormat"]>>
-	encodingFormat?: "string" | "uint8array"
-	// TODO: infer type depending on encodingFormat
-	decode?: (
+	encodingFormat: "string" | "uint8array"
+	decode: (
 		value: string | Uint8Array<ArrayBufferLike>,
-		input: I,
+		input: Input,
 	) => Effect.Effect<A, E, R>
-	// TODO:
-	// decode?: (value: EncodingFormat<Task["encodingFormat"]>, input: I) => Effect.Effect<A, E, R>
-	computeCacheKey?: (input: I) => string
+	computeCacheKey: (input: Input) => string
 }
 
 export type Scope = {

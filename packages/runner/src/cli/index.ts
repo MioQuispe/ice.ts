@@ -1,27 +1,25 @@
-import { Effect, Console, Stream, Either } from "effect"
-import { runTask, runTaskByPath } from "../tasks/index.js"
-import { makeRuntime } from "../index.js"
-import { DeploymentError } from "../canister.js"
-import { uiTask } from "./ui/index.js"
-import { ICEConfigService } from "../services/iceConfig.js"
 import * as p from "@clack/prompts"
-import color from "picocolors"
-import {
-	defineCommand,
-	createMain,
-	type CommandContext,
-	type ArgsDef,
-	Resolvable,
-} from "citty"
-import { isCancel } from "@clack/prompts"
-import { cancel } from "@clack/prompts"
-import { filterNodes, type ProgressUpdate } from "../tasks/lib.js"
-import { Tags } from "../builders/lib.js"
-import type { Task } from "../types/types.js"
-import { CanisterIdsService } from "../services/canisterIds.js"
-import { CanisterStatus, DefaultReplica } from "../services/replica.js"
+import { cancel, isCancel } from "@clack/prompts"
 import { Ed25519KeyIdentity } from "@dfinity/identity"
+import {
+	Resolvable,
+	createMain,
+	defineCommand,
+	type ArgsDef
+} from "citty"
+import { Console, Effect, Either } from "effect"
 import mri from "mri"
+import color from "picocolors"
+import { Tags } from "../builders/lib.js"
+import { DeploymentError } from "../canister.js"
+import { makeRuntime } from "../index.js"
+import { CanisterIdsService } from "../services/canisterIds.js"
+import { ICEConfigService } from "../services/iceConfig.js"
+import { CanisterStatus, DefaultReplica } from "../services/replica.js"
+import { runTask, runTaskByPath } from "../tasks/index.js"
+import { filterNodes } from "../tasks/lib.js"
+import type { Task } from "../types/types.js"
+import { uiTask } from "./ui/index.js"
 
 function moduleHashToHexString(moduleHash: [] | [number[]]): string {
 	if (moduleHash.length === 0) {
@@ -32,7 +30,9 @@ function moduleHashToHexString(moduleHash: [] | [number[]]): string {
 	return `0x${hexString}`
 }
 
-const getGlobalArgs = (cmdName: string): { network: string; logLevel: string } => {
+const getGlobalArgs = (
+	cmdName: string,
+): { network: string; logLevel: string } => {
 	const runIndex = process.argv.indexOf(cmdName)
 	// TODO: simplify this
 	if (runIndex === -1) {
@@ -110,9 +110,7 @@ const runCommand = defineCommand({
 				positionalArgs,
 				namedArgs,
 			},
-		}).runPromise(
-			runTaskByPath(args.taskPath),
-		)
+		}).runPromise(runTaskByPath(args.taskPath))
 		s.stop(`Finished task: ${color.green(color.underline(args.taskPath))}`)
 	},
 })
@@ -136,7 +134,10 @@ const initCommand = defineCommand({
 const deployRun = async ({
 	network,
 	logLevel,
-}: { network: string; logLevel: string }) => {
+}: {
+	network: string
+	logLevel: string
+}) => {
 	const s = p.spinner()
 	s.start("Deploying all canisters...")
 	// TODO: mode
@@ -144,40 +145,43 @@ const deployRun = async ({
 		network,
 		logLevel,
 	}
+	const program = Effect.gen(function* () {
+		const { taskTree } = yield* ICEConfigService
+		const tasksWithPath = (yield* filterNodes(
+			taskTree,
+			(node) =>
+				node._tag === "task" &&
+				node.tags.includes(Tags.CANISTER) &&
+				node.tags.includes(Tags.DEPLOY),
+		)) as Array<{ node: Task; path: string[] }>
+		const tasks = tasksWithPath.map(({ node }) => node)
+		yield* Effect.all(
+			tasks.map((task) =>
+				runTask(task, {}, (update) => {
+					if (update.status === "starting") {
+						// const s = p.spinner()
+						// s.start(`Deploying ${update.taskPath}\n`)
+						// spinners.set(update.taskPath, s)
+						s.message(`Running ${update.taskPath}`)
+						// console.log(`Deploying ${update.taskPath}`)
+					}
+					if (update.status === "completed") {
+						// const s = spinners.get(update.taskPath)
+						// s?.stop(`Completed ${update.taskPath}\n`)
+						s.message(`Completed ${update.taskPath}`)
+						// console.log(`Completed ${update.taskPath}`)
+					}
+				}),
+			),
+		)
+	})
+	// .pipe(
+	// 	// TODO: Task has any as error type
+	// 	Effect.tapError(e => Effect.logError(e satisfies never)),
+	// )
 	await makeRuntime({
 		globalArgs,
-	}).runPromise(
-		Effect.gen(function* () {
-			const { taskTree } = yield* ICEConfigService
-			const tasksWithPath = (yield* filterNodes(
-				taskTree,
-				(node) =>
-					node._tag === "task" &&
-					node.tags.includes(Tags.CANISTER) &&
-					node.tags.includes(Tags.DEPLOY),
-			)) as Array<{ node: Task; path: string[] }>
-			const tasks = tasksWithPath.map(({ node }) => node)
-			yield* Effect.all(
-				tasks.map((task) =>
-					runTask(task, {}, (update) => {
-						if (update.status === "starting") {
-							// const s = p.spinner()
-							// s.start(`Deploying ${update.taskPath}\n`)
-							// spinners.set(update.taskPath, s)
-							s.message(`Running ${update.taskPath}`)
-							// console.log(`Deploying ${update.taskPath}`)
-						}
-						if (update.status === "completed") {
-							// const s = spinners.get(update.taskPath)
-							// s?.stop(`Completed ${update.taskPath}\n`)
-							s.message(`Completed ${update.taskPath}`)
-							// console.log(`Completed ${update.taskPath}`)
-						}
-					}),
-				),
-			)
-		}),
-	)
+	}).runPromise(program)
 	s.stop("Deployed all canisters")
 }
 
