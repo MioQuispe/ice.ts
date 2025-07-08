@@ -35,8 +35,6 @@ export const Ice = (
 
 export const configMap = new Map([
 	["APP_DIR", fs.realpathSync(process.cwd())],
-	["DFX_CONFIG_FILENAME", "ice.config.ts"],
-	["CANISTER_IDS_FILENAME", "canister_ids.json"],
 	["ICE_DIR_NAME", ".ice"],
 ])
 
@@ -46,7 +44,6 @@ export const configLayer = Layer.setConfigProvider(
 
 const DfxReplicaService = DfxReplica.pipe(
 	Layer.provide(NodeContext.layer),
-	Layer.provide(configLayer),
 )
 
 // const DefaultReplicaService = DfxDefaultReplica.pipe(
@@ -56,7 +53,6 @@ const DfxReplicaService = DfxReplica.pipe(
 
 const DefaultReplicaService = Layer.effect(DefaultReplica, picReplicaImpl).pipe(
 	Layer.provide(NodeContext.layer),
-	Layer.provide(configLayer),
 )
 
 export const DefaultsLayer = Layer.mergeAll(
@@ -68,7 +64,6 @@ export const DefaultsLayer = Layer.mergeAll(
 	DefaultReplicaService,
 	DefaultConfig.Live.pipe(Layer.provide(DefaultReplicaService)),
 	Moc.Live.pipe(Layer.provide(NodeContext.layer)),
-	configLayer,
 	CanisterIdsService.Live.pipe(
 		Layer.provide(NodeContext.layer),
 		Layer.provide(configLayer),
@@ -103,7 +98,7 @@ export const TUILayer = Layer.mergeAll(
 )
 
 const GlobalArgs = type({
-	network: "string",
+	network: "string" as const,
 	logLevel: "'debug' | 'info' | 'error'",
 }) satisfies StandardSchemaV1<Record<string, unknown>>
 

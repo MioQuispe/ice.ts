@@ -2,7 +2,7 @@ import type { SignIdentity } from "@dfinity/agent"
 import { StandardSchemaV1 } from "@standard-schema/spec"
 import { match } from "arktype"
 import {
-	ConfigProvider,
+	Config,
 	Context,
 	Data,
 	Deferred,
@@ -13,7 +13,7 @@ import {
 	Match,
 	Option,
 } from "effect"
-import { configMap, makeRuntime } from "../index.js"
+import { makeRuntime } from "../index.js"
 import { CLIFlags } from "../services/cliFlags.js"
 import {
 	DefaultConfig,
@@ -34,7 +34,7 @@ import type {
 	TaskTree,
 	TaskTreeNode,
 } from "../types/types.js"
-import { DependencyResults, runTask, TaskInfo } from "./run.js"
+import { runTask } from "./run.js"
 
 type ExtractNamedParams<
 	TP extends Record<string, NamedParam | PositionalParam>,
@@ -114,6 +114,16 @@ export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
 		}
 	}
 	readonly args: A
+	readonly taskPath: string
+	readonly appDir: string
+	readonly iceDir: string
+	readonly depResults: Record<
+		string,
+		{
+			cacheKey: string | undefined
+			result: unknown
+		}
+	>
 }
 export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {}
 
@@ -393,6 +403,8 @@ export const executeTasks = (
 ) =>
 	Effect.gen(function* () {
 		const defaultConfig = yield* DefaultConfig
+		const appDir = yield* Config.string("APP_DIR")
+		const iceDir = yield* Config.string("ICE_DIR_NAME")
 		const taskRegistry = yield* TaskRegistry
 		const { config } = yield* ICEConfigService
 		const { globalArgs, taskArgs: cliTaskArgs } = yield* CLIFlags
@@ -445,7 +457,6 @@ export const executeTasks = (
 			// unknown
 			deferredMap.set(task.id, deferred)
 		}
-		const results = new Map<symbol, unknown>()
 		const taskEffects = EffectArray.map(tasks, (task) =>
 			Effect.gen(function* () {
 				const dependencyResults: Record<
@@ -502,12 +513,9 @@ export const executeTasks = (
 					iceConfigService,
 				)
 				const taskLayer = Layer.mergeAll(
-					Layer.succeed(TaskInfo, {
-						taskPath,
-						// TODO: provide more?
-					}),
 					Layer.succeed(TaskCtx, {
 						...defaultConfig,
+						taskPath,
 						// TODO: wrap with proxy?
 						// runTask: asyncRunTask,
 						runTask: async <T extends Task>(
@@ -532,10 +540,9 @@ export const executeTasks = (
 								taskArgs: args,
 								iceConfigServiceLayer,
 							})
-							const result = runtime.runPromise(
-								// TODO: type runTask explicitly?
-								runTask(task, args, progressCb),
-							)
+							const result = runtime
+								.runPromise(runTask(task, args, progressCb))
+								.then((result) => result.result)
 							return result
 						},
 						replica: currentReplica,
@@ -549,15 +556,10 @@ export const executeTasks = (
 						// TODO: taskArgs
 						// what format? we need to check the task itself
 						args: argsMap,
+						depResults: dependencyResults,
+						appDir,
+						iceDir,
 					}),
-					Layer.succeed(DependencyResults, {
-						dependencies: dependencyResults,
-					}),
-					Layer.setConfigProvider(
-						ConfigProvider.fromMap(
-							new Map([...Array.from(configMap.entries())]),
-						),
-					),
 				)
 
 				// TODO: simplify?
@@ -568,7 +570,9 @@ export const executeTasks = (
 
 				if (Option.isSome(maybeCachedTask)) {
 					const cachedTask = maybeCachedTask.value
-					const input = yield* cachedTask.input().pipe(Effect.provide(taskLayer))
+					const input = yield* cachedTask
+						.input()
+						.pipe(Effect.provide(taskLayer))
 					cacheKey = Option.some(cachedTask.computeCacheKey(input))
 					if (
 						Option.isSome(cacheKey) &&
@@ -663,6 +667,7 @@ export const executeTasks = (
 					})
 				}
 
+				// TODO: yield instead?
 				progressCb({
 					taskId: task.id,
 					taskPath,
@@ -670,12 +675,15 @@ export const executeTasks = (
 					result: result.value,
 					// TODO: pass in cacheKey? probably not needed
 				})
-				results.set(task.id, result.value)
+				return {
+					taskId: task.id,
+					taskPath,
+					result: result.value,
+					// TODO: pass in cacheKey? probably not needed
+				}
 			}),
 		)
-		yield* Effect.all(taskEffects, { concurrency: "unbounded" })
-
-		return results
+		return taskEffects
 	})
 
 export const filterNodes = (

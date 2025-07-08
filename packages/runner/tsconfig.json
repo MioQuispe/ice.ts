@@ -44,7 +44,7 @@
     ]
   },
   "include": [
-    "src/index.ts"
+    "src/index.ts",
   ],
   "ts-node": {
     "transpileOnly": true,

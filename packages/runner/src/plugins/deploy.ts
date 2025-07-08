@@ -1,13 +1,13 @@
-import { Effect, Match, Option } from "effect"
+import { Effect, Match } from "effect"
+import { Tags, type CanisterScope } from "../builders/lib.js"
+import { TaskCtx } from "../tasks/lib.js"
+import { runTask } from "../tasks/run.js"
 import type {
   Scope,
   Task,
   TaskTree,
   TaskTreeNode,
 } from "../types/types.js"
-import { TaskCtx } from "../tasks/lib.js"
-import { TaskInfo, runTask } from "../tasks/run.js"
-import { Tags, type CanisterScope } from "../builders/lib.js"
 
 // /**
 //  * Recursively adds a `deploy` task to every scope node.
@@ -42,7 +42,7 @@ const makeDeployTask = (scope: CanisterScope): Task => {
     // TODO: type Task
     dependencies: {},
     effect: Effect.gen(function* () {
-      const { taskPath } = yield* TaskInfo
+      const { taskPath } = yield* TaskCtx
       const canisterName = taskPath.split(":").slice(0, -1).join(":")
       const [canisterId] = yield* Effect.all(
         [

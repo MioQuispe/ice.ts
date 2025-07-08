@@ -1,15 +1,5 @@
-import {
-	Data,
-	Effect,
-	Context,
-	Layer,
-	Config,
-	Schedule,
-	Ref,
-	Console,
-} from "effect"
 import { FileSystem, Path } from "@effect/platform"
-import { NodeContext } from "@effect/platform-node"
+import { Config, Context, Effect, Layer, Record, Ref } from "effect"
 
 /**
  * Represents the canister IDs stored in memory.
@@ -133,6 +123,42 @@ export class CanisterIdsService extends Context.Tag("CanisterIdsService")<
 					}),
 				flush: () => flush,
 			}
+		}),
+	)
+
+	static readonly Test = Layer.effect(
+		CanisterIdsService,
+		Effect.gen(function* () {
+			let testCanisterIds: CanisterIds = {}
+			return CanisterIdsService.of({
+				getCanisterIds: () => Effect.gen(function* () {
+					yield* Effect.logDebug("getCanisterIds", testCanisterIds)
+					return testCanisterIds
+				}),
+				setCanisterId: (params: {
+					canisterName: string
+					network: string
+					canisterId: string
+				}) =>
+					Effect.gen(function* () {
+						testCanisterIds = {
+							...testCanisterIds,
+							[params.canisterName]: {
+								...(testCanisterIds[params.canisterName] ?? {}),
+								[params.network]: params.canisterId,
+							},
+						}
+						yield* Effect.logDebug("setCanisterId", testCanisterIds)
+					}),
+				removeCanisterId: (canisterName: string) =>
+					Effect.gen(function* () {
+						testCanisterIds = Record.filter(
+							testCanisterIds,
+							(_, key) => key !== canisterName,
+						)
+					}),
+				flush: () => Effect.gen(function* () {}),
+			})
 		}),
 	)
 }

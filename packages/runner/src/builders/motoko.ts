@@ -1,10 +1,10 @@
-import { Config, Effect, Option, Record } from "effect"
+import { Effect, Record } from "effect"
 import type { CachedTask, Task } from "../types/types.js"
 // import mo from "motoko"
 import { FileSystem, Path } from "@effect/platform"
-import { DependencyResults, TaskInfo } from "../tasks/run.js"
 // TODO: move to ./lib.ts
 import { compileMotokoCanister, generateDIDJS } from "../canister.js"
+import { TaskCtx } from "../tasks/lib.js"
 import type {
 	AllowedDep,
 	CreateTask,
@@ -27,7 +27,6 @@ import {
 	hashJson,
 	isArtifactCached,
 	linkChildren,
-	loadCanisterId,
 	makeCanisterStatusTask,
 	makeCreateTask,
 	makeDeployTask,
@@ -101,14 +100,12 @@ export const makeMotokoBindingsTask = (deps: {
 		effect: Effect.gen(function* () {
 			const path = yield* Path.Path
 			const fs = yield* FileSystem.FileSystem
-			const { taskPath } = yield* TaskInfo
+			const { taskPath, depResults } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
-			const { dependencies } = (yield* DependencyResults) as {
-				dependencies: {
-					[K in keyof typeof deps]: {
-						result: TaskReturnValue<typeof deps[K]>
-						cacheKey: string | undefined
-					}
+			const dependencies = depResults as {
+				[K in keyof typeof deps]: {
+					result: TaskReturnValue<typeof deps[K]>
+					cacheKey: string | undefined
 				}
 			}
 			const { result: buildResult } = dependencies.build
@@ -134,8 +131,13 @@ export const makeMotokoBindingsTask = (deps: {
 		},
 		input: () =>
 			Effect.gen(function* () {
-				const { taskPath } = yield* TaskInfo
-				const { dependencies } = yield* DependencyResults
+				const { taskPath, depResults } = yield* TaskCtx
+				const dependencies = depResults as {
+					[K in keyof typeof deps]: {
+						result: TaskReturnValue<typeof deps[K]>
+						cacheKey: string | undefined
+					}
+				}
 				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
 				const input = {
 					taskPath,
@@ -162,7 +164,6 @@ export type MotokoBuildTask = CachedTask<
 	{},
 	{},
 	{
-		canisterId: string
 		taskPath: string
 		src: Array<FileDigest>
 		depCacheKeys: Record<string, string | undefined>
@@ -184,15 +185,13 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 			yield* Effect.logDebug("Building Motoko canister")
 			const path = yield* Path.Path
 			const fs = yield* FileSystem.FileSystem
-			const appDir = yield* Config.string("APP_DIR")
-			const iceDirName = yield* Config.string("ICE_DIR_NAME")
-			const { taskPath } = yield* TaskInfo
+			const { appDir, iceDir, taskPath } = yield* TaskCtx
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			const isGzipped = yield* fs.exists(
 				path.join(
 					appDir,
-					iceDirName,
+					iceDir,
 					"canisters",
 					canisterName,
 					`${canisterName}.wasm.gz`,
@@ -200,14 +199,14 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 			)
 			const wasmOutputFilePath = path.join(
 				appDir,
-				iceDirName,
+				iceDir,
 				"canisters",
 				canisterName,
 				isGzipped ? `${canisterName}.wasm.gz` : `${canisterName}.wasm`,
 			)
 			const outCandidPath = path.join(
 				appDir,
-				iceDirName,
+				iceDir,
 				"canisters",
 				canisterName,
 				`${canisterName}.did`,
@@ -235,7 +234,6 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 			// TODO: pocket-ic could be restarted?
 			const installInput = {
 				taskPath: input.taskPath,
-				canisterId: input.canisterId,
 				depsHash: hashJson(input.depCacheKeys),
 				// TODO: should we hash all fields though?
 				srcHash: hashJson(input.src.map((s) => s.sha256)),
@@ -245,16 +243,9 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 		},
 		input: () =>
 			Effect.gen(function* () {
-				const { taskPath } = yield* TaskInfo
-				const { dependencies } = yield* DependencyResults
+				const { taskPath, depResults } = yield* TaskCtx
+				const dependencies = depResults
 				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
-				const maybeCanisterId = yield* loadCanisterId(taskPath)
-				if (Option.isNone(maybeCanisterId)) {
-					return yield* Effect.fail(
-						new Error(`Canister at ${taskPath} is not installed, cannot build`),
-					)
-				}
-				const canisterId = maybeCanisterId.value
 				const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
 				const path = yield* Path.Path
 				const fs = yield* FileSystem.FileSystem
@@ -276,7 +267,6 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 					srcDigests.push(srcDigest)
 				}
 				const input = {
-					canisterId,
 					taskPath,
 					src: srcDigests,
 					depCacheKeys,

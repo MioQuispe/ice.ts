@@ -4,7 +4,7 @@ import { sha256 } from "@noble/hashes/sha2"
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils"
 import { StandardSchemaV1 } from "@standard-schema/spec"
 import { type } from "arktype"
-import { Config, Effect, Option, Record } from "effect"
+import { Effect, Option, Record } from "effect"
 import { readFileSync } from "node:fs"
 import { stat } from "node:fs/promises"
 import { encodeArgs } from "../canister.js"
@@ -17,7 +17,7 @@ import {
 import { TaskRegistry } from "../services/taskRegistry.js"
 import type { TaskCtxShape } from "../tasks/lib.js"
 import { getNodeByPath, TaskCtx } from "../tasks/lib.js"
-import { DependencyResults, runTask, TaskInfo } from "../tasks/run.js"
+import { runTask } from "../tasks/run.js"
 import type { ActorSubclass } from "../types/actor.js"
 import type { CachedTask, Task } from "../types/types.js"
 import { proxyActor } from "../utils/extension.js"
@@ -87,7 +87,7 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 			const canisterIdsService = yield* CanisterIdsService
 			const taskCtx = yield* TaskCtx
 			const currentNetwork = taskCtx.currentNetwork
-			const { taskPath } = yield* TaskInfo
+			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			const storedCanisterIds = yield* canisterIdsService.getCanisterIds()
 			const storedCanisterId: string | undefined =
@@ -136,8 +136,7 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 						canisterId: resolvedCanisterId,
 						identity,
 					})
-			const appDir = yield* Config.string("APP_DIR")
-			const iceDirName = yield* Config.string("ICE_DIR_NAME")
+			const { appDir, iceDir } = yield* TaskCtx
 			yield* Effect.logDebug("create Task: setting canisterId", canisterId)
 			// TODO: integrate with cache?
 			yield* canisterIdsService.setCanisterId({
@@ -145,7 +144,7 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 				network: taskCtx.currentNetwork,
 				canisterId,
 			})
-			const outDir = path.join(appDir, iceDirName, "canisters", canisterName)
+			const outDir = path.join(appDir, iceDir, "canisters", canisterName)
 			yield* fs.makeDirectory(outDir, { recursive: true })
 			return canisterId
 		}),
@@ -221,6 +220,47 @@ export async function isArtifactCached(
 	const fresh = digest.sha256 === prev.sha256
 	return { fresh, digest }
 }
+
+export const digestFileEffect = (path: string) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem
+		const buf = yield* fs.readFile(path)
+		const stat = yield* fs.stat(path)
+		const mtimeMs = Option.isSome(stat.mtime) ? stat.mtime.value.getTime() : 0
+		return {
+			path,
+			mtimeMs,
+			sha256: bytesToHex(sha256(buf)),
+		}
+	})
+
+export const isArtifactCachedEffect = (
+	path: string,
+	prev: FileDigest | undefined, // last run (undefined = cache miss)
+) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem
+
+		// No previous record – must rebuild
+		if (!prev) {
+			const digest = yield* digestFileEffect(path)
+			return { fresh: false, digest }
+		}
+
+		// 1️⃣ fast-path : stat only
+		const currentStat = yield* fs.stat(path)
+		const mtimeMs = Option.isSome(currentStat.mtime)
+			? currentStat.mtime.value.getTime()
+			: 0
+		if (mtimeMs === prev.mtimeMs) {
+			return { fresh: true, digest: prev } // timestamps match ⟹ assume fresh
+		}
+
+		// 2️⃣ slow-path : hash check
+		const digest = yield* digestFileEffect(path)
+		const fresh = digest.sha256 === prev.sha256
+		return { fresh, digest }
+	})
 
 /**
  * Hash the *transpiled* JS produced by tsx/ESBuild,
@@ -328,7 +368,6 @@ export type BuildTask = CachedTask<
 	{},
 	{},
 	{
-		canisterId: string
 		canisterName: string
 		taskPath: string
 		wasm: FileDigest
@@ -634,7 +673,7 @@ export const makeStopTask = (): StopTask => {
 		dependencies: {},
 		// TODO: do we allow a fn as args here?
 		effect: Effect.gen(function* () {
-			const { taskPath } = yield* TaskInfo
+			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			// TODO: handle error
 			const maybeCanisterId = yield* loadCanisterId(taskPath)
@@ -690,7 +729,7 @@ export const makeRemoveTask = ({ stop }: { stop: Task<void> }): RemoveTask => {
 		},
 		// TODO: do we allow a fn as args here?
 		effect: Effect.gen(function* () {
-			const { taskPath } = yield* TaskInfo
+			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			// TODO: handle error
 			const maybeCanisterId = yield* loadCanisterId(taskPath)
@@ -737,7 +776,7 @@ export const makeCanisterStatusTask = (tags: string[]): StatusTask => {
 		effect: Effect.gen(function* () {
 			// TODO:
 			const { replica, currentNetwork } = yield* TaskCtx
-			const { taskPath } = yield* TaskInfo
+			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			const canisterIdsService = yield* CanisterIdsService
 			const canisterIdsMap = yield* canisterIdsService.getCanisterIds()
@@ -848,7 +887,7 @@ const resolveMode = () => {
 				deployer: { identity },
 			},
 		} = yield* TaskCtx
-		const { taskPath } = yield* TaskInfo
+		const { taskPath } = yield* TaskCtx
 		const taskArgs = args as {
 			mode: InstallModes
 		}
@@ -957,13 +996,11 @@ export const makeInstallTask = <
 			yield* Effect.logDebug("Starting custom canister installation")
 			const taskCtx = yield* TaskCtx
 			const identity = taskCtx.roles.deployer.identity
-			const { replica, args } = taskCtx
-			const { dependencies } = (yield* DependencyResults) as {
-				dependencies: {
-					[K in keyof typeof deps]: {
-						result: TaskReturnValue<(typeof deps)[K]>
-						cacheKey: string | undefined
-					}
+			const { replica, args, depResults } = taskCtx
+			const dependencies = depResults as {
+				[K in keyof typeof deps]: {
+					result: TaskReturnValue<(typeof deps)[K]>
+					cacheKey: string | undefined
 				}
 			}
 			const taskArgs = args as {
@@ -975,7 +1012,7 @@ export const makeInstallTask = <
 			const argsTaskResult = dependencies.install_args.result
 			const { didJSPath, didTSPath } = dependencies.bindings.result
 			const { wasmPath } = dependencies.build.result
-			const { taskPath } = yield* TaskInfo
+			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 
 			const maybeCanisterId = yield* loadCanisterId(taskPath)
@@ -1077,10 +1114,15 @@ export const makeInstallTask = <
 		},
 		input: () =>
 			Effect.gen(function* () {
-				const { taskPath } = yield* TaskInfo
+				const { taskPath, depResults } = yield* TaskCtx
 				const { args } = yield* TaskCtx
 				const canisterName = taskPath.split(":").slice(0, -1).join(":")
-				const { dependencies } = yield* DependencyResults
+				const dependencies = depResults as {
+					[K in keyof typeof deps]: {
+						result: TaskReturnValue<(typeof deps)[K]>
+						cacheKey: string | undefined
+					}
+				}
 				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
 				const maybeCanisterId = yield* loadCanisterId(taskPath)
 				if (Option.isNone(maybeCanisterId)) {
@@ -1143,13 +1185,12 @@ export const makeInstallTask = <
 					roles: {
 						deployer: { identity },
 					},
+					depResults,
 				} = yield* TaskCtx
-				const { dependencies } = (yield* DependencyResults) as {
-					dependencies: {
-						[K in keyof typeof deps]: {
-							result: TaskReturnValue<(typeof deps)[K]>
-							cacheKey: string | undefined
-						}
+				const dependencies = depResults as {
+					[K in keyof typeof deps]: {
+						result: TaskReturnValue<(typeof deps)[K]>
+						cacheKey: string | undefined
 					}
 				}
 				const { didJSPath } = dependencies.bindings.result
@@ -1188,7 +1229,7 @@ export const makeDeployTask = <_SERVICE>(
 		params: installParams,
 		positionalParams: [],
 		effect: Effect.gen(function* () {
-			const { taskPath } = yield* TaskInfo
+			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			const parentScope = (yield* getNodeByPath(
 				canisterName,
@@ -1198,7 +1239,7 @@ export const makeDeployTask = <_SERVICE>(
 			// maybe use some kind of context?
 			const result = yield* runTask(parentScope.children.install)
 			yield* Effect.logDebug("Canister deployed successfully")
-			return result
+			return result.result
 		}),
 		description: "Deploy canister code",
 		tags: [Tags.CANISTER, Tags.DEPLOY, ...tags],
@@ -1254,7 +1295,7 @@ export const makeInstallArgsTask = <
 		deps: ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>
 	}) => Promise<A> | A,
 	dependsOn: D,
-	dependencies: P & {
+	deps: P & {
 		bindings: BindingsTask
 		create: CreateTask
 	},
@@ -1272,29 +1313,27 @@ export const makeInstallArgsTask = <
 		customEncode: undefined,
 		// customInitIDL: undefined,
 	},
-): InstallArgsTask<A, D, typeof dependencies> => {
+): InstallArgsTask<A, D, typeof deps> => {
 	return {
 		_tag: "task",
 		id: Symbol("canister/installArgs"),
 		// TODO: do we need this?
 		dependsOn,
-		dependencies,
+		dependencies: deps,
 		namedParams: installParams,
 		positionalParams: [],
 		params: installParams,
 		effect: Effect.gen(function* () {
 			yield* Effect.logDebug("Starting install args generation")
 			const taskCtx = yield* TaskCtx
-			const { dependencies: deps } = (yield* DependencyResults) as {
-				dependencies: {
-					[K in keyof typeof dependencies]: {
-						result: TaskReturnValue<(typeof dependencies)[K]>
-						cacheKey: string | undefined
-					}
+			const dependencies = taskCtx.depResults as {
+				[K in keyof typeof deps]: {
+					result: TaskReturnValue<(typeof deps)[K]>
+					cacheKey: string | undefined
 				}
 			}
-			const depResults = Record.map(deps, (dep) => dep.result)
-			const { taskPath } = yield* TaskInfo
+			const depResults = Record.map(dependencies, (dep) => dep.result)
+			const { taskPath } = yield* TaskCtx
 			// TODO: this is already passed in from outside?
 			const { args } = yield* TaskCtx
 			yield* Effect.logDebug("makeInstallArgsTask TaskCtx.args", args)
@@ -1333,7 +1372,7 @@ export const makeInstallArgsTask = <
 			}
 			yield* Effect.logDebug("Install args generated", { args: installArgs })
 
-			const { result: bindingsResult } = deps.bindings
+			const { result: bindingsResult } = dependencies.bindings
 			const { didJSPath, didTSPath } = bindingsResult
 			const canisterDID = yield* Effect.tryPromise({
 				try: () => import(didJSPath) as Promise<CanisterDidModule>,
@@ -1374,7 +1413,13 @@ export const makeInstallArgsTask = <
 		},
 		input: () =>
 			Effect.gen(function* () {
-				const { dependencies } = yield* DependencyResults
+				const { depResults } = yield* TaskCtx
+				const dependencies = depResults as {
+					[K in keyof typeof deps]: {
+						result: TaskReturnValue<(typeof deps)[K]>
+						cacheKey: string | undefined
+					}
+				}
 				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
 				const { args } = yield* TaskCtx
 				// const taskArgs = args as {
@@ -1426,17 +1471,14 @@ export const makeInstallArgsTask = <
 				const encoded = prev as Uint8Array<ArrayBufferLike>
 				// TODO: get from candid / bindings task result instead?
 				// this task should depend on that and just get its result
-				const { dependencies } = yield* DependencyResults
 				// const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
 				// const depResult = dependencies.bindings.result
 				const path = yield* Path.Path
-				const appDir = yield* Config.string("APP_DIR")
-				const { taskPath } = yield* TaskInfo
+				const { appDir, iceDir, taskPath } = yield* TaskCtx
 				const canisterName = taskPath.split(":").slice(0, -1).join(":")
-				const iceDirName = yield* Config.string("ICE_DIR_NAME")
 				const didJSPath = path.join(
 					appDir,
-					iceDirName,
+					iceDir,
 					"canisters",
 					canisterName,
 					`${canisterName}.did.js`,

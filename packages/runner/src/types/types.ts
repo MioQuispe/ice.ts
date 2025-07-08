@@ -15,7 +15,6 @@ import { DefaultReplica } from "../services/replica.js"
 import { TaskArgsService } from "../services/taskArgs.js"
 import { TaskRegistry } from "../services/taskRegistry.js"
 import type { TaskCtx } from "../tasks/lib.js"
-import type { DependencyResults, TaskInfo } from "../tasks/run.js"
 
 export type CanisterActor = {
 	actor: ActorSubclass<unknown>
@@ -183,9 +182,7 @@ export interface Task<
 	out E = unknown,
 	out R =
 		| TaskCtx
-		| TaskInfo
 		| TaskRegistry
-		| DependencyResults
 		| CanisterIdsService
 		| NodeContext.NodeContext
 		| ICEConfigService
@@ -218,9 +215,7 @@ export type CachedTask<
 	E = unknown,
 	R =
 		| TaskCtx
-		| TaskInfo
 		| TaskRegistry
-		| DependencyResults
 		| CanisterIdsService
 		| NodeContext.NodeContext
 		| ICEConfigService

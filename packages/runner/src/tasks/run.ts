@@ -1,5 +1,4 @@
 import {
-	Context,
 	Effect
 } from "effect"
 import type { Task } from "../types/types.js"
@@ -12,26 +11,6 @@ import {
 	TaskParamsToArgs,
 	topologicalSortTasks,
 } from "./lib.js"
-
-export class DependencyResults extends Context.Tag("DependencyResults")<
-	DependencyResults,
-	{
-		readonly dependencies: Record<
-			string,
-			{
-				cacheKey: string | undefined
-				result: unknown
-			}
-		>
-	}
->() {}
-
-export class TaskInfo extends Context.Tag("TaskInfo")<
-	TaskInfo,
-	{
-		readonly taskPath: string
-	}
->() {}
 
 export interface RunTaskOptions {
 	forceRun?: boolean
@@ -71,7 +50,17 @@ export const runTask = <T extends Task>(
 		const sortedTasks = topologicalSortTasks(collectedTasks)
 		yield* Effect.logDebug("Sorted tasks")
 		yield* Effect.logDebug("Executing tasks...")
-		const results = yield* executeTasks(sortedTasks, progressCb)
+		const taskEffects = yield* executeTasks(sortedTasks, progressCb)
+		// TODO:
+		const results = yield* Effect.all(taskEffects, { concurrency: "unbounded" })
 		yield* Effect.logDebug("Tasks executed")
-		return results.get(task.id) as Effect.Effect.Success<T["effect"]>
+		const maybeResult = results.find((r) => r.taskId === task.id)
+		if (!maybeResult) {
+			return yield* Effect.fail(new Error(`Task ${task.description} not found in results`))
+		}
+		return maybeResult as { 
+			result: Effect.Effect.Success<T["effect"]> 
+			taskId: symbol
+			taskPath: string
+		}
 	})

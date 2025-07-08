@@ -15,6 +15,7 @@ dist-ssr
 cursor/**
 .vscode/**
 **/.vscode
+**/.ice
 
 **/.cursorrules
 **/.cursorignore

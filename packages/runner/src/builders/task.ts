@@ -2,7 +2,6 @@ import { StandardSchemaV1 } from "@standard-schema/spec"
 import { match, type } from "arktype"
 import { Effect, Record } from "effect"
 import { TaskCtx } from "../tasks/lib.js"
-import { DependencyResults, TaskInfo } from "../tasks/run.js"
 import type { ActorSubclass } from "../types/actor.js"
 import type {
 	InputNamedParam,
@@ -261,30 +260,31 @@ class TaskBuilderClass<
 			ctx: TaskCtxShape<ExtractArgsFromTaskParams<TP>>
 			deps: ExtractTaskEffectSuccess<T["dependencies"]> &
 				ExtractTaskEffectSuccess<T["dependsOn"]>
-		}) => Promise<Output>,
+		}) => Promise<Output> | Output,
 	) {
 		const newTask = {
 			...this.#task,
 			effect: Effect.gen(function* () {
 				const taskCtx = yield* TaskCtx
-				const taskInfo = yield* TaskInfo
-				const { dependencies } = yield* DependencyResults
-				const deps = Record.map(dependencies, (dep) => dep.result)
-				const result = yield* Effect.tryPromise({
-					try: () =>
-						patchGlobals(() =>
-							fn({
-								args: taskCtx.args as ExtractArgsFromTaskParams<TP>,
-								ctx: taskCtx as TaskCtxShape<ExtractArgsFromTaskParams<TP>>,
-								deps: deps as ExtractTaskEffectSuccess<T["dependencies"]> &
-									ExtractTaskEffectSuccess<T["dependsOn"]>,
-							}),
-						),
-					catch: (error) => {
-						console.error("Error executing task:", error)
-						return error instanceof Error ? error : new Error(String(error))
-					},
+				const deps = Record.map(taskCtx.depResults, (dep) => dep.result)
+				const maybePromise = fn({
+					args: taskCtx.args as ExtractArgsFromTaskParams<TP>,
+					ctx: taskCtx as TaskCtxShape<ExtractArgsFromTaskParams<TP>>,
+					deps: deps as ExtractTaskEffectSuccess<T["dependencies"]> &
+						ExtractTaskEffectSuccess<T["dependsOn"]>,
 				})
+				const result =
+					maybePromise instanceof Promise
+						? yield* Effect.tryPromise({
+								try: () => patchGlobals(() => maybePromise),
+								catch: (error) => {
+									console.error("Error executing task:", error)
+									return error instanceof Error
+										? error
+										: new Error(String(error))
+								},
+							})
+						: maybePromise
 				return result
 			}),
 			// TODO: create a task constructor for this, which fixes the type errors

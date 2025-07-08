@@ -1,9 +1,8 @@
-import { Config, Effect, Option, Record } from "effect"
+import { Effect, Record } from "effect"
 import type { Scope, Task, TaskTree } from "../types/types.js"
 // import mo from "motoko"
 import { FileSystem, Path } from "@effect/platform"
 import { InstallModes } from "../services/replica.js"
-import { DependencyResults, TaskInfo } from "../tasks/run.js"
 import type {
 	BindingsTask,
 	BuildTask,
@@ -13,15 +12,14 @@ import type {
 	InstallArgsTask,
 	InstallTask,
 	IsValid,
-	TaskCtxShape
+	TaskCtxShape,
 } from "./lib.js"
 import {
 	AllowedDep,
 	hashConfig,
 	hashJson,
-	isArtifactCached,
+	isArtifactCachedEffect,
 	linkChildren,
-	loadCanisterId,
 	makeCanisterStatusTask,
 	makeCreateTask,
 	makeDeployTask,
@@ -33,10 +31,11 @@ import {
 	normalizeDepsMap,
 	resolveConfig,
 	Tags,
-	ValidProvidedDeps
+	ValidProvidedDeps,
 } from "./lib.js"
 // TODO: move to lib.ts
 import { generateDIDJS } from "../canister.js"
+import { TaskCtx } from "../tasks/lib.js"
 
 type CustomCanisterConfig = {
 	wasm: string
@@ -58,7 +57,7 @@ export const makeBindingsTask = (
 		// TODO: do we allow a fn as args here?
 		effect: Effect.gen(function* () {
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
-			const { taskPath } = yield* TaskInfo
+			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			const didPath = canisterConfig.candid
 			yield* Effect.logDebug("Bindings task", canisterName, { didPath })
@@ -82,9 +81,8 @@ export const makeBindingsTask = (
 		},
 		input: () =>
 			Effect.gen(function* () {
-				const { taskPath } = yield* TaskInfo
-				const { dependencies } = yield* DependencyResults
-				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
+				const { taskPath, depResults } = yield* TaskCtx
+				const depCacheKeys = Record.map(depResults, (dep) => dep.cacheKey)
 				const input = {
 					taskPath,
 					depCacheKeys,
@@ -118,17 +116,15 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 		effect: Effect.gen(function* () {
 			const fs = yield* FileSystem.FileSystem
 			const path = yield* Path.Path
-			const appDir = yield* Config.string("APP_DIR")
-			const iceDirName = yield* Config.string("ICE_DIR_NAME")
 			// TODO: could be a promise
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
-			const { taskPath } = yield* TaskInfo
+			const { taskPath, appDir, iceDir } = yield* TaskCtx
 			// TODO: pass in as arg instead?
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			const isGzipped = yield* fs.exists(
 				path.join(
 					appDir,
-					iceDirName,
+					iceDir,
 					"canisters",
 					canisterName,
 					`${canisterName}.wasm.gz`,
@@ -136,11 +132,12 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 			)
 			const outWasmPath = path.join(
 				appDir,
-				iceDirName,
+				iceDir,
 				"canisters",
 				canisterName,
 				isGzipped ? `${canisterName}.wasm.gz` : `${canisterName}.wasm`,
 			)
+			yield* Effect.logDebug("Reading wasm file", canisterConfig.wasm)
 			const wasm = yield* fs.readFile(canisterConfig.wasm)
 			// Ensure the directory exists
 			yield* fs.makeDirectory(path.dirname(outWasmPath), { recursive: true })
@@ -148,13 +145,17 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 
 			const outCandidPath = path.join(
 				appDir,
-				iceDirName,
+				iceDir,
 				"canisters",
 				canisterName,
 				`${canisterName}.did`,
 			)
 			const candid = yield* fs.readFile(canisterConfig.candid)
 			yield* fs.writeFile(outCandidPath, candid)
+			yield* Effect.logDebug("Built custom canister", {
+				wasmPath: outWasmPath,
+				candidPath: outCandidPath,
+			})
 			return {
 				wasmPath: outWasmPath,
 				candidPath: outCandidPath,
@@ -163,7 +164,6 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 		computeCacheKey: (input) => {
 			// TODO: pocket-ic could be restarted?
 			const installInput = {
-				canisterId: input.canisterId,
 				wasmHash: input.wasm.sha256,
 				candidHash: input.candid.sha256,
 				depsHash: hashJson(input.depCacheKeys),
@@ -174,52 +174,49 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 		},
 		input: () =>
 			Effect.gen(function* () {
-				const { taskPath } = yield* TaskInfo
+				const { taskPath, depResults } = yield* TaskCtx
 				const canisterName = taskPath.split(":").slice(0, -1).join(":")
-				const { dependencies } = yield* DependencyResults
-				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
-				const maybeCanisterId = yield* loadCanisterId(taskPath)
-				if (Option.isNone(maybeCanisterId)) {
-					return yield* Effect.fail(
-						new Error(
-							`Canister at ${taskPath} is not installed, cannot get input`,
-						),
-					)
-				}
-				const canisterId = maybeCanisterId.value
+				const depCacheKeys = Record.map(depResults, (dep) => dep.cacheKey)
 				const path = yield* Path.Path
-				const appDir = yield* Config.string("APP_DIR")
-				const iceDirName = yield* Config.string("ICE_DIR_NAME")
-				const wasmPath = path.join(
-					appDir,
-					iceDirName,
-					"canisters",
-					canisterName,
-					`${canisterName}.wasm`,
-				)
-				const candidPath = path.join(
-					appDir,
-					iceDirName,
-					"canisters",
-					canisterName,
-					`${canisterName}.did`,
-				)
+				const { appDir, iceDir } = yield* TaskCtx
+				// TODO...? might be problematic if user does lots of async
+				const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
+				const wasmPath = canisterConfig.wasm
+				const candidPath = canisterConfig.candid
+				// const wasmPath = path.join(
+				// 	appDir,
+				// 	iceDir,
+				// 	"canisters",
+				// 	canisterName,
+				// 	`${canisterName}.wasm`,
+				// )
+				// const candidPath = path.join(
+				// 	appDir,
+				// 	iceDir,
+				// 	"canisters",
+				// 	canisterName,
+				// 	`${canisterName}.did`,
+				// )
 				// TODO: we need a separate cache for this?
 				const prevWasmDigest = undefined
-				const { fresh, digest: wasmDigest } = yield* Effect.tryPromise({
-					//
-					try: () => isArtifactCached(wasmPath, prevWasmDigest),
-					// TODO:
-					catch: Effect.fail,
-				})
+				const { fresh, digest: wasmDigest } = yield* isArtifactCachedEffect(
+					wasmPath,
+					prevWasmDigest,
+				)
+				// yield* Effect.tryPromise({
+				// 	//
+				// 	try: () => isArtifactCached(wasmPath, prevWasmDigest),
+				// 	// TODO:
+				// 	catch: Effect.fail,
+				// })
 				const prevCandidDigest = undefined
 				const { fresh: candidFresh, digest: candidDigest } =
-					yield* Effect.tryPromise({
-						try: () => isArtifactCached(candidPath, prevCandidDigest),
-						catch: Effect.fail,
-					})
+					yield* isArtifactCachedEffect(candidPath, prevCandidDigest)
+				// yield* Effect.tryPromise({
+				// 	try: () => isArtifactCached(candidPath, prevCandidDigest),
+				// 	catch: Effect.fail,
+				// })
 				const input = {
-					canisterId,
 					canisterName,
 					taskPath,
 					wasm: wasmDigest,
@@ -328,12 +325,7 @@ class CustomCanisterBuilder<
 		const dependsOn = this.#scope.children.install_args.dependsOn
 		const dependencies = this.#scope.children.install_args.dependencies
 		const installArgsTask = {
-			...makeInstallArgsTask<
-				I,
-				_SERVICE,
-				D,
-				P
-			>(
+			...makeInstallArgsTask<I, _SERVICE, D, P>(
 				installArgsFn,
 				dependsOn,
 				{
@@ -374,11 +366,7 @@ class CustomCanisterBuilder<
 				...this.#scope.children.install_args.dependencies,
 				...finalDeps,
 			},
-		} as InstallArgsTask<
-			I,
-			D,
-			NP
-		>
+		} as InstallArgsTask<I, D, NP>
 		const installTask = {
 			...this.#scope.children.install,
 			// TODO: this can cause a naming collision
@@ -419,11 +407,7 @@ class CustomCanisterBuilder<
 				...this.#scope.children.install_args.dependsOn,
 				...updatedDeps,
 			},
-		} as InstallArgsTask<
-			I,
-			ND,
-			P
-		>
+		} as InstallArgsTask<I, ND, P>
 		const installTask = {
 			...this.#scope.children.install,
 			dependsOn: {
@@ -479,12 +463,7 @@ export const customCanister = <_SERVICE = unknown, I = unknown[]>(
 	const buildTask = makeCustomBuildTask(canisterConfigOrFn)
 	const stopTask = makeStopTask()
 	const removeTask = makeRemoveTask({ stop: stopTask })
-	const installArgsTask = makeInstallArgsTask<
-		I,
-		_SERVICE,
-		{},
-		{}
-	>(
+	const installArgsTask = makeInstallArgsTask<I, _SERVICE, {}, {}>(
 		() => [] as unknown as I,
 		{},
 		{

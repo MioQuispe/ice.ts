@@ -1,29 +1,20 @@
-import { Effect, Match, Option } from "effect"
+import { TextInput } from "@inkjs/ui"
+import { Effect, Match } from "effect"
+import {
+  Box,
+  render,
+  Text
+} from "ink"
+import React from "react"
+import { loadCanisterId } from "../builders/custom.js"
+import { Tags } from "../builders/lib.js"
+import { TaskCtx } from "../tasks/lib.js"
 import type {
   BuilderResult,
   Scope,
   Task,
-  TaskTree,
-  TaskTreeNode,
+  TaskTreeNode
 } from "../types/types.js"
-import { TaskCtx } from "../tasks/lib.js"
-import { TaskInfo } from "../tasks/run.js"
-import { Tags } from "../builders/lib.js"
-import { loadCanisterId } from "../builders/custom.js"
-import {
-  Box,
-  render,
-  Text,
-  Static,
-  useFocusManager,
-  useInput,
-  useFocus,
-  useApp,
-  useStdout,
-} from "ink"
-import React, { useState, useEffect } from "react"
-import type { HttpAgent, SignIdentity } from "@dfinity/agent"
-import { TextInput } from "@inkjs/ui"
 
 const CandidUI = ({
   canisterId,
@@ -63,7 +54,7 @@ const makeCandidUITask = (scope: CanisterScope): Task => {
     effect: Effect.gen(function* () {
       const { runTask, replica, roles } = yield* TaskCtx
       const { identity } = roles.deployer
-      const { taskPath } = yield* TaskInfo
+      const { taskPath } = yield* TaskCtx
       const canisterName = taskPath.split(":").slice(0, -1).join(":")
       const canisterId = yield* loadCanisterId(taskPath)
       // TODO: exits immediately

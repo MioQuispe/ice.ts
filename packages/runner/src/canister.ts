@@ -1,12 +1,11 @@
-import { Moc } from "./services/moc.js"
-import { sha256 } from "js-sha256"
-import { IDL } from "@dfinity/candid"
-import { Effect, Config, Data } from "effect"
-import { Path, FileSystem, CommandExecutor, Command } from "@effect/platform"
-import * as didc from "@ice.ts/didc_js"
 import { Actor, HttpAgent } from "@dfinity/agent"
-import type * as ActorTypes from "./types/actor.js"
+import { IDL } from "@dfinity/candid"
+import { Command, CommandExecutor, FileSystem, Path } from "@effect/platform"
+import * as didc from "@ice.ts/didc_js"
+import { Data, Effect } from "effect"
+import { Moc } from "./services/moc.js"
 import { TaskCtx } from "./tasks/lib.js"
+import type * as ActorTypes from "./types/actor.js"
 
 export class DeploymentError extends Data.TaggedError("DeploymentError")<{
 	message: string
@@ -61,21 +60,20 @@ export const generateDIDJS = (canisterName: string, didPath: string) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem
 		const path = yield* Path.Path
-		const appDir = yield* Config.string("APP_DIR")
-		const iceDirName = yield* Config.string("ICE_DIR_NAME")
+		const { appDir, iceDir } = yield* TaskCtx
 		const didString = yield* fs.readFileString(didPath)
 		const didJSString = didc.did_to_js(didString)
 		const didTSString = didc.did_to_ts(didString)
 		const didJSPath = path.join(
 			appDir,
-			iceDirName,
+			iceDir,
 			"canisters",
 			canisterName,
 			`${canisterName}.did.js`,
 		)
 		const didTSPath = path.join(
 			appDir,
-			iceDirName,
+			iceDir,
 			"canisters",
 			canisterName,
 			`${canisterName}.did.ts`,
