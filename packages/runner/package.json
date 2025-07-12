@@ -62,6 +62,7 @@
     "tsx": "^4.20.3"
   },
   "devDependencies": {
+    "@ark/attest": "^0.48.2",
     "@effect/vitest": "^0.23.11",
     "@ice.ts/canisters": "*",
     "@types/express": "^5.0.0",

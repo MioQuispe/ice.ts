@@ -328,6 +328,18 @@ export const picReplicaImpl = Effect.gen(function* () {
 		// 			}),
 		// 	}),
 
+		getTopology: () =>
+			Effect.gen(function* () {
+				const topology = yield* Effect.tryPromise({
+					try: () => pic.getTopology(),
+					catch: (error) =>
+						new AgentError({
+							message: `Failed to get topology: ${error instanceof Error ? error.message : String(error)}`,
+						}),
+				})
+				return topology
+			}),
+
 		installCode: ({ canisterId, wasm, encodedArgs, identity, mode }) =>
 			Effect.gen(function* () {
 				const maxSize = 3670016

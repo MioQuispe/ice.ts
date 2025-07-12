@@ -14,6 +14,7 @@ import type { ReplicaService } from "../services/replica.js"
 import { DefaultReplica } from "../services/replica.js"
 import { TaskArgsService } from "../services/taskArgs.js"
 import { TaskRegistry } from "../services/taskRegistry.js"
+import { TaskCtxService } from "../services/taskCtx.js"
 import type { TaskCtx } from "../tasks/lib.js"
 
 export type CanisterActor = {
@@ -174,14 +175,9 @@ export interface PositionalParam<T = unknown> extends TaskParam<T> {
 // 	} satisfies Task<A, D, P, E, R>
 // }
 
-export interface Task<
-	out A = unknown,
-	D extends Record<string, Task> = {},
-	P extends Record<string, Task> = {},
-	// TODO:
-	out E = unknown,
-	out R =
+type TaskRequirements = 
 		| TaskCtx
+		| TaskCtxService
 		| TaskRegistry
 		| CanisterIdsService
 		| NodeContext.NodeContext
@@ -191,6 +187,14 @@ export interface Task<
 		| DefaultReplica
 		| CLIFlags
 		| TaskArgsService
+
+export interface Task<
+	out A = unknown,
+	D extends Record<string, Task> = {},
+	P extends Record<string, Task> = {},
+	// TODO:
+	out E = unknown,
+	out R = TaskRequirements
 > {
 	_tag: "task"
 	readonly id: symbol // assigned by the builder
@@ -213,17 +217,7 @@ export type CachedTask<
 	Input = unknown,
 	// TODO:
 	E = unknown,
-	R =
-		| TaskCtx
-		| TaskRegistry
-		| CanisterIdsService
-		| NodeContext.NodeContext
-		| ICEConfigService
-		| Moc
-		| DefaultConfig
-		| DefaultReplica
-		| CLIFlags
-		| TaskArgsService
+	R = TaskRequirements
 > = Task<A, D, P, E, R> & {
 	input: () => Effect.Effect<Input, E, R> // optional input
 	encode: (

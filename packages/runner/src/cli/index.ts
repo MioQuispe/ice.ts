@@ -19,7 +19,7 @@ import { CanisterStatus, DefaultReplica } from "../services/replica.js"
 import { runTask, runTaskByPath } from "../tasks/index.js"
 import { filterNodes } from "../tasks/lib.js"
 import type { Task } from "../types/types.js"
-import { uiTask } from "./ui/index.js"
+// import { uiTask } from "./ui/index.js"
 
 function moduleHashToHexString(moduleHash: [] | [number[]]): string {
 	if (moduleHash.length === 0) {
@@ -584,27 +584,27 @@ const canistersRemoveCommand = defineCommand({
 	},
 })
 
-const uiCommand = defineCommand({
-	meta: {
-		name: "ui",
-		description: "Opens the experimental ICE terminal UI",
-	},
-	run: async ({ args }) => {
-		const globalArgs = getGlobalArgs("ui")
-		const { network, logLevel } = globalArgs
-		await makeRuntime({
-			globalArgs: {
-				network: "local",
-				logLevel: "debug",
-			},
-		}).runPromise(
-			Effect.gen(function* () {
-				const { config, taskTree } = yield* ICEConfigService
-				yield* uiTask({ config, taskTree })
-			}),
-		)
-	},
-})
+// const uiCommand = defineCommand({
+// 	meta: {
+// 		name: "ui",
+// 		description: "Opens the experimental ICE terminal UI",
+// 	},
+// 	run: async ({ args }) => {
+// 		const globalArgs = getGlobalArgs("ui")
+// 		const { network, logLevel } = globalArgs
+// 		await makeRuntime({
+// 			globalArgs: {
+// 				network: "local",
+// 				logLevel: "debug",
+// 			},
+// 		}).runPromise(
+// 			Effect.gen(function* () {
+// 				const { config, taskTree } = yield* ICEConfigService
+// 				yield* uiTask({ config, taskTree })
+// 			}),
+// 		)
+// 	},
+// })
 
 const canistersDeployCommand = defineCommand({
 	meta: {
@@ -828,7 +828,7 @@ const main = defineCommand({
 		// init: initCommand,
 		// g: generateCommand,
 		status: canistersStatusCommand,
-		ui: uiCommand,
+		// ui: uiCommand,
 		// w: watchCommand,
 	},
 })

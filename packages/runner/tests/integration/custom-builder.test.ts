@@ -1,6 +1,9 @@
 import { NodeContext } from "@effect/platform-node"
 import { layerMemory } from "@effect/platform/KeyValueStore"
+import fs from "node:fs"
 import { Effect, Layer, Logger, LogLevel, ManagedRuntime, Ref } from "effect"
+import { Principal } from "@dfinity/principal"
+import { Ed25519KeyIdentity } from "@dfinity/identity"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
 import { configLayer, customCanister } from "../../src/index.js"
@@ -10,17 +13,130 @@ import { DefaultConfig } from "../../src/services/defaultConfig.js"
 import { ICEConfigService } from "../../src/services/iceConfig.js"
 import { Moc } from "../../src/services/moc.js"
 import { picReplicaImpl } from "../../src/services/pic/pic.js"
-import { DefaultReplica } from "../../src/services/replica.js"
+import { DefaultReplica, Replica } from "../../src/services/replica.js"
 import { TaskArgsService } from "../../src/services/taskArgs.js"
 import { TaskRegistry } from "../../src/services/taskRegistry.js"
+import { TaskCtxService } from "../../src/services/taskCtx.js"
 import { executeTasks, topologicalSortTasks } from "../../src/tasks/lib.js"
 import { runTask } from "../../src/tasks/run.js"
-import { ICEConfig, TaskTree } from "../../src/types/types.js"
+import { ICEConfig, Task, TaskTree } from "../../src/types/types.js"
 
 const DefaultReplicaService = Layer.effect(DefaultReplica, picReplicaImpl).pipe(
 	Layer.provide(NodeContext.layer),
 	Layer.provide(configLayer),
 )
+
+// Not needed for now
+
+// const program = Effect.gen(function* () {
+// 	const replica = yield* DefaultReplica
+// 	const topology = yield* replica.getTopology()
+// 	return topology
+// }).pipe(Effect.provide(DefaultReplicaService))
+
+// const topology = await Effect.runPromise(program)
+// const serializableTopology = topology.map((t) => [
+// 	t.type,
+// 	t.canisterRanges.map((r) => [r.start.toHex(), r.end.toHex()]),
+// ])
+// fs.writeFileSync(
+// 	"topology.json",
+// 	JSON.stringify(serializableTopology, null, 2),
+// )
+
+type SubnetType = "II" | "Application" | "Fiduciary" | "NNS" | "SNS" | "Bitcoin"
+
+const subnetRanges: Record<SubnetType, [string, string][]> = {
+	II: [
+		["00000000000000070101", "00000000000000070101"],
+		["00000000021000000101", "00000000021FFFFF0101"],
+		["FFFFFFFFFFC000000101", "FFFFFFFFFFCFFFFF0101"],
+	],
+	Application: [["FFFFFFFFFF9000000101", "FFFFFFFFFF9FFFFF0101"]],
+	Fiduciary: [
+		["00000000023000000101", "00000000023FFFFF0101"],
+		["FFFFFFFFFFB000000101", "FFFFFFFFFFBFFFFF0101"],
+	],
+	NNS: [
+		["00000000000000000101", "00000000000000060101"],
+		["00000000000000080101", "00000000000FFFFF0101"],
+		["FFFFFFFFFFE000000101", "FFFFFFFFFFEFFFFF0101"],
+	],
+	SNS: [
+		["00000000020000000101", "00000000020FFFFF0101"],
+		["FFFFFFFFFFD000000101", "FFFFFFFFFFDFFFFF0101"],
+	],
+	Bitcoin: [
+		["0000000001A000000101", "0000000001AFFFFF0101"],
+		["FFFFFFFFFFA000000101", "FFFFFFFFFFAFFFFF0101"],
+	],
+}
+
+const generateRandomCanisterIdInRange = (
+	startHex: string,
+	endHex: string,
+): string => {
+	const start = BigInt(`0x${startHex}`)
+	const end = BigInt(`0x${endHex}`)
+	const range = end - start + 1n
+
+	// Generate random BigInt within range
+	const randomBytes = new Uint8Array(10)
+	crypto.getRandomValues(randomBytes)
+
+	let randomBigInt = 0n
+	for (let i = 0; i < 10; i++) {
+		randomBigInt = (randomBigInt << 8n) + BigInt(randomBytes[i]!)
+	}
+
+	const scaledRandom = start + (randomBigInt % range)
+
+	// Convert back to 10-byte array
+	const hex = scaledRandom.toString(16).padStart(20, "0")
+	const bytes = new Uint8Array(10)
+	for (let i = 0; i < 10; i++) {
+		bytes[i] = parseInt(hex.substr(i * 2, 2), 16)
+	}
+
+	return Principal.fromUint8Array(bytes).toString()
+}
+
+// const generateRandomCanisterIdInSubnet = (subnetType: SubnetType): string => {
+//   const subnet = subnetRanges.find(([type]) => type === subnetType)
+//   if (!subnet) {
+//     throw new Error(`Unknown subnet type: ${subnetType}`)
+//   }
+
+//   const [, ranges] = subnet
+//   // Pick a random range within the subnet
+//   const randomRange = ranges[Math.floor(Math.random() * ranges.length)]
+//   const [startHex, endHex] = randomRange
+
+//   return generateRandomCanisterIdInRange(startHex, endHex)
+// }
+
+// Updated makeCanisterId function for your test
+const makeCanisterId = (
+	ranges: [string, string][] = subnetRanges.NNS,
+): string => {
+	const randomRange = ranges[Math.floor(Math.random() * ranges.length)]
+	const [startHex, endHex] = randomRange!
+
+	return generateRandomCanisterIdInRange(startHex, endHex)
+	//   return generateRandomCanisterIdInSubnet(subnetType)
+}
+
+// const makeCanisterId = (): string => {
+// 	// Generate a random 10-byte array for canister ID
+// 	const randomBytes = new Uint8Array(10)
+// 	crypto.getRandomValues(randomBytes)
+
+// 	return Principal.fromUint8Array(randomBytes).toString()
+// }
+
+// const makePrincipal = () => {
+// 	Ed25519KeyIdentity.generate().getPrincipal()
+// }
 
 const makeTestRuntime = (
 	{ cliTaskArgs = { positionalArgs: [], namedArgs: {} }, taskArgs = {} } = {
@@ -36,8 +152,27 @@ const makeTestRuntime = (
 		config,
 		taskTree,
 	})
+
+	const DefaultConfigLayer = DefaultConfig.Live.pipe(
+		Layer.provide(DefaultReplicaService),
+	)
+	const ICEConfigLayer = Layer.succeed(ICEConfigService, testICEConfigService)
+	const CLIFlagsLayer = Layer.succeed(CLIFlags, {
+		globalArgs,
+		taskArgs: cliTaskArgs,
+	})
+	const TaskArgsLayer = Layer.succeed(TaskArgsService, { taskArgs })
+	// Layer.succeed(CLIFlags, {
+	// 	globalArgs,
+	// 	taskArgs: cliTaskArgs,
+	// }),
+	// Layer.succeed(TaskArgsService, { taskArgs }),
 	const layer = Layer.mergeAll(
 		NodeContext.layer,
+		CLIFlagsLayer,
+		TaskArgsLayer,
+		ICEConfigLayer,
+		DefaultConfigLayer,
 		TaskRegistry.Live.pipe(
 			// TODO: double-check that this works
 			// Layer.provide(layerFileSystem(".ice/cache")),
@@ -45,16 +180,15 @@ const makeTestRuntime = (
 			Layer.provide(NodeContext.layer),
 		),
 		DefaultReplicaService,
-		DefaultConfig.Live.pipe(Layer.provide(DefaultReplicaService)),
 		Moc.Live.pipe(Layer.provide(NodeContext.layer)),
 		configLayer,
 		CanisterIdsService.Test,
-		Layer.succeed(ICEConfigService, testICEConfigService),
-		Layer.succeed(CLIFlags, {
-			globalArgs,
-			taskArgs: cliTaskArgs,
-		}),
-		Layer.succeed(TaskArgsService, { taskArgs }),
+		TaskCtxService.Live.pipe(
+			Layer.provide(DefaultConfigLayer),
+			Layer.provide(ICEConfigLayer),
+			Layer.provide(CLIFlagsLayer),
+			Layer.provide(TaskArgsLayer),
+		),
 		Logger.pretty,
 		Logger.minimumLogLevel(LogLevel.Debug),
 	)
@@ -397,8 +531,11 @@ describe("custom builder", () => {
 					canister2.children.install,
 					canister3.children.install,
 				]
-				const taskEffects = yield* executeTasks(tasks)
-				const results = yield* Effect.all(taskEffects, { concurrency: 2 })
+				// Array.map
+				const results = yield* Effect.all(
+					tasks.map((t) => runTask(t)),
+					{ concurrency: 2 },
+				)
 				return results
 			}),
 		)
@@ -410,14 +547,15 @@ describe("custom builder", () => {
 	it("should handle cache invalidation with different configurations", async () => {
 		let configVersion = 1
 
+		const canisterId = makeCanisterId(subnetRanges.NNS)
 		const dynamic_canister = customCanister(({ ctx }) => ({
 			wasm: path.resolve(__dirname, "../fixtures/canister/example.wasm"),
 			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
 			// Change configuration to invalidate cache
-			canisterId: `test-${configVersion}`,
+			canisterId,
 		}))
 			.installArgs(async ({ ctx, mode }) => {
-				return [`version-${configVersion}`]
+				return []
 			})
 			.make()
 

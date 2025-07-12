@@ -1,132 +1,51 @@
-import { NodeContext } from "@effect/platform-node"
-import { layerMemory } from "@effect/platform/KeyValueStore"
-import {
-	Effect,
-	Layer,
-	Logger,
-	LogLevel,
-	ManagedRuntime,
-	Ref
-} from "effect"
+import { Effect, ManagedRuntime, Ref } from "effect"
 import { describe, expect, it } from "vitest"
+import { layer } from "@effect/vitest"
 import { task } from "../../src/builders/task.js"
-import { configLayer } from "../../src/index.js"
-import {
-	CanisterIdsService
-} from "../../src/services/canisterIds.js"
-import { CLIFlags } from "../../src/services/cliFlags.js"
-import { DefaultConfig } from "../../src/services/defaultConfig.js"
 import { ICEConfigService } from "../../src/services/iceConfig.js"
-import { Moc } from "../../src/services/moc.js"
-import { picReplicaImpl } from "../../src/services/pic/pic.js"
-import { DefaultReplica } from "../../src/services/replica.js"
-import { TaskArgsService } from "../../src/services/taskArgs.js"
-import { TaskRegistry } from "../../src/services/taskRegistry.js"
 import { executeTasks, topologicalSortTasks } from "../../src/tasks/lib.js"
 import { CachedTask, ICEConfig, Task, TaskTree } from "../../src/types/types.js"
-
-const DefaultReplicaService = Layer.effect(DefaultReplica, picReplicaImpl).pipe(
-	Layer.provide(NodeContext.layer),
-	Layer.provide(configLayer),
-)
-
-const makeTestRuntime = (
-	{ cliTaskArgs = { positionalArgs: [], namedArgs: {} }, taskArgs = {} } = {
-		cliTaskArgs: { positionalArgs: [], namedArgs: {} },
-		taskArgs: {},
-	},
-	taskTree: TaskTree = {},
-) => {
-	const globalArgs = { network: "local", logLevel: "debug" } as const
-	const config = {} satisfies Partial<ICEConfig>
-	// const taskTree = {} satisfies TaskTree
-	const testICEConfigService = ICEConfigService.of({
-		config,
-		taskTree,
-	})
-	const layer = Layer.mergeAll(
-		NodeContext.layer,
-		TaskRegistry.Live.pipe(
-			// TODO: double-check that this works
-			// Layer.provide(layerFileSystem(".ice/cache")),
-			Layer.provide(layerMemory),
-			Layer.provide(NodeContext.layer),
-		),
-		DefaultReplicaService,
-		DefaultConfig.Live.pipe(Layer.provide(DefaultReplicaService)),
-		Moc.Live.pipe(Layer.provide(NodeContext.layer)),
-		configLayer,
-		CanisterIdsService.Test,
-		Layer.succeed(ICEConfigService, testICEConfigService),
-		Layer.succeed(CLIFlags, {
-			globalArgs,
-			taskArgs: cliTaskArgs,
-		}),
-		Layer.succeed(TaskArgsService, { taskArgs }),
-		Logger.pretty,
-		Logger.minimumLogLevel(LogLevel.Debug),
-	)
-	return ManagedRuntime.make(layer)
-}
-
-const makeTask = <A = unknown>(name: string, value: A): Task<A> => ({
-	_tag: "task",
-	id: Symbol(name),
-	description: name,
-	tags: [],
-	effect: Effect.succeed(value),
-	dependsOn: {},
-	dependencies: {},
-	namedParams: {},
-	positionalParams: [],
-	params: {},
-})
-
-const makeCachedTask = (name: string, value: string): CachedTask<string> => {
-	const cachedTask = {
-		...task()
-			.run(() => value)
-			.make(),
-		computeCacheKey: () => name, // ← always the same key
-		input: () => Effect.succeed(undefined),
-		encode: (v) => Effect.succeed(v), // identity
-		decode: (v: string | Uint8Array<ArrayBufferLike>) =>
-			Effect.succeed(v as string),
-		encodingFormat: "string",
-	} satisfies CachedTask<string>
-	return cachedTask
-}
+import { makeTestLayer, getTasks, makeCachedTask } from "./setup.js"
 
 describe("executeTasks", () => {
-	// Build a small DAG:   C <- A
-	//                      C <- B
-	const a = task().make()
-	const b = task().make()
-	const c = task().make()
-	c.dependencies = { one: a, two: b }
-
-	const progress: Array<string> = []
-	// TODO: taskTree needs to have the same tasks as our test tasks
-	// const runtime = makeTestRuntime({}, taskTree)
-
-	it("runs tasks after their dependencies", async () => {
-		const tasks = topologicalSortTasks(
-			new Map([
-				[a.id, a],
-				[b.id, b],
-				[c.id, c],
-			]),
-		)
-		// (no replica needed)
-		const taskTree = {
-			a: a,
-			b: b,
-			c: c,
-		}
-		const runtime = makeTestRuntime({}, taskTree)
-		// TODO: makeRuntime here?
-		await runtime.runPromise(
+	// const testLayer = (() => {
+	// 	const tasks = topologicalSortTasks(
+	// 		new Map([
+	// 			[a.id, a],
+	// 			[b.id, b],
+	// 			[c.id, c],
+	// 		]),
+	// 	)
+	// 	// (no replica needed)
+	// 	const taskTree = {
+	// 		a: a,
+	// 		b: b,
+	// 		c: c,
+	// 	}
+	// 	return makeTestLayer({}, taskTree)
+	// })()
+	layer(
+		(() => {
+			// Build a small DAG:   C <- A
+			//                      C <- B
+			const a = task().make()
+			const b = task().make()
+			const c = task().deps({ one: a, two: b }).make()
+			return makeTestLayer(
+				{},
+				{
+					a: a,
+					b: b,
+					c: c,
+				},
+			)
+		})(),
+	)((it) => {
+		it.effect("runs tasks after their dependencies", () =>
 			Effect.gen(function* () {
+				const progress: Array<string> = []
+				const tasks = yield* getTasks()
+				// TODO: makeRuntime here?
 				const taskEffects = yield* executeTasks(
 					tasks,
 					({ taskPath, status }) => {
@@ -138,61 +57,51 @@ describe("executeTasks", () => {
 				const results = yield* Effect.all(taskEffects, {
 					concurrency: "unbounded",
 				})
-				// executeTasks(tasks, ({ taskPath, status }) => {
-				// 	if (status === "completed") progress.push(taskPath)
-				// }),
-				return results
+				// C must be last, order of A / B does not matter
+				console.log(progress)
+				expect(progress.at(-1)).toBe("c")
+				expect(progress.sort()).toEqual(["a", "b", "c"]) // all ran
 			}),
 		)
-
-		// C must be last, order of A / B does not matter
-		console.log(progress)
-		expect(progress.at(-1)).toBe("c")
-		expect(progress.sort()).toEqual(["a", "b", "c"]) // all ran
 	})
 
-	it("reads from and writes to the cache only once", async () => {
-		// TODO: wrong taskTree! pass in the cached tasks
-		const cached = makeCachedTask("cached-task", "first")
-		const tasks = [cached]
-		// (no replica needed)
-		const taskTree = {
-			cached: cached,
-		}
-		const runtime = makeTestRuntime({}, taskTree)
-
-		// 1st run ⇒ miss + store
-		const first = await runtime.runPromise(
+	layer(
+		makeTestLayer(
+			{},
+			{
+				cached: makeCachedTask("cached-task", "first"),
+			},
+		),
+	)((it) => {
+		it.effect("reads from and writes to the cache only once", () =>
 			Effect.gen(function* () {
+				const { taskTree } = yield* ICEConfigService
+				const tasks = yield* getTasks()
+				// 1st run ⇒ miss + store
+				const cached = taskTree["cached"] as CachedTask
 				const taskEffects = yield* executeTasks(tasks)
-				const results = yield* Effect.all(taskEffects, {
+				const first = yield* Effect.all(taskEffects, {
 					concurrency: "unbounded",
 				})
-				return results
-			}),
-		)
-		expect(first.find((r) => r.taskId === cached.id)?.result).toBe("first")
 
-		// change the effect to prove it is *not* evaluated the 2nd time
-		cached.effect = Effect.dieMessage("should not evaluate")
+				expect(first.find((r) => r.taskId === cached.id)?.result).toBe("first")
 
-		// 2nd run ⇒ hit, same value
-		const second = await runtime.runPromise(
-			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks(tasks)
-				const results = yield* Effect.all(taskEffects, {
+				// change the effect to prove it is *not* evaluated the 2nd time
+				cached.effect = Effect.dieMessage("should not evaluate")
+
+				// 2nd run ⇒ hit, same value
+				const taskEffects2 = yield* executeTasks(tasks)
+				const second = yield* Effect.all(taskEffects2, {
 					concurrency: "unbounded",
 				})
-				return results
+				expect(second.find((r) => r.taskId === cached.id)?.result).toBe("first")
 			}),
 		)
-		expect(second.find((r) => r.taskId === cached.id)?.result).toBe("first")
 	})
 
 	it("obeys the global concurrency limit", async () => {
 		const counter = Ref.unsafeMake(0)
 		const maxSeen = Ref.unsafeMake(0)
-
 		const slow = (name: string) => ({
 			...task().make(),
 			effect: Effect.gen(function* (_) {
@@ -202,9 +111,8 @@ describe("executeTasks", () => {
 				yield* _(Ref.update(counter, (n) => n - 1))
 			}),
 		})
-
 		const tasks = ["t1", "t2", "t3", "t4", "t5"].map(slow)
-		// (no replica needed)
+		// // (no replica needed)
 		const taskTree = {
 			t1: tasks[0]!,
 			t2: tasks[1]!,
@@ -212,36 +120,43 @@ describe("executeTasks", () => {
 			t4: tasks[3]!,
 			t5: tasks[4]!,
 		}
-		const runtime = makeTestRuntime({}, taskTree)
-
-		await runtime.runPromise(
+		const testLayer = makeTestLayer({}, taskTree)
+		const runtime = ManagedRuntime.make(testLayer)
+		runtime.runPromise(
 			Effect.gen(function* () {
+				const tasks = yield* getTasks()
 				const taskEffects = yield* executeTasks(tasks)
 				const results = yield* Effect.all(taskEffects, { concurrency: 2 })
-				return results
+				// 		return results
+				// 	}),
+				// )
+				const max = runtime.runSync(Ref.get(maxSeen))
+				expect(max).toBeLessThanOrEqual(2) // never more than 2 running
 			}),
 		)
-
-		const max = runtime.runSync(Ref.get(maxSeen))
-		expect(max).toBeLessThanOrEqual(2) // never more than 2 running
 	})
 
 	it("handles deep dependency chains correctly", async () => {
 		const executionOrder: Array<string> = []
-		
-		// Create a chain: root -> level1 -> level2 -> level3
-		const level3 = makeTask("level3", "L3")
-		const level2 = makeTask("level2", "L2")
-		const level1 = makeTask("level1", "L1")
-		const root = makeTask("root", "ROOT")
 
-		// Set up dependencies
+		// Create a chain: root -> level1 -> level2 -> level3
+		// const level3 = makeTask("level3", "L3")
+		// const level2 = makeTask("level2", "L2")
+		// const level1 = makeTask("level1", "L1")
+		// const root = makeTask("root", "ROOT")
+
+		const level3 = task("level3").run(() => "L3").make()
+		const level2 = task("level2").run(() => "L2").make()
+		const level1 = task("level1").run(() => "L1").make()
+		const root = task("root").run(() => "ROOT").make()
+
+		// TODO: use builder instead
 		level2.dependencies = { prev: level3 }
 		level1.dependencies = { prev: level2 }
 		root.dependencies = { prev: level1 }
 
 		// Track execution order
-		const trackingTasks = [level3, level2, level1, root].map(task => ({
+		const trackingTasks = [level3, level2, level1, root].map((task) => ({
 			...task,
 			effect: Effect.gen(function* () {
 				executionOrder.push(task.description)
@@ -266,8 +181,8 @@ describe("executeTasks", () => {
 			root: trackingTasks[3]!,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
-
+		const testLayer = makeTestLayer({}, taskTree)
+		const runtime = ManagedRuntime.make(testLayer)
 		await runtime.runPromise(
 			Effect.gen(function* () {
 				const taskEffects = yield* executeTasks(tasks)
@@ -284,12 +199,12 @@ describe("executeTasks", () => {
 
 	it("handles diamond dependencies correctly", async () => {
 		const executionOrder: Array<string> = []
-		
+
 		// Create diamond: top -> left/right -> bottom
-		const top = makeTask("top", "TOP")
-		const left = makeTask("left", "LEFT")
-		const right = makeTask("right", "RIGHT")
-		const bottom = makeTask("bottom", "BOTTOM")
+		const top = task("top").run(() => "TOP").make()
+		const left = task("left").run(() => "LEFT").make()
+		const right = task("right").run(() => "RIGHT").make()
+		const bottom = task("bottom").run(() => "BOTTOM").make()
 
 		// Set up dependencies
 		left.dependencies = { parent: top }
@@ -297,7 +212,7 @@ describe("executeTasks", () => {
 		bottom.dependencies = { leftParent: left, rightParent: right }
 
 		// Track execution order
-		const trackingTasks = [top, left, right, bottom].map(task => ({
+		const trackingTasks = [top, left, right, bottom].map((task) => ({
 			...task,
 			effect: Effect.gen(function* () {
 				executionOrder.push(task.description)
@@ -322,7 +237,8 @@ describe("executeTasks", () => {
 			bottom: trackingTasks[3]!,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const testLayer = makeTestLayer({}, taskTree)
+		const runtime = ManagedRuntime.make(testLayer)
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
@@ -342,8 +258,8 @@ describe("executeTasks", () => {
 	})
 
 	it("handles task failure propagation", async () => {
-		const failingTask = makeTask("failing", "FAIL")
-		const dependentTask = makeTask("dependent", "DEPENDENT")
+		const failingTask = task("failing").run(() => "FAIL").make() as Task
+		const dependentTask = task("dependent").run(() => "DEPENDENT").make()
 
 		// Make the first task fail
 		failingTask.effect = Effect.fail("Task failed")
@@ -361,7 +277,8 @@ describe("executeTasks", () => {
 			dependent: dependentTask,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const testLayer = makeTestLayer({}, taskTree)
+		const runtime = ManagedRuntime.make(testLayer)
 
 		// The execution should fail when the dependency fails
 		await expect(
@@ -373,16 +290,16 @@ describe("executeTasks", () => {
 					})
 					return results
 				}),
-			)
+			),
 		).rejects.toThrow()
 	})
 
 	it("handles mixed cached and non-cached tasks with dependencies", async () => {
 		const executionOrder: Array<string> = []
-		
+
 		// Create mixed scenario: cached -> non-cached -> cached
 		const cachedRoot = makeCachedTask("cached-root", "CACHED_ROOT")
-		const nonCachedMiddle = makeTask("non-cached-middle", "NON_CACHED")
+		const nonCachedMiddle = task("non-cached-middle").run(() => "NON_CACHED").make()
 		const cachedLeaf = makeCachedTask("cached-leaf", "CACHED_LEAF")
 
 		// Set up dependencies
@@ -400,7 +317,7 @@ describe("executeTasks", () => {
 		}
 
 		const tasks = topologicalSortTasks(
-			new Map([
+			new Map<symbol, Task | CachedTask>([
 				[cachedRoot.id, cachedRoot],
 				[trackingNonCached.id, trackingNonCached],
 				[cachedLeaf.id, cachedLeaf],
@@ -413,7 +330,8 @@ describe("executeTasks", () => {
 			"cached-leaf": cachedLeaf,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const testLayer = makeTestLayer({}, taskTree)
+		const runtime = ManagedRuntime.make(testLayer)
 
 		// First run - all should execute
 		const firstResults = await runtime.runPromise(
@@ -449,7 +367,7 @@ describe("executeTasks", () => {
 
 	it("handles cache invalidation with different cache keys", async () => {
 		let cacheKeyCounter = 0
-		
+
 		const dynamicCachedTask = {
 			...task()
 				.run(() => `result-${cacheKeyCounter}`)
@@ -466,7 +384,8 @@ describe("executeTasks", () => {
 			"dynamic-cached": dynamicCachedTask,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const testLayer = makeTestLayer({}, taskTree)
+		const runtime = ManagedRuntime.make(testLayer)
 
 		// First run with cacheKeyCounter = 0
 		const firstResults = await runtime.runPromise(
@@ -502,7 +421,10 @@ describe("executeTasks", () => {
 		const concurrentCounter = Ref.unsafeMake(0)
 		const maxConcurrent = Ref.unsafeMake(0)
 
-		const createTimedTask = (name: string, dependencies: Record<string, Task> = {}) => ({
+		const createTimedTask = (
+			name: string,
+			dependencies: Record<string, Task> = {},
+		) => ({
 			...task().make(),
 			description: name,
 			dependencies,
@@ -537,7 +459,8 @@ describe("executeTasks", () => {
 			leaf,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const testLayer = makeTestLayer({}, taskTree)
+		const runtime = ManagedRuntime.make(testLayer)
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
@@ -552,7 +475,8 @@ describe("executeTasks", () => {
 	})
 
 	it("handles independent task groups with concurrency", async () => {
-		const executionTimes: Array<{ task: string; start: number; end: number }> = []
+		const executionTimes: Array<{ task: string; start: number; end: number }> =
+			[]
 
 		const createTrackingTask = (name: string) => ({
 			...task().make(),
@@ -572,14 +496,15 @@ describe("executeTasks", () => {
 
 		const allTasks = [...group1, ...group2]
 		const tasks = topologicalSortTasks(
-			new Map(allTasks.map(task => [task.id, task])),
+			new Map(allTasks.map((task) => [task.id, task])),
 		)
 
 		const taskTree = Object.fromEntries(
-			allTasks.map(task => [task.description, task])
+			allTasks.map((task) => [task.description, task]),
 		)
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const testLayer = makeTestLayer({}, taskTree)
+		const runtime = ManagedRuntime.make(testLayer)
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
@@ -590,7 +515,7 @@ describe("executeTasks", () => {
 		)
 
 		expect(executionTimes.length).toBe(6)
-		
+
 		// Check that tasks ran concurrently (some should overlap)
 		const sortedByStart = executionTimes.sort((a, b) => a.start - b.start)
 		const hasOverlap = sortedByStart.some((task, index) => {
@@ -603,14 +528,14 @@ describe("executeTasks", () => {
 
 	it("handles very deep dependency chains (canister-like)", async () => {
 		const executionOrder: Array<string> = []
-		
+
 		// Simulate canister dependency chain: create -> build -> bindings -> install_args -> install -> deploy
-		const create = makeTask("create", "CREATED")
-		const build = makeTask("build", "BUILT")
-		const bindings = makeTask("bindings", "BINDINGS")
-		const installArgs = makeTask("install_args", "INSTALL_ARGS")
-		const install = makeTask("install", "INSTALLED")
-		const deploy = makeTask("deploy", "DEPLOYED")
+		const create = task("create").run(() => "CREATED").make()
+		const build = task("build").run(() => "BUILT").make()
+		const bindings = task("bindings").run(() => "BINDINGS").make()
+		const installArgs = task("install_args").run(() => "INSTALL_ARGS").make()
+		const install = task("install").run(() => "INSTALLED").make()
+		const deploy = task("deploy").run(() => "DEPLOYED").make()
 
 		// Set up chain dependencies
 		build.dependencies = { create }
@@ -620,7 +545,14 @@ describe("executeTasks", () => {
 		deploy.dependencies = { install }
 
 		// Track execution order
-		const trackingTasks = [create, build, bindings, installArgs, install, deploy].map(task => ({
+		const trackingTasks = [
+			create,
+			build,
+			bindings,
+			installArgs,
+			install,
+			deploy,
+		].map((task) => ({
 			...task,
 			effect: Effect.gen(function* () {
 				executionOrder.push(task.description)
@@ -630,14 +562,15 @@ describe("executeTasks", () => {
 		}))
 
 		const tasks = topologicalSortTasks(
-			new Map(trackingTasks.map(task => [task.id, task])),
+			new Map(trackingTasks.map((task) => [task.id, task])),
 		)
 
 		const taskTree = Object.fromEntries(
-			trackingTasks.map(task => [task.description, task])
+			trackingTasks.map((task) => [task.description, task]),
 		)
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const testLayer = makeTestLayer({}, taskTree)
+		const runtime = ManagedRuntime.make(testLayer)
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
@@ -650,14 +583,21 @@ describe("executeTasks", () => {
 		)
 
 		// Should execute in strict order
-		expect(executionOrder).toEqual(["create", "build", "bindings", "install_args", "install", "deploy"])
+		expect(executionOrder).toEqual([
+			"create",
+			"build",
+			"bindings",
+			"install_args",
+			"install",
+			"deploy",
+		])
 	})
 
 	it("handles parameterized tasks with dynamic values", async () => {
 		const executionResults: Array<{ task: string; params: any }> = []
 
 		const createParameterizedTask = (name: string) => {
-			const baseTask = makeTask(name, "PARAM_RESULT")
+			const baseTask = task(name).run(() => "PARAM_RESULT").make()
 			return {
 				...baseTask,
 				effect: Effect.gen(function* () {
@@ -670,7 +610,7 @@ describe("executeTasks", () => {
 
 		const paramTask1 = createParameterizedTask("param_task_1")
 		const paramTask2 = createParameterizedTask("param_task_2")
-		const dependentTask = makeTask("dependent_task", "DEPENDENT")
+		const dependentTask = task("dependent_task").run(() => "DEPENDENT").make()
 
 		dependentTask.dependencies = { task1: paramTask1, task2: paramTask2 }
 
@@ -688,7 +628,8 @@ describe("executeTasks", () => {
 			dependent_task: dependentTask,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const testLayer = makeTestLayer({}, taskTree)
+		const runtime = ManagedRuntime.make(testLayer)
 
 		const results = await runtime.runPromise(
 			Effect.gen(function* () {
@@ -708,9 +649,9 @@ describe("executeTasks", () => {
 
 	it("handles dynamic task execution (task calling other tasks)", async () => {
 		const executionOrder: Array<string> = []
-		
+
 		// Create a task that dynamically calls other tasks
-		const baseTask = makeTask("base_task", "BASE")
+		const baseTask = task("base_task").run(() => "BASE").make()
 		const dynamicTask = {
 			...task().make(),
 			description: "dynamic_caller",
@@ -745,7 +686,8 @@ describe("executeTasks", () => {
 			dynamic_caller: dynamicTask,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const testLayer = makeTestLayer({}, taskTree)
+		const runtime = ManagedRuntime.make(testLayer)
 
 		const results = await runtime.runPromise(
 			Effect.gen(function* () {
@@ -757,8 +699,14 @@ describe("executeTasks", () => {
 			}),
 		)
 
-		expect(executionOrder).toEqual(["base_task", "dynamic_caller_start", "dynamic_caller_end"])
-		expect(results.find(r => r.taskId === dynamicTask.id)?.result).toBe("called_BASE")
+		expect(executionOrder).toEqual([
+			"base_task",
+			"dynamic_caller_start",
+			"dynamic_caller_end",
+		])
+		expect(results.find((r) => r.taskId === dynamicTask.id)?.result).toBe(
+			"called_BASE",
+		)
 	})
 
 	it("handles cache behavior with different encoding formats", async () => {
@@ -769,7 +717,8 @@ describe("executeTasks", () => {
 			computeCacheKey: () => "string_task_key",
 			input: () => Effect.succeed(undefined),
 			encode: (v: string) => Effect.succeed(v),
-			decode: (v: string | Uint8Array<ArrayBufferLike>) => Effect.succeed(v as string),
+			decode: (v: string | Uint8Array<ArrayBufferLike>) =>
+				Effect.succeed(v as string),
 			encodingFormat: "string",
 		} satisfies CachedTask<string>
 
@@ -780,7 +729,8 @@ describe("executeTasks", () => {
 			computeCacheKey: () => "binary_task_key",
 			input: () => Effect.succeed(undefined),
 			encode: (v: Uint8Array) => Effect.succeed(v),
-			decode: (v: string | Uint8Array<ArrayBufferLike>) => Effect.succeed(v as Uint8Array),
+			decode: (v: string | Uint8Array<ArrayBufferLike>) =>
+				Effect.succeed(v as Uint8Array),
 			encodingFormat: "uint8array",
 		} satisfies CachedTask<Uint8Array>
 
@@ -789,12 +739,16 @@ describe("executeTasks", () => {
 			binary_cached: binaryCachedTask,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const testLayer = makeTestLayer({}, taskTree)
+		const runtime = ManagedRuntime.make(testLayer)
 
 		// First run - should cache both
 		const firstResults = await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks([stringCachedTask, binaryCachedTask])
+				const taskEffects = yield* executeTasks([
+					stringCachedTask,
+					binaryCachedTask,
+				])
 				const results = yield* Effect.all(taskEffects, {
 					concurrency: "unbounded",
 				})
@@ -812,7 +766,10 @@ describe("executeTasks", () => {
 		// Second run - should use cache
 		const secondResults = await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks([stringCachedTask, binaryCachedTask])
+				const taskEffects = yield* executeTasks([
+					stringCachedTask,
+					binaryCachedTask,
+				])
 				const results = yield* Effect.all(taskEffects, {
 					concurrency: "unbounded",
 				})
@@ -826,12 +783,12 @@ describe("executeTasks", () => {
 
 	it("handles error propagation in very deep chains", async () => {
 		// Create a 6-level deep chain where the 4th level fails
-		const level1 = makeTask("level1", "L1")
-		const level2 = makeTask("level2", "L2")
-		const level3 = makeTask("level3", "L3")
-		const level4 = makeTask("level4", "L4") // This will fail
-		const level5 = makeTask("level5", "L5")
-		const level6 = makeTask("level6", "L6")
+		const level1 = task("level1").run(() => "L1").make()
+		const level2 = task("level2").run(() => "L2").make()
+		const level3 = task("level3").run(() => "L3").make()
+		const level4 = task("level4").run(() => "L4").make() as Task // This will fail
+		const level5 = task("level5").run(() => "L5").make()
+		const level6 = task("level6").run(() => "L6").make()
 
 		// Set up dependencies
 		level2.dependencies = { prev: level1 }
@@ -855,10 +812,16 @@ describe("executeTasks", () => {
 		)
 
 		const taskTree = {
-			level1, level2, level3, level4, level5, level6,
+			level1,
+			level2,
+			level3,
+			level4,
+			level5,
+			level6,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const testLayer = makeTestLayer({}, taskTree)
+		const runtime = ManagedRuntime.make(testLayer)
 
 		await expect(
 			runtime.runPromise(
@@ -869,7 +832,7 @@ describe("executeTasks", () => {
 					})
 					return results
 				}),
-			)
+			),
 		).rejects.toThrow()
 	})
 
@@ -889,16 +852,24 @@ describe("executeTasks", () => {
 		chain2Middle.dependencies = { root: chain2Root }
 		chain2Leaf.dependencies = { middle: chain2Middle }
 
-		const allTasks = [chain1Root, chain1Middle, chain1Leaf, chain2Root, chain2Middle, chain2Leaf]
+		const allTasks = [
+			chain1Root,
+			chain1Middle,
+			chain1Leaf,
+			chain2Root,
+			chain2Middle,
+			chain2Leaf,
+		]
 		const tasks = topologicalSortTasks(
-			new Map(allTasks.map(task => [task.id, task])),
+			new Map(allTasks.map((task) => [task.id, task])),
 		)
 
 		const taskTree = Object.fromEntries(
-			allTasks.map(task => [task.computeCacheKey(undefined), task])
+			allTasks.map((task) => [task.computeCacheKey(undefined), task]),
 		)
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const testLayer = makeTestLayer({}, taskTree)
+		const runtime = ManagedRuntime.make(testLayer)
 
 		// First run - all should execute
 		const firstResults = await runtime.runPromise(
@@ -914,7 +885,7 @@ describe("executeTasks", () => {
 		expect(firstResults.length).toBe(6)
 
 		// Modify all effects to verify caching
-		allTasks.forEach(task => {
+		allTasks.forEach((task) => {
 			task.effect = Effect.dieMessage("Should not execute")
 		})
 
@@ -930,32 +901,37 @@ describe("executeTasks", () => {
 		)
 
 		expect(secondResults.length).toBe(6)
-		
+
 		// Verify all expected results are present
-		const resultValues = secondResults.map(r => r.result).sort()
+		const resultValues = secondResults.map((r) => r.result).sort()
 		expect(resultValues).toEqual([
-			"C1_LEAF", "C1_MIDDLE", "C1_ROOT", "C2_LEAF", "C2_MIDDLE", "C2_ROOT"
+			"C1_LEAF",
+			"C1_MIDDLE",
+			"C1_ROOT",
+			"C2_LEAF",
+			"C2_MIDDLE",
+			"C2_ROOT",
 		])
-		
+
 		// Verify dependency ordering within each chain
-		const resultsByTask = new Map(secondResults.map(r => [r.result, r]))
+		const resultsByTask = new Map(secondResults.map((r) => [r.result, r]))
 		const chain1Tasks = ["C1_ROOT", "C1_MIDDLE", "C1_LEAF"]
 		const chain2Tasks = ["C2_ROOT", "C2_MIDDLE", "C2_LEAF"]
-		
+
 		// Check that within each chain, tasks completed in dependency order
 		// (We can't check exact timing, but we can verify the results are all present)
-		chain1Tasks.forEach(task => expect(resultsByTask.has(task)).toBe(true))
-		chain2Tasks.forEach(task => expect(resultsByTask.has(task)).toBe(true))
+		chain1Tasks.forEach((task) => expect(resultsByTask.has(task)).toBe(true))
+		chain2Tasks.forEach((task) => expect(resultsByTask.has(task)).toBe(true))
 	})
 
 	it("handles complex branching with mixed execution times", async () => {
 		const executionOrder: Array<string> = []
-		
+
 		// Create complex branching: root -> [fast, slow] -> convergence
-		const root = makeTask("root", "ROOT")
-		const fastBranch = makeTask("fast", "FAST")
-		const slowBranch = makeTask("slow", "SLOW")
-		const convergence = makeTask("convergence", "CONVERGENCE")
+		const root = task("root").run(() => "ROOT").make()
+		const fastBranch = task("fast").run(() => "FAST").make()
+		const slowBranch = task("slow").run(() => "SLOW").make()
+		const convergence = task("convergence").run(() => "CONVERGENCE").make()
 
 		// Set up dependencies
 		fastBranch.dependencies = { parent: root }
@@ -964,32 +940,48 @@ describe("executeTasks", () => {
 
 		// Create tracking tasks with different execution times
 		const trackingTasks = [
-			{ ...root, effect: Effect.gen(function* () { executionOrder.push("root"); yield* root.effect }) },
-			{ ...fastBranch, effect: Effect.gen(function* () { 
-				yield* Effect.sleep("10 millis"); 
-				executionOrder.push("fast"); 
-				yield* fastBranch.effect 
-			}) },
-			{ ...slowBranch, effect: Effect.gen(function* () { 
-				yield* Effect.sleep("50 millis"); 
-				executionOrder.push("slow"); 
-				yield* slowBranch.effect 
-			}) },
-			{ ...convergence, effect: Effect.gen(function* () { 
-				executionOrder.push("convergence"); 
-				yield* convergence.effect 
-			}) },
+			{
+				...root,
+				effect: Effect.gen(function* () {
+					executionOrder.push("root")
+					yield* root.effect
+				}),
+			},
+			{
+				...fastBranch,
+				effect: Effect.gen(function* () {
+					yield* Effect.sleep("10 millis")
+					executionOrder.push("fast")
+					yield* fastBranch.effect
+				}),
+			},
+			{
+				...slowBranch,
+				effect: Effect.gen(function* () {
+					yield* Effect.sleep("50 millis")
+					executionOrder.push("slow")
+					yield* slowBranch.effect
+				}),
+			},
+			{
+				...convergence,
+				effect: Effect.gen(function* () {
+					executionOrder.push("convergence")
+					yield* convergence.effect
+				}),
+			},
 		]
 
 		const tasks = topologicalSortTasks(
-			new Map(trackingTasks.map(task => [task.id, task])),
+			new Map(trackingTasks.map((task) => [task.id, task])),
 		)
 
 		const taskTree = Object.fromEntries(
-			trackingTasks.map(task => [task.description, task])
+			trackingTasks.map((task) => [task.description, task]),
 		)
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const testLayer = makeTestLayer({}, taskTree)
+		const runtime = ManagedRuntime.make(testLayer)
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
@@ -1005,6 +997,8 @@ describe("executeTasks", () => {
 		expect(executionOrder[0]).toBe("root")
 		expect(executionOrder[3]).toBe("convergence")
 		// Fast should complete before slow
-		expect(executionOrder.indexOf("fast")).toBeLessThan(executionOrder.indexOf("slow"))
+		expect(executionOrder.indexOf("fast")).toBeLessThan(
+			executionOrder.indexOf("slow"),
+		)
 	})
 })

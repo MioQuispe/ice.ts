@@ -3,6 +3,7 @@ import type { ActorSubclass, HttpAgent, SignIdentity } from "@dfinity/agent"
 import type { canister_status_result } from "src/canisters/management_latest/management.types.js"
 import { Principal } from "@dfinity/principal"
 import { type } from "arktype"
+import { SubnetTopology } from "@dfinity/pic"
 
 export const InstallModes = type("'install' | 'upgrade' | 'reinstall'")
 export type InstallModes = type.infer<typeof InstallModes>
@@ -159,6 +160,7 @@ export type ReplicaService = {
 		canisterDID: any
 		identity: SignIdentity
 	}) => Effect.Effect<ActorSubclass<_SERVICE>, AgentError>
+	getTopology: () => Effect.Effect<SubnetTopology[], AgentError>
 }
 
 export class Replica extends Context.Tag("Replica")<

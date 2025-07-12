@@ -128,7 +128,10 @@ const dfxReplicaImpl = Effect.gen(function* () {
 	const getCanisterStatus = ({
 		canisterId,
 		identity,
-	}: { canisterId: string; identity: SignIdentity }) =>
+	}: {
+		canisterId: string
+		identity: SignIdentity
+	}) =>
 		Effect.gen(function* () {
 			// TODO: canisterStatus implement it in dfx & pic services instead
 			// TODO: get from environment
@@ -177,7 +180,10 @@ const dfxReplicaImpl = Effect.gen(function* () {
 	const getCanisterInfo = ({
 		canisterId,
 		identity,
-	}: { canisterId: string; identity: SignIdentity }) =>
+	}: {
+		canisterId: string
+		identity: SignIdentity
+	}) =>
 		Effect.gen(function* () {
 			// TODO: canisterStatus implement it in dfx & pic services instead
 			// TODO: get from environment
@@ -480,7 +486,11 @@ const dfxReplicaImpl = Effect.gen(function* () {
 			canisterId,
 			canisterDID,
 			identity,
-		}: { canisterId: string; canisterDID: any; identity: SignIdentity }) =>
+		}: {
+			canisterId: string
+			canisterDID: any
+			identity: SignIdentity
+		}) =>
 			Effect.gen(function* () {
 				const agent = yield* getAgent(identity)
 				// return agent.createActor(canisterDID)
@@ -489,6 +499,11 @@ const dfxReplicaImpl = Effect.gen(function* () {
 					agent,
 					canisterId,
 				}) as ActorTypes.ActorSubclass<_SERVICE>
+			}),
+		// TODO: implement
+		getTopology: () =>
+			Effect.gen(function* () {
+				return []
 			}),
 	})
 })

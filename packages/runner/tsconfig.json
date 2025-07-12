@@ -12,7 +12,6 @@
       "vitest/globals"
     ],
     "outDir": "dist",
-    "rootDir": "src",
     "allowJs": true,
     "skipLibCheck": true,
     "esModuleInterop": true,

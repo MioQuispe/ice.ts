@@ -1010,22 +1010,23 @@ export const makeInstallTask = <
 
 			// TODO: fix. also type should be inferred?
 			const argsTaskResult = dependencies.install_args.result
+			const canisterId = dependencies.create.result
 			const { didJSPath, didTSPath } = dependencies.bindings.result
 			const { wasmPath } = dependencies.build.result
 			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 
-			const maybeCanisterId = yield* loadCanisterId(taskPath)
-			if (Option.isNone(maybeCanisterId)) {
-				yield* Effect.logDebug(
-					`Canister ${canisterName} is not installed`,
-					maybeCanisterId,
-				)
-				return yield* Effect.fail(
-					new Error(`Canister ${canisterName} is not installed`),
-				)
-			}
-			const canisterId = maybeCanisterId.value
+			// const maybeCanisterId = yield* loadCanisterId(taskPath)
+			// if (Option.isNone(maybeCanisterId)) {
+			// 	yield* Effect.logDebug(
+			// 		`Canister ${canisterName} is not installed`,
+			// 		maybeCanisterId,
+			// 	)
+			// 	return yield* Effect.fail(
+			// 		new Error(`Canister ${canisterName} is not installed`),
+			// 	)
+			// }
+			// const canisterId = maybeCanisterId.value
 			yield* Effect.logDebug("Loaded canister ID", { canisterId })
 			const fs = yield* FileSystem.FileSystem
 

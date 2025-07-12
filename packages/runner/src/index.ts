@@ -2,13 +2,7 @@ import { NodeContext } from "@effect/platform-node"
 import { layerFileSystem } from "@effect/platform/KeyValueStore"
 import { StandardSchemaV1 } from "@standard-schema/spec"
 import { type } from "arktype"
-import {
-	ConfigProvider,
-	Layer,
-	Logger,
-	LogLevel,
-	ManagedRuntime
-} from "effect"
+import { ConfigProvider, Layer, Logger, LogLevel, ManagedRuntime } from "effect"
 import fs from "node:fs"
 import { CanisterIdsService } from "./services/canisterIds.js"
 import { CLIFlags } from "./services/cliFlags.js"
@@ -21,6 +15,7 @@ import { DefaultReplica } from "./services/replica.js"
 import { TaskArgsService } from "./services/taskArgs.js"
 import { TaskRegistry } from "./services/taskRegistry.js"
 import type { ICEConfig, ICECtx } from "./types/types.js"
+import { TaskCtxService } from "./services/taskCtx.js"
 
 export * from "./builders/index.js"
 export * from "./ids.js"
@@ -42,9 +37,7 @@ export const configLayer = Layer.setConfigProvider(
 	ConfigProvider.fromMap(configMap),
 )
 
-const DfxReplicaService = DfxReplica.pipe(
-	Layer.provide(NodeContext.layer),
-)
+const DfxReplicaService = DfxReplica.pipe(Layer.provide(NodeContext.layer))
 
 // const DefaultReplicaService = DfxDefaultReplica.pipe(
 // 	Layer.provide(NodeContext.layer),
@@ -70,32 +63,32 @@ export const DefaultsLayer = Layer.mergeAll(
 	),
 )
 
-export const TUILayer = Layer.mergeAll(
-  DefaultsLayer,
-  ICEConfigService.Live.pipe(
-    Layer.provide(NodeContext.layer),
-    Layer.provide(
-      Layer.succeed(CLIFlags, {
-        globalArgs: { network: "local", logLevel: "debug" },
-        taskArgs: {
-          positionalArgs: [],
-          namedArgs: {},
-        },
-      }),
-    ),
-  ),
-  Layer.succeed(CLIFlags, {
-    globalArgs: { network: "local", logLevel: "debug" },
-    taskArgs: {
-      positionalArgs: [],
-      namedArgs: {},
-    },
-  }),
-  Layer.succeed(TaskArgsService, {
-    taskArgs: {},
-  }),
-  Logger.minimumLogLevel(LogLevel.Debug),
-)
+// export const TUILayer = Layer.mergeAll(
+// 	DefaultsLayer,
+// 	ICEConfigService.Live.pipe(
+// 		Layer.provide(NodeContext.layer),
+// 		Layer.provide(
+// 			Layer.succeed(CLIFlags, {
+// 				globalArgs: { network: "local", logLevel: "debug" },
+// 				taskArgs: {
+// 					positionalArgs: [],
+// 					namedArgs: {},
+// 				},
+// 			}),
+// 		),
+// 	),
+// 	Layer.succeed(CLIFlags, {
+// 		globalArgs: { network: "local", logLevel: "debug" },
+// 		taskArgs: {
+// 			positionalArgs: [],
+// 			namedArgs: {},
+// 		},
+// 	}),
+// 	Layer.succeed(TaskArgsService, {
+// 		taskArgs: {},
+// 	}),
+// 	Logger.minimumLogLevel(LogLevel.Debug),
+// )
 
 const GlobalArgs = type({
 	network: "string" as const,
@@ -134,24 +127,38 @@ export const makeRuntime = ({
 	if (globalArgs instanceof type.errors) {
 		throw new Error(globalArgs.summary)
 	}
+
+	const ICEConfigLayer =
+		iceConfigServiceLayer ??
+		ICEConfigService.Live.pipe(
+			Layer.provide(NodeContext.layer),
+			Layer.provide(
+				Layer.succeed(CLIFlags, {
+					globalArgs,
+					taskArgs: cliTaskArgs,
+				}),
+			),
+		)
+	const CLIFlagsLayer = Layer.succeed(CLIFlags, {
+				globalArgs,
+				taskArgs: cliTaskArgs,
+			})
+	const TaskArgsLayer = Layer.succeed(TaskArgsService, { taskArgs })
+	const TaskCtxLayer = TaskCtxService.Live.pipe(
+		// TODO: it doesnt need the whole DefaultsLayer
+		Layer.provide(DefaultsLayer),
+		Layer.provide(ICEConfigLayer),
+		Layer.provide(CLIFlagsLayer),
+		Layer.provide(TaskArgsLayer),
+	)
+
 	return ManagedRuntime.make(
 		Layer.mergeAll(
 			DefaultsLayer,
-			iceConfigServiceLayer ??
-				ICEConfigService.Live.pipe(
-					Layer.provide(NodeContext.layer),
-					Layer.provide(
-						Layer.succeed(CLIFlags, {
-							globalArgs,
-							taskArgs: cliTaskArgs,
-						}),
-					),
-				),
-			Layer.succeed(CLIFlags, {
-				globalArgs,
-				taskArgs: cliTaskArgs,
-			}),
-			Layer.succeed(TaskArgsService, { taskArgs }),
+			CLIFlagsLayer,
+			TaskArgsLayer,
+			ICEConfigLayer,
+			TaskCtxLayer,
 			Logger.pretty,
 			Logger.minimumLogLevel(logLevelMap[globalArgs.logLevel]),
 		),

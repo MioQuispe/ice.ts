@@ -22,6 +22,7 @@ import {
 import { ICEConfigService } from "../services/iceConfig.js"
 import { type ReplicaService } from "../services/replica.js"
 import { TaskArgsService } from "../services/taskArgs.js"
+import { TaskCtxService } from "../services/taskCtx.js"
 import { TaskRegistry } from "../services/taskRegistry.js"
 import type {
 	CachedTask,
@@ -512,55 +513,65 @@ export const executeTasks = (
 					ICEConfigService,
 					iceConfigService,
 				)
-				const taskLayer = Layer.mergeAll(
-					Layer.succeed(TaskCtx, {
-						...defaultConfig,
-						taskPath,
-						// TODO: wrap with proxy?
-						// runTask: asyncRunTask,
-						runTask: async <T extends Task>(
-							task: T,
-							args: TaskParamsToArgs<T> = {} as TaskParamsToArgs<T>,
-						): Promise<Effect.Effect.Success<T["effect"]>> => {
-							// TODO: convert to positional and named args
-							// const taskArgs = mapToTaskArgs(task, args)
-							// const { positional, named } = resolveArgsMap(task, args)
-							// const positionalArgs = positional.map((p) => p.name)
-							// const namedArgs = Object.fromEntries(
-							// 	Object.entries(named).map(([name, param]) => [
-							// 		name,
-							// 		param.name,
-							// 	]),
-							// )
-							// const taskArgs = args.map((arg) => {
-							const runtime = makeRuntime({
-								globalArgs,
-								// TODO: pass in as strings now
-								// strings should be parsed outside of makeRuntime
-								taskArgs: args,
-								iceConfigServiceLayer,
-							})
-							const result = runtime
-								.runPromise(runTask(task, args, progressCb))
-								.then((result) => result.result)
-							return result
-						},
-						replica: currentReplica,
-						currentNetwork,
-						networks,
-						users: {
-							...defaultConfig.users,
-							...currentUsers,
-						},
-						roles: resolvedRoles,
-						// TODO: taskArgs
-						// what format? we need to check the task itself
-						args: argsMap,
-						depResults: dependencyResults,
-						appDir,
-						iceDir,
-					}),
-				)
+				const taskCtxService = yield* TaskCtxService
+				const taskCtx = yield* taskCtxService.make(taskPath, task, argsMap, dependencyResults, progressCb)
+				const taskLayer = Layer.succeed(TaskCtx, taskCtx)
+				// .pipe(
+				// 	Layer.provide(DefaultsLayer),
+				// 	Layer.provide(ICEConfigLayer),
+				// 	Layer.provide(CLIFlagsLayer),
+				// 	Layer.provide(TaskArgsLayer),
+				// )
+
+				// const taskLayer = Layer.mergeAll(
+				// 	Layer.succeed(TaskCtx, {
+				// 		...defaultConfig,
+				// 		taskPath,
+				// 		// TODO: wrap with proxy?
+				// 		// runTask: asyncRunTask,
+				// 		runTask: async <T extends Task>(
+				// 			task: T,
+				// 			args: TaskParamsToArgs<T> = {} as TaskParamsToArgs<T>,
+				// 		): Promise<Effect.Effect.Success<T["effect"]>> => {
+				// 			// TODO: convert to positional and named args
+				// 			// const taskArgs = mapToTaskArgs(task, args)
+				// 			// const { positional, named } = resolveArgsMap(task, args)
+				// 			// const positionalArgs = positional.map((p) => p.name)
+				// 			// const namedArgs = Object.fromEntries(
+				// 			// 	Object.entries(named).map(([name, param]) => [
+				// 			// 		name,
+				// 			// 		param.name,
+				// 			// 	]),
+				// 			// )
+				// 			// const taskArgs = args.map((arg) => {
+				// 			const runtime = makeRuntime({
+				// 				globalArgs,
+				// 				// TODO: pass in as strings now
+				// 				// strings should be parsed outside of makeRuntime
+				// 				taskArgs: args,
+				// 				iceConfigServiceLayer,
+				// 			})
+				// 			const result = runtime
+				// 				.runPromise(runTask(task, args, progressCb))
+				// 				.then((result) => result.result)
+				// 			return result
+				// 		},
+				// 		replica: currentReplica,
+				// 		currentNetwork,
+				// 		networks,
+				// 		users: {
+				// 			...defaultConfig.users,
+				// 			...currentUsers,
+				// 		},
+				// 		roles: resolvedRoles,
+				// 		// TODO: taskArgs
+				// 		// what format? we need to check the task itself
+				// 		args: argsMap,
+				// 		depResults: dependencyResults,
+				// 		appDir,
+				// 		iceDir,
+				// 	}),
+				// )
 
 				// TODO: simplify?
 				let result: Option.Option<unknown> = Option.none()
