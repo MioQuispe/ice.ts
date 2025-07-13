@@ -91,7 +91,7 @@ export const dip721 = DIP721()
 
 export const deploy_mode = task("deploy mode")
   .run(async ({ ctx }) => {
-    const status = await ctx.runTask(ice_test_backend.children.install, {
+    const status = await ctx.runTask(ice_test_backend.children.deploy, {
       mode: "reinstall",
       // TODO: ??
       // args: "",
@@ -145,7 +145,7 @@ export const dynamic_task = task("dynamic task")
 
 export const status_task = task("status")
   .run(async ({ ctx }) => {
-    // const { canisterId } = await ctx.runTask(icrc1_ledger.children.install)
+    // const { canisterId } = await ctx.runTask(icrc1_ledger.children.deploy)
     // console.log(canisterId)
     await ctx.runTask(icrc1_ledger.children.remove)
     const { status } = await ctx.runTask(icrc1_ledger.children.status)

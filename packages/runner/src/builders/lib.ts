@@ -22,6 +22,8 @@ import type { ActorSubclass } from "../types/actor.js"
 import type { CachedTask, Task } from "../types/types.js"
 import { proxyActor } from "../utils/extension.js"
 import { MotokoBindingsTask, MotokoBuildTask } from "./motoko.js"
+import { TaskArgsService } from "src/services/taskArgs.js"
+import { ExtractArgsFromTaskParams } from "./task.js"
 export type { TaskCtxShape }
 
 export const loadCanisterId = (taskPath: string) =>
@@ -850,34 +852,7 @@ export const makeCanisterStatusTask = (tags: string[]): StatusTask => {
 	} satisfies StatusTask
 }
 
-type Test = StandardSchemaV1.InferOutput<typeof InstallModes>
-
-const installParams = {
-	mode: {
-		type: InstallModes,
-		description: "The mode to install the canister in",
-		// default: "install",
-		isFlag: true as const,
-		isOptional: true as const,
-		isVariadic: false as const,
-		name: "mode",
-		aliases: ["m"],
-		parse: (value: string) => value as InstallModes,
-	},
-	args: {
-		type: type("string"),
-		description: "The arguments to pass to the canister as a candid string",
-		// default: undefined,
-		isFlag: true as const,
-		isOptional: true as const,
-		isVariadic: false as const,
-		name: "args",
-		aliases: ["a"],
-		parse: (value: string) => value as string,
-	},
-}
-
-const resolveMode = () => {
+export const resolveMode = () => {
 	return Effect.gen(function* () {
 		const {
 			replica,
@@ -972,22 +947,79 @@ const resolveMode = () => {
 	})
 }
 
+const installParams = {
+	mode: {
+		type: InstallModes,
+		description: "The mode to install the canister in",
+		default: "install",
+		isFlag: true as const,
+		isOptional: true as const,
+		isVariadic: false as const,
+		name: "mode",
+		aliases: ["m"],
+		parse: (value: string) => value as InstallModes,
+	},
+	args: {
+		type: type("TypedArray.Uint8"),
+		description: "The arguments to pass to the canister as a candid string",
+		// default: undefined,
+		isFlag: true as const,
+		isOptional: true as const,
+		isVariadic: false as const,
+		name: "args",
+		aliases: ["a"],
+		parse: (value: string) => value as string,
+	},
+	// TODO: provide defaults. just read from fs by canister name
+	wasm: {
+		type: type("string"),
+		description: "The path to the wasm file",
+		isFlag: true as const,
+		isOptional: true as const,
+		isVariadic: false as const,
+		name: "wasm",
+		aliases: ["w"],
+		parse: (value: string) => value as string,
+	},
+	// TODO: provide defaults
+	candid: {
+		// TODO: should be encoded?
+		type: type("string"),
+		description: "The path to the candid file",
+		isFlag: true as const,
+		isOptional: true as const,
+		isVariadic: false as const,
+		name: "candid",
+		aliases: ["c"],
+		parse: (value: string) => value as string,
+	},
+	// TODO: provide defaults
+	canisterId: {
+		type: type("string"),
+		description: "The canister ID to install the canister in",
+		isFlag: true as const,
+		isOptional: true as const,
+		isVariadic: false as const,
+		name: "canisterId",
+		aliases: ["i"],
+		parse: (value: string) => value as string,
+	},
+}
+
+type InstallTaskArgs = ExtractArgsFromTaskParams<typeof installParams>
+
+
 export const makeInstallTask = <
 	I,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
 	_SERVICE,
->(deps: {
-	install_args: InstallArgsTask<I, D, P>
-	build: BuildTask | MotokoBuildTask
-	bindings: BindingsTask | MotokoBindingsTask
-	create: CreateTask
-}): InstallTask<_SERVICE, {}, typeof deps> => {
+>(): InstallTask<_SERVICE, D, P> => {
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/install"),
-		dependsOn: {},
-		dependencies: deps,
+		dependsOn: {} as D,
+		dependencies: {} as P,
 		// TODO: allow passing in candid as a string from CLI
 		namedParams: installParams,
 		positionalParams: [],
@@ -997,36 +1029,19 @@ export const makeInstallTask = <
 			const taskCtx = yield* TaskCtx
 			const identity = taskCtx.roles.deployer.identity
 			const { replica, args, depResults } = taskCtx
-			const dependencies = depResults as {
-				[K in keyof typeof deps]: {
-					result: TaskReturnValue<(typeof deps)[K]>
-					cacheKey: string | undefined
-				}
-			}
-			const taskArgs = args as {
-				mode: InstallModes
-				args: string
-			}
+			const taskArgs = args as InstallTaskArgs
 
 			// TODO: fix. also type should be inferred?
-			const argsTaskResult = dependencies.install_args.result
-			const canisterId = dependencies.create.result
-			const { didJSPath, didTSPath } = dependencies.bindings.result
-			const { wasmPath } = dependencies.build.result
+			// const argsTaskResult = dependencies.install_args.result
+			// const canisterId = dependencies.create.result
+			// const { didJSPath, didTSPath } = dependencies.bindings.result
+			// const { wasmPath } = dependencies.build.result
+
+			const { canisterId, wasm: wasmPath, candid: didJSPath, args: installArgs } = taskArgs
+
 			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 
-			// const maybeCanisterId = yield* loadCanisterId(taskPath)
-			// if (Option.isNone(maybeCanisterId)) {
-			// 	yield* Effect.logDebug(
-			// 		`Canister ${canisterName} is not installed`,
-			// 		maybeCanisterId,
-			// 	)
-			// 	return yield* Effect.fail(
-			// 		new Error(`Canister ${canisterName} is not installed`),
-			// 	)
-			// }
-			// const canisterId = maybeCanisterId.value
 			yield* Effect.logDebug("Loaded canister ID", { canisterId })
 			const fs = yield* FileSystem.FileSystem
 
@@ -1035,34 +1050,7 @@ export const makeInstallTask = <
 				identity,
 			})
 			yield* Effect.logDebug("canisterInfo", canisterInfo)
-			// TODO: reinstall // user can pass it in?
-			// TODO: what happens to stopped / stopping canisters here?
-
-			// const notInstalled =
-			// 	canisterInfo.status !== CanisterStatus.NOT_FOUND &&
-			// 	canisterInfo.module_hash.length === 0
-			// let mode = taskArgs.mode
-			// if (canisterInfo.status === CanisterStatus.STOPPING) {
-			// 	mode = "reinstall"
-			// 	if (notInstalled) {
-			// 		mode = "install"
-			// 	}
-			// } else if (canisterInfo.status === CanisterStatus.NOT_FOUND) {
-			// 	mode = "install"
-			// } else if (canisterInfo.status === CanisterStatus.STOPPED) {
-			// 	mode = "upgrade"
-			// 	if (notInstalled) {
-			// 		mode = "install"
-			// 	}
-			// } else if (canisterInfo.status === CanisterStatus.RUNNING) {
-			// 	mode = "upgrade"
-			// 	if (notInstalled) {
-			// 		mode = "install"
-			// 	}
-			// }
-			const mode = yield* resolveMode()
-			// TODO: "install" doesnt work for certain canisters for some reason
-
+			const mode = taskArgs.mode
 			// TODO:
 			// they can return the values we need perhaps? instead of reading from fs
 			// we need the wasm blob and candid DIDjs / idlFactory?
@@ -1072,11 +1060,10 @@ export const makeInstallTask = <
 			yield* Effect.logDebug(
 				`Installing code for ${canisterId} at ${wasmPath} with mode ${mode}`,
 			)
-			yield* Effect.logDebug("argsTaskResult", argsTaskResult)
 			yield* replica.installCode({
 				canisterId,
 				wasm,
-				encodedArgs: argsTaskResult.encodedArgs,
+				encodedArgs: installArgs,
 				identity,
 				mode,
 			})
@@ -1117,10 +1104,14 @@ export const makeInstallTask = <
 			Effect.gen(function* () {
 				const { taskPath, depResults } = yield* TaskCtx
 				const { args } = yield* TaskCtx
+				const taskArgs = args as {
+					mode: InstallModes
+					args: string
+				}
 				const canisterName = taskPath.split(":").slice(0, -1).join(":")
 				const dependencies = depResults as {
-					[K in keyof typeof deps]: {
-						result: TaskReturnValue<(typeof deps)[K]>
+					[K in keyof P]: {
+						result: TaskReturnValue<(P)[K]>
 						cacheKey: string | undefined
 					}
 				}
@@ -1137,18 +1128,8 @@ export const makeInstallTask = <
 				}
 				const canisterId = maybeCanisterId.value
 				const { currentNetwork } = yield* TaskCtx
-				// TODO: get from args? what about cliFlags?
-				// if its install / reinstall then invalidate the cache?
-				// const canisterInfo = yield* replica.getCanisterInfo({
-				// 	canisterId,
-				// 	identity,
-				// })
-				// const mode = "upgrade"
-				const mode = yield* resolveMode()
-				// const mode =
-				// 	canisterInfo.status === CanisterStatus.NOT_FOUND ? "install" : taskArgs.mode
-				// TODO: input runs before the task is executed
-				// so how do we get the install args? from a previous run perhaps?
+				const mode = taskArgs.mode ?? "install"
+
 				const taskRegistry = yield* TaskRegistry
 				// TODO: we need a separate cache for this?
 				const input = {
@@ -1162,7 +1143,6 @@ export const makeInstallTask = <
 				return input
 			}),
 		encodingFormat: "string",
-		// TODO: fix generic type? we shouldnt have to type this
 		encode: (result, input) =>
 			Effect.gen(function* () {
 				const encoded = JSON.stringify({
@@ -1186,15 +1166,12 @@ export const makeInstallTask = <
 					roles: {
 						deployer: { identity },
 					},
-					depResults,
 				} = yield* TaskCtx
-				const dependencies = depResults as {
-					[K in keyof typeof deps]: {
-						result: TaskReturnValue<(typeof deps)[K]>
-						cacheKey: string | undefined
-					}
-				}
-				const { didJSPath } = dependencies.bindings.result
+				const { args } = yield* TaskCtx
+				const taskArgs = args as InstallTaskArgs
+				const { candid: didJSPath } = taskArgs
+				// TODO: we should create a service that caches these?
+				// expensive to import every time
 				const canisterDID = yield* Effect.tryPromise({
 					try: () => import(didJSPath) as Promise<CanisterDidModule>,
 					catch: Effect.fail,
@@ -1236,9 +1213,17 @@ export const makeDeployTask = <_SERVICE>(
 				canisterName,
 			)) as CanisterScope<_SERVICE>
 			const { args } = yield* TaskCtx
+			const taskArgs = args as {
+				mode: InstallModes
+				args: string
+			}
 			// TODO: we need to pass in mode to installArgs as well somehow?
 			// maybe use some kind of context?
-			const result = yield* runTask(parentScope.children.install)
+			const mode = yield* resolveMode()
+			const result = yield* runTask(parentScope.children.install, {
+				mode,
+				args: taskArgs.args,
+			})
 			yield* Effect.logDebug("Canister deployed successfully")
 			return result.result
 		}),
@@ -1337,9 +1322,14 @@ export const makeInstallArgsTask = <
 			const { taskPath } = yield* TaskCtx
 			// TODO: this is already passed in from outside?
 			const { args } = yield* TaskCtx
-			yield* Effect.logDebug("makeInstallArgsTask TaskCtx.args", args)
+			const taskArgs = args as {
+				mode: InstallModes
+				args: string
+			}
+			const mode = taskArgs.mode ?? "install"
+			// const mode = yield* resolveMode()
 
-			const mode = yield* resolveMode()
+			yield* Effect.logDebug("makeInstallArgsTask TaskCtx.args", args)
 
 			let installArgs = [] as unknown as A
 			if (installArgsFn) {
@@ -1440,7 +1430,12 @@ export const makeInstallArgsTask = <
 				// 	// const mode = "install"
 				// 	mode = "install"
 				// }
-				const mode = yield* resolveMode()
+				const taskArgs = args as {
+					mode: InstallModes
+					args: string
+				}
+				const mode = taskArgs.mode ?? "install"
+				// const mode = yield* resolveMode()
 				yield* Effect.logDebug(
 					"hashing installArgsFn:",
 					installArgsFn.toString(),

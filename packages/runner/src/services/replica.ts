@@ -6,7 +6,9 @@ import { type } from "arktype"
 import { SubnetTopology } from "@dfinity/pic"
 
 export const InstallModes = type("'install' | 'upgrade' | 'reinstall'")
-export type InstallModes = type.infer<typeof InstallModes>
+// TODO: this gets a weird type. maybe arktype bug?
+// export type InstallModes = typeof InstallModes.infer
+export type InstallModes = "install" | "upgrade" | "reinstall"
 // import { ActorInterface } from "@dfinity/pic"
 /**
  * Typesafe method of a canister.

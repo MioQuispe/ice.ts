@@ -29,7 +29,7 @@ export const CyclesLedger = (
       candid: path.resolve(__dirname, "./cycles_ledger/cycles_ledger.did"),
       wasm: path.resolve(__dirname, "./cycles_ledger/cycles_ledger.wasm.gz"),
     }
-  }).installArgs(async ({ ctx, mode }) => {
+  }).installArgs(async ({ mode }) => {
     if (mode === "upgrade") {
       return [
         {
