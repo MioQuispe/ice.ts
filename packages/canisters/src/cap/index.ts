@@ -8,6 +8,15 @@ import type { _SERVICE as CAP_ROUTER_SERVICE } from "./cap-router/types.js"
 import type { _SERVICE as CAP_ROOT_SERVICE } from "./cap-root/types.js"
 import type { _SERVICE as CAP_BUCKET_SERVICE } from "./cap-bucket/types.js"
 
+export type {
+  CAP_ROUTER_SERVICE,
+  CAP_ROOT_SERVICE,
+  CAP_BUCKET_SERVICE,
+  CapRootInitArgs,
+  CapRouterInitArgs,
+  CapBucketInitArgs,
+}
+
 import { Principal } from "@dfinity/principal"
 import * as url from "node:url"
 
@@ -46,8 +55,6 @@ export const CapBucket = (
       canisterId: CapBucketIds.local,
     }
   }).installArgs(async ({ ctx, mode }) => {
-    const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return [
       // args: [{
       //   contract, // TokenContractId,

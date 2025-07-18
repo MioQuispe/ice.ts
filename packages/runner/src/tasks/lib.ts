@@ -1,6 +1,6 @@
 import type { SignIdentity } from "@dfinity/agent"
 import { StandardSchemaV1 } from "@standard-schema/spec"
-import { match } from "arktype"
+import { match, type } from "arktype"
 import {
 	Config,
 	Context,
@@ -35,44 +35,46 @@ import type {
 	TaskTree,
 	TaskTreeNode,
 } from "../types/types.js"
-import { runTask } from "./run.js"
 
-type ExtractNamedParams<
-	TP extends Record<string, NamedParam | PositionalParam>,
+export type ParamsToArgs<
+	P extends Record<string, NamedParam | PositionalParam>,
 > = {
-	[K in keyof TP]: TP[K] extends NamedParam ? TP[K] : never
+	[K in keyof P as P[K] extends { isOptional: false } | { default: unknown }
+		? K
+		: never]: P[K] extends TaskParam
+		? StandardSchemaV1.InferOutput<P[K]["type"]>
+		: never
+} & {
+	[K in keyof P as P[K] extends { isOptional: false } | { default: unknown }
+		? never
+		: K]?: P[K] extends TaskParam
+		? StandardSchemaV1.InferOutput<P[K]["type"]>
+		: never
 }
-
-export type ExtractPositionalParams<
-	TP extends Record<string, NamedParam | PositionalParam>,
-> = Extract<TP[keyof TP], PositionalParam>[]
-
-export type ExtractArgsFromTaskParams<
-	TP extends Record<string, NamedParam | PositionalParam>,
-> = {
-	// TODO: schema needs to be typed as StandardSchemaV1
-	[K in keyof TP]: StandardSchemaV1.InferOutput<TP[K]["type"]>
-}
-
-// export type TaskParamsToArgs<T extends Task> = {
-// 	[K in keyof T["params"]]: T["params"][K] extends TaskParam
-// 		? StandardSchemaV1.InferOutput<T["params"][K]["type"]>
-// 		: never
-// }
 
 export type TaskParamsToArgs<T extends Task> = {
-	[K in keyof T["params"] as T["params"][K] extends { isOptional: true }
-		? never
-		: K]: T["params"][K] extends TaskParam
+	[K in keyof T["params"] as T["params"][K] extends
+		| { isOptional: false }
+		| { default: unknown }
+		? K
+		: never]: T["params"][K] extends TaskParam
 		? StandardSchemaV1.InferOutput<T["params"][K]["type"]>
 		: never
 } & {
-	[K in keyof T["params"] as T["params"][K] extends { isOptional: true }
-		? K
-		: never]?: T["params"][K] extends TaskParam
+	[K in keyof T["params"] as T["params"][K] extends
+		| { isOptional: false }
+		| { default: unknown }
+		? never
+		: K]?: T["params"][K] extends TaskParam
 		? StandardSchemaV1.InferOutput<T["params"][K]["type"]>
 		: never
 }
+
+export type TaskSuccess<T extends Task> = [T] extends [
+	Task<infer _A, infer _D, infer _P, infer _E, infer _R>,
+]
+	? _A
+	: never
 
 export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
 	readonly users: {
@@ -98,11 +100,11 @@ export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
 	readonly replica: ReplicaService
 
 	readonly runTask: {
-		<T extends Task>(task: T): Promise<Effect.Effect.Success<T["effect"]>>
+		<T extends Task>(task: T): Promise<TaskSuccess<T>>
 		<T extends Task>(
 			task: T,
 			args: TaskParamsToArgs<T>,
-		): Promise<Effect.Effect.Success<T["effect"]>>
+		): Promise<TaskSuccess<T>>
 	}
 
 	readonly currentNetwork: string
@@ -130,13 +132,7 @@ export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {}
 
 export class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
 	message: string
-}> {
-	// constructor(args: { message: string }) {
-	// 	super(args)
-	// 	// ↓ capture the stack at construction time
-	// 	Error.captureStackTrace?.(this, TaskNotFoundError)
-	// }
-}
+}> {}
 
 // TODO: do we need to get by id? will symbol work?
 export const getTaskPathById = (id: Symbol) =>
@@ -382,6 +378,11 @@ export type ProgressUpdate<A> = {
 	error?: unknown
 }
 
+export class TaskRuntimeError extends Data.TaggedError("TaskRuntimeError")<{
+	message?: string
+	error?: unknown
+}> {}
+
 const isCachedTask = match
 	.in<Task | CachedTask>()
 	.case(
@@ -395,6 +396,67 @@ const isCachedTask = match
 		(t) => Option.some(t as CachedTask),
 	)
 	.default((t) => Option.none())
+
+export const logDetailedError = (
+	error: unknown,
+	taskCtx: TaskCtxShape,
+	operation: string,
+) =>
+	Effect.gen(function* () {
+		const stack = new Error().stack
+
+		// Get task context safely
+		const getTaskContext = Effect.gen(function* () {
+			return {
+				canisterName: taskCtx.taskPath.split(":").slice(0, -1).join(":"),
+				appDir: taskCtx.appDir,
+				iceDir: taskCtx.iceDir,
+				currentNetwork: taskCtx.currentNetwork,
+				dependencies: Object.keys(taskCtx.depResults),
+			}
+		}).pipe(
+			Effect.orElse(() => Effect.succeed({ error: "TaskCtx unavailable" })),
+		)
+
+		const taskContext = yield* getTaskContext
+
+		// Enhanced Effect error inspection
+		const isEffectError = error && typeof error === "object"
+		const effectErrorDetails = isEffectError
+			? {
+					tag: "_tag" in error ? error._tag : undefined,
+					message: "message" in error ? error.message : undefined,
+					span: "span" in error ? error.span : undefined,
+					// For SystemError specifically
+					syscall: "syscall" in error ? error.syscall : undefined,
+					pathOrDescriptor:
+						"pathOrDescriptor" in error ? error.pathOrDescriptor : undefined,
+					reason: "reason" in error ? error.reason : undefined,
+					module: "module" in error ? error.module : undefined,
+					method: "method" in error ? error.method : undefined,
+				}
+			: {}
+
+		yield* Effect.logError(`Error in ${operation || "operation"}`, {
+			taskPath: taskCtx.taskPath,
+			operation: operation,
+			taskContext,
+			effectErrorDetails,
+			rawError:
+				error instanceof Error
+					? {
+							name: error.name,
+							message: error.message,
+							stack: error.stack?.split("\n").slice(0, 5),
+						}
+					: { value: String(error) },
+			callTrace: stack?.split("\n").slice(1, 4),
+		})
+
+		return yield* Effect.fail(
+			new TaskRuntimeError({ message: "Task runtime error", error }),
+		)
+	})
 
 // TODO: 1 task per time. its used like that anyway
 // rename to executeTask
@@ -417,7 +479,9 @@ export const executeTasks = (
 		const currentReplica = currentNetworkConfig?.replica
 		if (!currentReplica) {
 			return yield* Effect.fail(
-				new Error(`No replica found for network: ${currentNetwork}`),
+				new TaskRuntimeError({
+					message: `No replica found for network: ${currentNetwork}`,
+				}),
 			)
 		}
 		const currentUsers = config?.users ?? {}
@@ -428,7 +492,9 @@ export const executeTasks = (
 		for (const [name, user] of Object.entries(config?.roles ?? {})) {
 			if (!currentUsers[user]) {
 				return yield* Effect.fail(
-					new Error(`User ${user} not found in current users`),
+					new TaskRuntimeError({
+						message: `User ${user} not found in current users`,
+					}),
 				)
 			}
 			initializedRoles[name] = currentUsers[user]
@@ -483,8 +549,15 @@ export const executeTasks = (
 				// this is purely for the cli
 				let argsMap: Record<string, unknown>
 				if ("args" in task && Object.keys(task.args).length > 0) {
+					yield* Effect.logDebug("task.args found:", task.args, taskPath, task)
 					argsMap = task.args
 				} else {
+					yield* Effect.logDebug(
+						"task.args not found, resolving task args",
+						taskPath,
+						task,
+					)
+					// TODO: causes issues if task is called programmatically
 					const resolvedTaskArgs = yield* resolveTaskArgs(task, cliTaskArgs)
 					// TODO: clean up
 					const hasTaskArgs = Object.keys(taskArgs).length > 0
@@ -514,65 +587,14 @@ export const executeTasks = (
 					iceConfigService,
 				)
 				const taskCtxService = yield* TaskCtxService
-				const taskCtx = yield* taskCtxService.make(taskPath, task, argsMap, dependencyResults, progressCb)
+				const taskCtx = yield* taskCtxService.make(
+					taskPath,
+					task,
+					argsMap,
+					dependencyResults,
+					progressCb,
+				)
 				const taskLayer = Layer.succeed(TaskCtx, taskCtx)
-				// .pipe(
-				// 	Layer.provide(DefaultsLayer),
-				// 	Layer.provide(ICEConfigLayer),
-				// 	Layer.provide(CLIFlagsLayer),
-				// 	Layer.provide(TaskArgsLayer),
-				// )
-
-				// const taskLayer = Layer.mergeAll(
-				// 	Layer.succeed(TaskCtx, {
-				// 		...defaultConfig,
-				// 		taskPath,
-				// 		// TODO: wrap with proxy?
-				// 		// runTask: asyncRunTask,
-				// 		runTask: async <T extends Task>(
-				// 			task: T,
-				// 			args: TaskParamsToArgs<T> = {} as TaskParamsToArgs<T>,
-				// 		): Promise<Effect.Effect.Success<T["effect"]>> => {
-				// 			// TODO: convert to positional and named args
-				// 			// const taskArgs = mapToTaskArgs(task, args)
-				// 			// const { positional, named } = resolveArgsMap(task, args)
-				// 			// const positionalArgs = positional.map((p) => p.name)
-				// 			// const namedArgs = Object.fromEntries(
-				// 			// 	Object.entries(named).map(([name, param]) => [
-				// 			// 		name,
-				// 			// 		param.name,
-				// 			// 	]),
-				// 			// )
-				// 			// const taskArgs = args.map((arg) => {
-				// 			const runtime = makeRuntime({
-				// 				globalArgs,
-				// 				// TODO: pass in as strings now
-				// 				// strings should be parsed outside of makeRuntime
-				// 				taskArgs: args,
-				// 				iceConfigServiceLayer,
-				// 			})
-				// 			const result = runtime
-				// 				.runPromise(runTask(task, args, progressCb))
-				// 				.then((result) => result.result)
-				// 			return result
-				// 		},
-				// 		replica: currentReplica,
-				// 		currentNetwork,
-				// 		networks,
-				// 		users: {
-				// 			...defaultConfig.users,
-				// 			...currentUsers,
-				// 		},
-				// 		roles: resolvedRoles,
-				// 		// TODO: taskArgs
-				// 		// what format? we need to check the task itself
-				// 		args: argsMap,
-				// 		depResults: dependencyResults,
-				// 		appDir,
-				// 		iceDir,
-				// 	}),
-				// )
-
 				// TODO: simplify?
 				let result: Option.Option<unknown> = Option.none()
 				let cacheKey: Option.Option<string> = Option.none()
@@ -581,10 +603,14 @@ export const executeTasks = (
 
 				if (Option.isSome(maybeCachedTask)) {
 					const cachedTask = maybeCachedTask.value
-					const input = yield* cachedTask
-						.input()
-						.pipe(Effect.provide(taskLayer))
+					const input = yield* cachedTask.input().pipe(
+						Effect.provide(taskLayer),
+						Effect.catchAll((error) =>
+							logDetailedError(error, taskCtx, "cached task input()"),
+						),
+					)
 					cacheKey = Option.some(cachedTask.computeCacheKey(input))
+
 					if (
 						Option.isSome(cacheKey) &&
 						(yield* taskRegistry.has(cacheKey.value))
@@ -600,29 +626,42 @@ export const executeTasks = (
 							yield* Effect.logDebug("decoding result:", encodedResult)
 							const decodedResult = yield* cachedTask
 								.decode(encodedResult, input)
-								.pipe(Effect.provide(taskLayer))
+								.pipe(
+									Effect.provide(taskLayer),
+									Effect.catchAll((error) =>
+										logDetailedError(error, taskCtx, "cached task decode()"),
+									),
+								)
 							result = Option.some(decodedResult)
 							yield* Effect.logDebug("decoded result:", decodedResult)
 						} else {
 							// TODO: reading cache failed, why would this happen?
 							// get rid of this and just throw?
 							result = Option.some(
-								yield* cachedTask.effect.pipe(Effect.provide(taskLayer)),
+								yield* cachedTask.effect.pipe(
+									Effect.provide(taskLayer),
+									Effect.catchAll((error) =>
+										logDetailedError(error, taskCtx, "cached task effect()"),
+									),
+								),
 							)
 						}
 					} else {
 						result = yield* cachedTask.effect.pipe(
 							Effect.provide(taskLayer),
 							Effect.map((result) => Option.some(result)),
-							// Effect.catchAll((error) => {
-							// 	// TODO: ??
-							// 	return Effect.succeed(Option.none())
-							// }),
+							Effect.catchAll((error) =>
+								logDetailedError(
+									error,
+									taskCtx,
+									"cached task effect(), skipping cache",
+								),
+							),
 						)
 						if (Option.isNone(result)) {
 							yield* Effect.logDebug("No result for task", taskPath)
 							return yield* Effect.fail(
-								new Error(`No result for task ${taskPath}`),
+								new TaskRuntimeError({ message: `No result for task ${taskPath}` }),
 							)
 						}
 						// TODO: fix. maybe not json stringify?
@@ -630,7 +669,12 @@ export const executeTasks = (
 							yield* Effect.logDebug("encoding result:", result.value)
 							const encodedResult = yield* cachedTask
 								.encode(result.value, input)
-								.pipe(Effect.provide(taskLayer))
+								.pipe(
+									Effect.provide(taskLayer),
+									Effect.catchAll((error) =>
+										logDetailedError(error, taskCtx, "cached task encode()"),
+									),
+								)
 							yield* Effect.logDebug(
 								"encoded result",
 								"with type:",
@@ -650,13 +694,18 @@ export const executeTasks = (
 					}
 				} else {
 					result = Option.some(
-						yield* task.effect.pipe(Effect.provide(taskLayer)),
+						yield* task.effect.pipe(
+							Effect.provide(taskLayer),
+							Effect.catchAll((error) =>
+								logDetailedError(error, taskCtx, "task effect()"),
+							),
+						),
 					)
 				}
 
 				if (Option.isNone(result)) {
 					yield* Effect.logDebug("No result for task", taskPath)
-					return yield* Effect.fail(new Error(`No result for task ${taskPath}`))
+					return yield* Effect.fail(new TaskRuntimeError({ message: `No result for task ${taskPath}` }))
 				}
 				if (Option.isNone(cacheKey)) {
 					yield* Effect.logDebug(

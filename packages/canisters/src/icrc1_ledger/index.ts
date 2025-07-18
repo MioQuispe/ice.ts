@@ -2,15 +2,26 @@ import { Opt } from "../types"
 import * as url from "node:url"
 import path from "node:path"
 import type {
-  InitArgs,
-  LedgerArg,
-  Account,
-  MetadataValue,
-  FeatureFlags,
-  _SERVICE,
+	InitArgs,
+	LedgerArg,
+	UpgradeArgs,
+	Account,
+	MetadataValue,
+	FeatureFlags,
+	_SERVICE,
 } from "./icrc1_ledger.types"
 import { customCanister, type TaskCtxShape } from "@ice.ts/runner"
 import { Principal } from "@dfinity/principal"
+
+export type {
+	InitArgs as ICRC1LedgerInitArgs,
+	LedgerArg as ICRC1LedgerArg,
+	UpgradeArgs as ICRC1LedgerUpgradeArgs,
+	Account as ICRC1LedgerAccount,
+	MetadataValue as ICRC1LedgerMetadataValue,
+	FeatureFlags as ICRC1LedgerFeatureFlags,
+	_SERVICE as ICRC1LedgerService,
+}
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 // const __dirname = url.fileURLToPath(import.meta.url)
@@ -36,84 +47,88 @@ const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 // amount=1_000_000
 // },)'
 
-
-
 const canisterName = "icrc1_ledger"
 
 // TODO: make nicer?
-export type ICRC1LedgerInitArgs = {
-  custodians?: Account[]
-  logo?: string
-  name?: string
-  symbol?: string
-  minting_account: string
-  controller_id: string
-  canisterId?: string
+export type InitArgsSimple = {
+	custodians?: Account[]
+	logo?: string
+	name?: string
+	symbol?: string
+	minting_account: string
+	controller_id: string
+	canisterId?: string
 }
 
 export const ICRC1Ledger = (
-  initArgsOrFn?:
-    | ICRC1LedgerInitArgs
-    | ((args: { ctx: TaskCtxShape }) => ICRC1LedgerInitArgs),
+	initArgsOrFn?:
+		| InitArgsSimple
+		| ((args: { ctx: TaskCtxShape }) => InitArgsSimple),
 ) => {
-  return customCanister<_SERVICE, [LedgerArg]>(({ ctx }) => {
-    const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
-    return {
-      canisterId: initArgs.canisterId,
-      wasm: path.resolve(__dirname, `./${canisterName}/${canisterName}.wasm.gz`),
-      candid: path.resolve(__dirname, `./${canisterName}/${canisterName}.did`),
-    }
-  }).installArgs(async ({ ctx, mode }) => {
-    const initArgs =
-      typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
-    const mintingAccount: Account = {
-      owner: Principal.from(initArgs.minting_account),
-      subaccount: [],
-    }
-    const controllerId = Principal.from(initArgs.controller_id)
-    // TODO: proper types
-    if (mode === "upgrade") {
-      return [{
-        Upgrade: []
-      }]
-    }
-    return [{
-      Init: {
-        // Opt({
-        // custodians: Opt(custodians),
-        // logo: Opt(logo),
-        // name: Opt(name),
-        // symbol: Opt(symbol),
-        // }),
-        decimals: Opt<number>(8),
-        token_symbol: "TOKEN",
-        transfer_fee: BigInt(0),
-        // metadata : Array<[string, MetadataValue]>,
-        metadata: [],
-        minting_account: mintingAccount,
-        // TODO:
-        // initial_balances: Array<[Account, bigint]>,
-        initial_balances: [],
-        maximum_number_of_accounts: Opt<bigint>(),
-        accounts_overflow_trim_quantity: Opt<bigint>(),
-        fee_collector_account: Opt<Account>(),
-        archive_options: {
-          num_blocks_to_archive: BigInt(10000n),
-          max_transactions_per_response: Opt<bigint>(BigInt(0)),
-          trigger_threshold: BigInt(1000n),
-          max_message_size_bytes: Opt<bigint>(BigInt(10000)),
-          cycles_for_archive_creation: Opt<bigint>(BigInt(0)),
-          node_max_memory_size_bytes: Opt<bigint>(BigInt(10000000)),
-          controller_id: controllerId,
-        },
-        max_memo_length: Opt<number>(32),
-        token_name: "Token",
-        feature_flags: Opt<FeatureFlags>({ icrc2: true }),
-      },
-    }]
-    // satisfies InitArgs
-  })
+	return customCanister<_SERVICE, [LedgerArg]>(({ ctx }) => {
+		const initArgs =
+			typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
+		return {
+			canisterId: initArgs?.canisterId,
+			wasm: path.resolve(
+				__dirname,
+				`./${canisterName}/${canisterName}.wasm.gz`,
+			),
+			candid: path.resolve(__dirname, `./${canisterName}/${canisterName}.did`),
+		}
+	})
+}
+
+ICRC1Ledger.makeUpgradeArgs = () => [
+	{
+		Upgrade: [],
+	},
+]
+
+ICRC1Ledger.makeArgs = (initArgs: InitArgsSimple): [LedgerArg] => {
+	const mintingAccount: Account = {
+		owner: Principal.from(initArgs.minting_account),
+		subaccount: [],
+	}
+	const controllerId = Principal.from(initArgs.controller_id)
+	// TODO: proper types
+	return [
+		{
+			Init: {
+				// Opt({
+				// custodians: Opt(custodians),
+				// logo: Opt(logo),
+				// name: Opt(name),
+				// symbol: Opt(symbol),
+				// }),
+				decimals: Opt<number>(8),
+				token_symbol: "TOKEN",
+				transfer_fee: BigInt(0),
+				// metadata : Array<[string, MetadataValue]>,
+				metadata: [],
+				minting_account: mintingAccount,
+				// TODO:
+				// initial_balances: Array<[Account, bigint]>,
+				initial_balances: [],
+				maximum_number_of_accounts: Opt<bigint>(),
+				accounts_overflow_trim_quantity: Opt<bigint>(),
+				fee_collector_account: Opt<Account>(),
+				archive_options: {
+					num_blocks_to_archive: BigInt(10000n),
+					max_transactions_per_response: Opt<bigint>(BigInt(0)),
+					trigger_threshold: BigInt(1000n),
+					max_message_size_bytes: Opt<bigint>(BigInt(10000)),
+					cycles_for_archive_creation: Opt<bigint>(BigInt(0)),
+					node_max_memory_size_bytes: Opt<bigint>(BigInt(10000000)),
+					controller_id: controllerId,
+				},
+				max_memo_length: Opt<number>(32),
+				token_name: "Token",
+				feature_flags: Opt<FeatureFlags>({ icrc2: true }),
+			},
+		},
+	]
+	// satisfies InitArgs
 }
 
 // ICRC1Ledger().make().children.install.effect

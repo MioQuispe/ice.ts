@@ -502,9 +502,9 @@ const canistersStatusCommand = defineCommand({
 									const canisterInfo = canisterIdsMap[canisterName]
 									const canisterId = canisterInfo?.[network]
 									if (!canisterId) {
-										throw new DeploymentError({
+										return yield* Effect.fail(new DeploymentError({
 											message: `No canister ID found for ${canisterName} on network ${network}`,
-										})
+										}))
 									}
 									const status = yield* replica.getCanisterInfo({
 										canisterId,

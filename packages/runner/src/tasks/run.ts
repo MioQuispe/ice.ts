@@ -9,6 +9,8 @@ import {
 	getTaskPathById,
 	type ProgressUpdate,
 	TaskParamsToArgs,
+	TaskRuntimeError,
+	TaskSuccess,
 	topologicalSortTasks,
 } from "./lib.js"
 
@@ -47,7 +49,12 @@ export const runTask = <T extends Task>(
 		yield* Effect.logDebug("Collected dependencies")
 		collectedTasks.set(task.id, taskWithArgs)
 		yield* Effect.logDebug("Sorting tasks...")
-		const sortedTasks = topologicalSortTasks(collectedTasks)
+		const sortedTasks = yield* Effect.try({
+			try: () => topologicalSortTasks(collectedTasks),
+			catch: (error) => {
+				return new TaskRuntimeError({ message: "Error sorting tasks", error })
+			}
+		})
 		yield* Effect.logDebug("Sorted tasks")
 		yield* Effect.logDebug("Executing tasks...")
 		const taskEffects = yield* executeTasks(sortedTasks, progressCb)
@@ -56,10 +63,10 @@ export const runTask = <T extends Task>(
 		yield* Effect.logDebug("Tasks executed")
 		const maybeResult = results.find((r) => r.taskId === task.id)
 		if (!maybeResult) {
-			return yield* Effect.fail(new Error(`Task ${task.description} not found in results`))
+			return yield* Effect.fail(new TaskRuntimeError({ message: `Task ${task.description} not found in results`, error: maybeResult }))
 		}
 		return maybeResult as { 
-			result: Effect.Effect.Success<T["effect"]> 
+			result: TaskSuccess<T>
 			taskId: symbol
 			taskPath: string
 		}

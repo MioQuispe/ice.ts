@@ -18,7 +18,9 @@ import type { ICEConfig, ICECtx } from "./types/types.js"
 import { TaskCtxService } from "./services/taskCtx.js"
 
 export * from "./builders/index.js"
+export type { CanisterScope } from "./builders/lib.js"
 export * from "./ids.js"
+export type { InstallModes } from "./services/replica.js"
 
 export const Ice = (
 	configOrFn:

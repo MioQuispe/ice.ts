@@ -12,7 +12,7 @@ import { NamedParam, PositionalParam } from "../types/types.js"
 import { patchGlobals } from "../utils/extension.js"
 import { customCanister } from "./custom.js"
 import type {
-	ExtractTaskEffectSuccess,
+	ExtractScopeSuccesses,
 	MergeTaskDependencies,
 	MergeTaskDependsOn,
 } from "./lib.js"
@@ -42,12 +42,28 @@ export type ExtractPositionalParams<TP extends TaskParams> = Extract<
 	PositionalParam
 >[]
 
-export type ExtractArgsFromTaskParams<TP extends TaskParams> = {
+export type ExtractArgsFromTaskParams<
+	TP extends TaskParams,
+> = {
 	// TODO: schema needs to be typed as StandardSchemaV1
-	[K in keyof TP]: StandardSchemaV1.InferOutput<TP[K]["type"]>
+	[K in keyof TP]: TP[K] extends { isOptional: true }
+		? StandardSchemaV1.InferOutput<TP[K]["type"]> | undefined
+		: StandardSchemaV1.InferOutput<TP[K]["type"]>
 }
 
-type AddNameToParams<T extends InputParams> = {
+// export type TaskParamsToArgs<T extends Task> = {
+// 	[K in keyof T["params"]]: T["params"][K] extends TaskParam
+// 		? StandardSchemaV1.InferOutput<T["params"][K]["type"]>
+// 		: never
+// }
+
+// // TODO: doesnt take into consideration flags like isOptional, isVariadic, etc.
+// export type ExtractArgsFromTaskParams<TP extends TaskParams> = {
+// 	// TODO: schema needs to be typed as StandardSchemaV1
+// 	[K in keyof TP]: StandardSchemaV1.InferOutput<TP[K]["type"]>
+// }
+
+export type AddNameToParams<T extends InputParams> = {
 	[K in keyof T]: T[K] & {
 		name: K
 	}
@@ -174,9 +190,9 @@ type TaskBuilderOmit<
 	S extends BuilderMethods,
 	T extends Task,
 	TP extends AddNameToParams<InputParams>,
-> = Pick<TaskBuilderClass<S, T, TP>, Next<S>>
+> = Pick<TaskBuilder<S, T, TP>, Next<S>>
 
-class TaskBuilderClass<
+class TaskBuilder<
 	S extends BuilderMethods,
 	T extends Task,
 	TP extends AddNameToParams<InputParams>,
@@ -205,6 +221,7 @@ class TaskBuilderClass<
 			} else if ("positionalParam" in result) {
 				positionalParams.push(result.positionalParam)
 			} else {
+				// TODO: do this in a better way
 				throw new Error(`Invalid parameter type: ${param}`)
 			}
 		}
@@ -214,7 +231,7 @@ class TaskBuilderClass<
 			positionalParams,
 			params: updatedParams,
 		} satisfies Task as MergeTaskParams<T, typeof updatedParams>
-		return new TaskBuilderClass(updatedTask) as unknown as TaskBuilderOmit<
+		return new TaskBuilder(updatedTask) as unknown as TaskBuilderOmit<
 			S | "params",
 			typeof updatedTask,
 			typeof updatedParams
@@ -229,7 +246,7 @@ class TaskBuilderClass<
 			...this.#task,
 			dependencies: updatedDeps,
 		} satisfies Task as MergeTaskDependencies<T, NP>
-		return new TaskBuilderClass(updatedTask) as TaskBuilderOmit<
+		return new TaskBuilder(updatedTask) as TaskBuilderOmit<
 			S | "deps",
 			typeof updatedTask,
 			TP
@@ -247,7 +264,7 @@ class TaskBuilderClass<
 			...this.#task,
 			dependsOn: updatedDeps,
 		} satisfies Task as MergeTaskDependsOn<T, ND>
-		return new TaskBuilderClass(updatedTask) as TaskBuilderOmit<
+		return new TaskBuilder(updatedTask) as TaskBuilderOmit<
 			S | "dependsOn",
 			typeof updatedTask,
 			TP
@@ -258,8 +275,8 @@ class TaskBuilderClass<
 		fn: (env: {
 			args: ExtractArgsFromTaskParams<TP>
 			ctx: TaskCtxShape<ExtractArgsFromTaskParams<TP>>
-			deps: ExtractTaskEffectSuccess<T["dependencies"]> &
-				ExtractTaskEffectSuccess<T["dependsOn"]>
+			deps: ExtractScopeSuccesses<T["dependencies"]> &
+				ExtractScopeSuccesses<T["dependsOn"]>
 		}) => Promise<Output> | Output,
 	) {
 		const newTask = {
@@ -270,8 +287,8 @@ class TaskBuilderClass<
 				const maybePromise = fn({
 					args: taskCtx.args as ExtractArgsFromTaskParams<TP>,
 					ctx: taskCtx as TaskCtxShape<ExtractArgsFromTaskParams<TP>>,
-					deps: deps as ExtractTaskEffectSuccess<T["dependencies"]> &
-						ExtractTaskEffectSuccess<T["dependsOn"]>,
+					deps: deps as ExtractScopeSuccesses<T["dependencies"]> &
+						ExtractScopeSuccesses<T["dependsOn"]>,
 				})
 				const result =
 					maybePromise instanceof Promise
@@ -293,7 +310,7 @@ class TaskBuilderClass<
 		// TODO: unknown params?
 		// newTask.params
 
-		return new TaskBuilderClass(newTask) as TaskBuilderOmit<
+		return new TaskBuilder(newTask) as TaskBuilderOmit<
 			S | "run",
 			typeof newTask,
 			TP
@@ -322,7 +339,7 @@ export function task(description = "") {
 		positionalParams: [],
 		effect: Effect.gen(function* () {}),
 	} satisfies Task
-	return new TaskBuilderClass<Start, typeof baseTask, {}>(baseTask)
+	return new TaskBuilder<Start, typeof baseTask, {}>(baseTask)
 }
 
 //
@@ -397,15 +414,6 @@ const buildTask = task()
 	})
 	.make()
 
-const installArgsTask = task()
-	.run(async (ctx) => {
-		return {
-			encodedArgs: new Uint8Array(),
-			args: {},
-		}
-	})
-	.make()
-
 const canScope = customCanister({
 	wasm: "",
 	candid: "",
@@ -459,17 +467,29 @@ const params = {
 		isVariadic: false,
 		isFlag: true,
 		aliases: ["a"],
-	} satisfies InputNamedParam,
-} satisfies InputParams
-
+	}
+}
 const paramTask = task()
-	.params(params)
+	.params({
+	amount: {
+		// TODO: takes either string or standard schema
+		type: type("number"),
+		description: "The amount of tokens to mint",
+		// default: "100",
+		default: 100,
+		parse: (value: string) => Number(value),
+		isOptional: true,
+		isVariadic: false,
+		isFlag: true,
+		aliases: ["a"],
+	}
+})
 	.run(async ({ args }) => {
 		return args.amount
 	})
 	.make()
 // TODO: not working
-// paramTask.params.amount
+paramTask.params.amount
 
 const taskWithParams: MergeTaskParams<
 	typeof baseTask2,

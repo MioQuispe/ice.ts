@@ -6,7 +6,6 @@ import type {
 	TaskTreeNode,
 } from "../types/types.js"
 import { Path, FileSystem } from "@effect/platform"
-import { deployTaskPlugin } from "../plugins/deploy.js"
 import { tsImport } from "tsx/esm/api"
 import { CLIFlags } from "./cliFlags.js"
 // import { removeBuilders } from "../plugins/remove_builders.js"
@@ -51,7 +50,7 @@ const applyPlugins = (taskTree: TaskTree) =>
 		return transformedTaskTree
 	})
 
-export class ConfigError extends Data.TaggedError("ConfigError")<{
+export class ICEConfigError extends Data.TaggedError("ICEConfigError")<{
 	message: string
 }> {}
 
@@ -74,7 +73,7 @@ const createService = Effect.gen(function* () {
 				import.meta.url,
 			) as Promise<ICEConfigFile>,
 		catch: (error) =>
-			new ConfigError({
+			new ICEConfigError({
 				message: `Failed to get ICE config: ${
 					error instanceof Error ? error.message : String(error)
 				}`,
@@ -103,7 +102,7 @@ const createService = Effect.gen(function* () {
 				}
 			},
 			catch: (error) => {
-				return new ConfigError({
+				return new ICEConfigError({
 					message: `Failed to get ICE config: ${error instanceof Error ? error.message : String(error)}`,
 				})
 			},

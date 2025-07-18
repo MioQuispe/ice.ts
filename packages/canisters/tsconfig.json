@@ -1,35 +1,26 @@
 {
-  "compilerOptions": {
-    "target": "esnext",
-    "lib": [
-      "DOM",
-      "DOM.Iterable",
-      "ESNext"
-    ],
-    "types": [
-      "vite/client",
-      "vitest/globals"
-    ],
-    "outDir": "dist",
-    "rootDir": "src",
-    "allowJs": true,
-    "skipLibCheck": true,
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "strict": false,
-    "forceConsistentCasingInFileNames": true,
-    "module": "esnext",
-    "moduleResolution": "node",
-    "declaration": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "baseUrl": "."
-  },
-  "include": [
-    "src/**/*"
-, "scripts/copy-files.js"  ],
-  "ts-node": {
-    "transpileOnly": true,
-    "transpiler": "ts-node/transpilers/swc-experimental"
-  }
+	"compilerOptions": {
+		"target": "esnext",
+		"lib": ["DOM", "DOM.Iterable", "ESNext"],
+		"types": ["vite/client", "vitest/globals"],
+		"outDir": "dist",
+		"rootDir": "src",
+		"allowJs": true,
+		"skipLibCheck": true,
+		"esModuleInterop": true,
+		"allowSyntheticDefaultImports": true,
+		"strict": true,
+		"forceConsistentCasingInFileNames": true,
+		"module": "esnext",
+		"moduleResolution": "node",
+		"declaration": true,
+		"resolveJsonModule": true,
+		"isolatedModules": true,
+		"baseUrl": "."
+	},
+	"include": ["./src/index.ts"],
+	"ts-node": {
+		"transpileOnly": true,
+		"transpiler": "ts-node/transpilers/swc-experimental"
+	}
 }

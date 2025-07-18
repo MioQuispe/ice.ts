@@ -4,7 +4,7 @@ import { sha256 } from "@noble/hashes/sha2"
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils"
 import { StandardSchemaV1 } from "@standard-schema/spec"
 import { type } from "arktype"
-import { Effect, Option, Record } from "effect"
+import { Data, Effect, Option, Record } from "effect"
 import { readFileSync } from "node:fs"
 import { stat } from "node:fs/promises"
 import { encodeArgs } from "../canister.js"
@@ -15,16 +15,25 @@ import {
 	InstallModes,
 } from "../services/replica.js"
 import { TaskRegistry } from "../services/taskRegistry.js"
-import type { TaskCtxShape } from "../tasks/lib.js"
+import type {
+	ParamsToArgs,
+	TaskCtxShape,
+	TaskParamsToArgs,
+	TaskSuccess,
+} from "../tasks/lib.js"
 import { getNodeByPath, TaskCtx } from "../tasks/lib.js"
 import { runTask } from "../tasks/run.js"
 import type { ActorSubclass } from "../types/actor.js"
 import type { CachedTask, Task } from "../types/types.js"
 import { proxyActor } from "../utils/extension.js"
-import { MotokoBindingsTask, MotokoBuildTask } from "./motoko.js"
-import { TaskArgsService } from "src/services/taskArgs.js"
 import { ExtractArgsFromTaskParams } from "./task.js"
+import { deployParams } from "./custom.js"
 export type { TaskCtxShape }
+
+export class TaskError extends Data.TaggedError("TaskError")<{
+	message?: string
+	op?: string
+}> {}
 
 export const loadCanisterId = (taskPath: string) =>
 	Effect.gen(function* () {
@@ -56,9 +65,7 @@ export const resolveConfig = <T, P extends Record<string, unknown>>(
 				return yield* Effect.tryPromise({
 					try: () => configResult,
 					catch: (error) => {
-						// TODO: proper error handling
-						console.error("Error resolving config function:", error)
-						return error instanceof Error ? error : new Error(String(error))
+						return new TaskError({ message: String(error) })
 					},
 				})
 			}
@@ -67,7 +74,7 @@ export const resolveConfig = <T, P extends Record<string, unknown>>(
 		return configOrFn
 	})
 
-type CreateConfig = {
+export type CreateConfig = {
 	canisterId?: string
 }
 export const makeCreateTask = <P extends Record<string, unknown>>(
@@ -318,8 +325,8 @@ export type MergeScopeDependsOn<
 	S extends CanisterScopeSimple,
 	D extends Record<string, Task>,
 > = Omit<S, "children"> & {
-	children: Omit<S["children"], "install_args"> & {
-		install_args: MergeTaskDependsOn<S["children"]["install_args"], D>
+	children: Omit<S["children"], "install"> & {
+		install: MergeTaskDependsOn<S["children"]["install"], D>
 	}
 }
 
@@ -334,8 +341,8 @@ export type MergeScopeDependencies<
 	S extends CanisterScopeSimple,
 	D extends Record<string, Task>,
 > = Omit<S, "children"> & {
-	children: Omit<S["children"], "install_args"> & {
-		install_args: MergeTaskDependencies<S["children"]["install_args"], D>
+	children: Omit<S["children"], "install"> & {
+		install: MergeTaskDependencies<S["children"]["install"], D>
 	}
 }
 
@@ -344,8 +351,8 @@ export type MergeScopeDependencies<
  *
  * @template T - A record of tasks.
  */
-export type ExtractTaskEffectSuccess<T extends Record<string, Task>> = {
-	[K in keyof T]: Effect.Effect.Success<T[K]["effect"]>
+export type ExtractScopeSuccesses<T extends Record<string, Task>> = {
+	[K in keyof T]: TaskSuccess<T[K]>
 }
 
 // TODO: create types
@@ -378,27 +385,9 @@ export type BuildTask = CachedTask<
 	}
 >
 
-export type InstallArgsTask<
-	I,
-	D extends Record<string, Task>,
-	P extends Record<string, Task>,
-> = CachedTask<
-	{
-		args: I
-		encodedArgs: Uint8Array<ArrayBufferLike>
-		mode: InstallModes
-	},
-	D,
-	P,
-	{
-		installArgsFn: Function
-		depCacheKeys: Record<string, string | undefined>
-		mode: InstallModes
-	}
->
-// install_args: ReturnType<typeof makeInstallArgsTask>
 export type InstallTask<
 	_SERVICE = unknown,
+	I = unknown,
 	D extends Record<string, Task> = {},
 	P extends Record<string, Task> = {},
 > = Omit<
@@ -408,6 +397,8 @@ export type InstallTask<
 			canisterName: string
 			actor: ActorSubclass<_SERVICE>
 			mode: InstallModes
+			args: I
+			encodedArgs: Uint8Array<ArrayBufferLike>
 		},
 		D,
 		P,
@@ -418,6 +409,7 @@ export type InstallTask<
 			taskPath: string
 			mode: string
 			depCacheKeys: Record<string, string | undefined>
+			installArgsFn: Function
 		}
 	>,
 	"params"
@@ -429,21 +421,26 @@ export type InstallTask<
 // P
 export type StopTask = Task<void>
 export type RemoveTask = Task<void>
-// TODO: same as install?
 export type DeployTask<
 	_SERVICE = unknown,
 	D extends Record<string, Task> = {},
 	P extends Record<string, Task> = {},
-> = Task<
-	{
-		canisterId: string
-		canisterName: string
-		actor: ActorSubclass<_SERVICE>
-		mode: InstallModes
-	},
-	D,
-	P
->
+> = Omit<
+	Task<
+		{
+			canisterId: string
+			canisterName: string
+			actor: ActorSubclass<_SERVICE>
+			mode: InstallModes
+		},
+		D,
+		P
+	>,
+	"params"
+> & {
+	params: typeof deployParams
+}
+
 // InstallTask<_SERVICE>
 export type StatusTask = Task<{
 	canisterName: string
@@ -454,8 +451,8 @@ export type StatusTask = Task<{
 
 // TODO: use Scope type
 export type CanisterScope<
-	_SERVICE = any,
-	I = any,
+	_SERVICE = unknown,
+	I = unknown,
 	D extends Record<string, Task> = Record<string, Task>,
 	P extends Record<string, Task> = Record<string, Task>,
 > = {
@@ -471,9 +468,7 @@ export type CanisterScope<
 		create: CreateTask
 		bindings: BindingsTask
 		build: BuildTask
-		install_args: InstallArgsTask<I, D, P>
-		// install_args: ReturnType<typeof makeInstallArgsTask>
-		install: InstallTask<_SERVICE, D, P>
+		install: InstallTask<_SERVICE, I, D, P>
 		// D,
 		// P
 		stop: StopTask
@@ -496,8 +491,6 @@ export type CanisterScopeSimple = {
 		create: Task
 		bindings: Task
 		build: Task
-		install_args: Task
-		// install_args: ReturnType<typeof makeInstallArgsTask>
 		install: Task
 		// D,
 		// P
@@ -563,8 +556,8 @@ export type AllowedDep = Task | CanisterScopeSimple
 export type NormalizeDep<T> = T extends Task
 	? T
 	: T extends CanisterScopeSimple
-		? T["children"]["install"] extends Task
-			? T["children"]["install"]
+		? T["children"]["deploy"] extends Task
+			? T["children"]["deploy"]
 			: never
 		: never
 
@@ -581,7 +574,7 @@ export type NormalizeDeps<Deps extends Record<string, AllowedDep>> = {
 	[K in keyof Deps]: Deps[K] extends Task
 		? Deps[K]
 		: Deps[K] extends CanisterScopeSimple
-			? Deps[K]["children"]["install"]
+			? Deps[K]["children"]["deploy"]
 			: never
 }
 
@@ -598,10 +591,13 @@ export type CompareTaskReturnValues<T extends Task> = T extends {
 	? S
 	: never
 
-type DependenciesOf<T> = T extends { dependsOn: infer D } ? D : never
-type ProvideOf<T> = T extends { dependencies: infer P } ? P : never
+export type DependenciesOf<T> = T extends { dependsOn: infer D } ? D : never
+export type ProvideOf<T> = T extends { dependencies: infer P } ? P : never
 
-type DependencyReturnValues<T> = DependenciesOf<T> extends Record<string, Task>
+export type DependencyReturnValues<T> = DependenciesOf<T> extends Record<
+	string,
+	Task
+>
 	? {
 			[K in keyof DependenciesOf<T>]: CompareTaskReturnValues<
 				DependenciesOf<T>[K]
@@ -609,7 +605,7 @@ type DependencyReturnValues<T> = DependenciesOf<T> extends Record<string, Task>
 		}
 	: never
 
-type ProvideReturnValues<T> = ProvideOf<T> extends Record<string, Task>
+export type ProvideReturnValues<T> = ProvideOf<T> extends Record<string, Task>
 	? { [K in keyof ProvideOf<T>]: CompareTaskReturnValues<ProvideOf<T>[K]> }
 	: never
 
@@ -632,7 +628,7 @@ export type DependencyMismatchError<S extends CanisterScopeSimple> = {
 
 export type UniformScopeCheck<S extends CanisterScopeSimple> = S extends {
 	children: {
-		install_args: infer C
+		deploy: infer C
 	}
 }
 	? C extends DepBuilder<C>
@@ -651,8 +647,8 @@ export type IsValid<S extends CanisterScopeSimple> =
 // TODO: arktype match?
 export function normalizeDep(dep: Task | CanisterScopeSimple): Task {
 	if ("_tag" in dep && dep._tag === "task") return dep
-	if ("_tag" in dep && dep._tag === "scope" && dep.children?.install)
-		return dep.children.install as Task
+	if ("_tag" in dep && dep._tag === "scope" && dep.children?.deploy)
+		return dep.children.deploy as Task
 	throw new Error("Invalid dependency type provided to normalizeDep")
 }
 
@@ -721,14 +717,12 @@ export const makeStopTask = (): StopTask => {
 	} satisfies Task<void>
 }
 
-export const makeRemoveTask = ({ stop }: { stop: Task<void> }): RemoveTask => {
+export const makeRemoveTask = (): RemoveTask => {
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/remove"),
 		dependsOn: {},
-		dependencies: {
-			stop,
-		},
+		dependencies: {},
 		// TODO: do we allow a fn as args here?
 		effect: Effect.gen(function* () {
 			const { taskPath } = yield* TaskCtx
@@ -947,11 +941,60 @@ export const resolveMode = () => {
 	})
 }
 
-const installParams = {
+// TODO: temporary hack!!!!!!
+const uint8ArrayToJsonString = (uint8Array: Uint8Array) => {
+	const jsonString = Array.from(uint8Array, (byte) =>
+		String.fromCharCode(byte),
+	).join("")
+	// return JSON.parse(jsonString)
+	return jsonString
+}
+// TODO: temporary hack!!!!!!
+const jsonStringToUint8Array = (jsonString: string): Uint8Array => {
+	return new Uint8Array(Array.from(jsonString, (char) => char.charCodeAt(0)))
+}
+
+export class InstallTaskError extends Data.TaggedError("InstallTaskError")<{
+	message?: string
+}> {}
+
+// Encoding with type information
+const encodeWithBigInt = (obj: unknown) =>
+	Effect.try<string, TaskError>({
+		try: () =>
+			JSON.stringify(obj, (_, value) => {
+				if (typeof value === "bigint") {
+					return { __type__: "bigint", value: value.toString() }
+				}
+				return value
+			}),
+		catch: (e) =>
+			new TaskError({
+				message: "Encoding failed",
+			}),
+	})
+
+// Decoding with type restoration
+const decodeWithBigInt = (str: string) =>
+	Effect.try<unknown, TaskError>({
+		try: () =>
+			JSON.parse(str, (_, value) => {
+				if (value && typeof value === "object" && value.__type__ === "bigint") {
+					return BigInt(value.value)
+				}
+				return value
+			}),
+		catch: (e) =>
+			new TaskError({
+				message: "Decoding failed",
+			}),
+	})
+
+export const installParams = {
 	mode: {
 		type: InstallModes,
 		description: "The mode to install the canister in",
-		default: "install",
+		default: "install" as const,
 		isFlag: true as const,
 		isOptional: true as const,
 		isVariadic: false as const,
@@ -960,6 +1003,7 @@ const installParams = {
 		parse: (value: string) => value as InstallModes,
 	},
 	args: {
+		// TODO: maybe not Uint8Array?
 		type: type("TypedArray.Uint8"),
 		description: "The arguments to pass to the canister as a candid string",
 		// default: undefined,
@@ -968,14 +1012,18 @@ const installParams = {
 		isVariadic: false as const,
 		name: "args",
 		aliases: ["a"],
-		parse: (value: string) => value as string,
+		parse: (value: string) => {
+			// TODO: convert to candid string
+			return new Uint8Array(Buffer.from(value))
+		},
 	},
 	// TODO: provide defaults. just read from fs by canister name
+	// should we allow passing in wasm bytes?
 	wasm: {
 		type: type("string"),
 		description: "The path to the wasm file",
 		isFlag: true as const,
-		isOptional: true as const,
+		isOptional: false as const,
 		isVariadic: false as const,
 		name: "wasm",
 		aliases: ["w"],
@@ -998,7 +1046,8 @@ const installParams = {
 		type: type("string"),
 		description: "The canister ID to install the canister in",
 		isFlag: true as const,
-		isOptional: true as const,
+		default: "aaaaa-aa",
+		isOptional: false as const,
 		isVariadic: false as const,
 		name: "canisterId",
 		aliases: ["i"],
@@ -1006,15 +1055,32 @@ const installParams = {
 	},
 }
 
-type InstallTaskArgs = ExtractArgsFromTaskParams<typeof installParams>
-
+export type InstallTaskArgs = ParamsToArgs<typeof installParams>
 
 export const makeInstallTask = <
 	I,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
 	_SERVICE,
->(): InstallTask<_SERVICE, D, P> => {
+>(
+	installArgsFn: (args: {
+		ctx: TaskCtxShape
+		mode: InstallModes
+		deps: ExtractScopeSuccesses<D> & ExtractScopeSuccesses<P>
+	}) => Promise<I> | I = () => [] as unknown as I,
+	{
+		customEncode,
+		// customInitIDL,
+	}: {
+		customEncode:
+			| undefined
+			| ((args: I) => Promise<Uint8Array<ArrayBufferLike>>)
+		// customInitIDL: IDL.Type[] | undefined
+	} = {
+		customEncode: undefined,
+		// customInitIDL: undefined,
+	},
+): InstallTask<_SERVICE, I, D, P> => {
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/install"),
@@ -1027,20 +1093,97 @@ export const makeInstallTask = <
 		effect: Effect.gen(function* () {
 			yield* Effect.logDebug("Starting custom canister installation")
 			const taskCtx = yield* TaskCtx
+			const path = yield* Path.Path
+			// TODO: can I pass in the task itself as a type parameter to get automatic type inference?
+			// To avoid having to use "as"
+			const { appDir, iceDir } = yield* TaskCtx
 			const identity = taskCtx.roles.deployer.identity
 			const { replica, args, depResults } = taskCtx
 			const taskArgs = args as InstallTaskArgs
-
-			// TODO: fix. also type should be inferred?
-			// const argsTaskResult = dependencies.install_args.result
-			// const canisterId = dependencies.create.result
-			// const { didJSPath, didTSPath } = dependencies.bindings.result
-			// const { wasmPath } = dependencies.build.result
-
-			const { canisterId, wasm: wasmPath, candid: didJSPath, args: installArgs } = taskArgs
-
 			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
+
+			const {
+				canisterId,
+				wasm: wasmPath,
+				candid,
+				// TODO: support raw args
+				args: rawInstallArgs,
+				mode,
+			} = taskArgs
+
+			yield* Effect.logDebug("Starting install args generation")
+
+			let initArgs = [] as unknown as I
+			yield* Effect.logDebug("Executing install args function")
+
+			// TODO:
+			// const didJSPath =
+			const didJSPath = path.join(
+				appDir,
+				iceDir,
+				"canisters",
+				canisterName,
+				`${canisterName}.did.js`,
+			)
+
+			// TODO: should it catch errors?
+			// TODO: handle different modes
+			const deps = Record.map(
+				depResults,
+				(dep) => dep.result,
+			) as ExtractScopeSuccesses<D> & ExtractScopeSuccesses<P>
+			const installResult = installArgsFn({
+				mode,
+				ctx: taskCtx,
+				deps,
+			})
+			if (installResult instanceof Promise) {
+				initArgs = yield* Effect.tryPromise({
+					try: () => installResult,
+					catch: (e) =>
+						new TaskError({
+							message: `Install args function failed for: ${canisterName},
+							typeof installArgsFn: ${typeof installArgsFn},
+							 typeof installResult: ${typeof installResult}
+							 error: ${e},
+							 installArgsFn: ${installArgsFn},
+							 installResult: ${installResult},
+							 `,
+						}),
+				})
+			} else {
+				initArgs = installResult
+			}
+			yield* Effect.logDebug("installArgsFn effect result:", installResult)
+			yield* Effect.logDebug("Install args generated", { args: initArgs })
+
+			const canisterDID = yield* Effect.tryPromise({
+				try: () => import(didJSPath) as Promise<CanisterDidModule>,
+				catch: (e) => {
+					return new TaskError({
+						message: "Failed to load canisterDID",
+					})
+				},
+			})
+			yield* Effect.logDebug("Loaded canisterDID", { canisterDID })
+
+			yield* Effect.logDebug("Encoding args", {
+				installArgs: initArgs,
+				canisterDID,
+			})
+
+			// TODO: do we accept simple objects as well?
+			const encodedArgs = customEncode
+				? yield* Effect.tryPromise({
+						try: () => customEncode(initArgs),
+						catch: (error) => {
+							return new TaskError({
+								message: `customEncode failed, error: ${error}`,
+							})
+						},
+					})
+				: yield* encodeArgs(initArgs as unknown[], canisterDID)
 
 			yield* Effect.logDebug("Loaded canister ID", { canisterId })
 			const fs = yield* FileSystem.FileSystem
@@ -1050,7 +1193,6 @@ export const makeInstallTask = <
 				identity,
 			})
 			yield* Effect.logDebug("canisterInfo", canisterInfo)
-			const mode = taskArgs.mode
 			// TODO:
 			// they can return the values we need perhaps? instead of reading from fs
 			// we need the wasm blob and candid DIDjs / idlFactory?
@@ -1063,23 +1205,20 @@ export const makeInstallTask = <
 			yield* replica.installCode({
 				canisterId,
 				wasm,
-				encodedArgs: installArgs,
+				encodedArgs,
 				identity,
 				mode,
 			})
 			yield* Effect.logDebug(`Code installed for ${canisterId}`)
 			yield* Effect.logDebug(`Canister ${canisterName} installed successfully`)
-			// TODO: can we type it somehow?
-			const canisterDID = yield* Effect.tryPromise({
-				try: () => import(didJSPath),
-				catch: Effect.fail,
-			})
 			const actor = yield* replica.createActor<_SERVICE>({
 				canisterId,
 				canisterDID,
 				identity,
 			})
 			return {
+				args: initArgs,
+				encodedArgs,
 				canisterId,
 				canisterName,
 				mode,
@@ -1092,18 +1231,19 @@ export const makeInstallTask = <
 		computeCacheKey: (input) => {
 			// TODO: pocket-ic could be restarted?
 			const installInput = {
+				argFnHash: hashConfig(input.installArgsFn),
+				depsHash: hashJson(input.depCacheKeys),
 				canisterId: input.canisterId,
 				network: input.network,
 				mode: input.mode,
-				depsHash: hashJson(input.depCacheKeys),
 			}
 			const cacheKey = hashJson(installInput)
 			return cacheKey
 		},
 		input: () =>
 			Effect.gen(function* () {
-				const { taskPath, depResults } = yield* TaskCtx
 				const { args } = yield* TaskCtx
+				const { taskPath, depResults } = yield* TaskCtx
 				const taskArgs = args as {
 					mode: InstallModes
 					args: string
@@ -1111,7 +1251,7 @@ export const makeInstallTask = <
 				const canisterName = taskPath.split(":").slice(0, -1).join(":")
 				const dependencies = depResults as {
 					[K in keyof P]: {
-						result: TaskReturnValue<(P)[K]>
+						result: TaskReturnValue<P[K]>
 						cacheKey: string | undefined
 					}
 				}
@@ -1123,7 +1263,9 @@ export const makeInstallTask = <
 						maybeCanisterId,
 					)
 					return yield* Effect.fail(
-						new Error(`Canister ${canisterName} is not installed`),
+						new TaskError({
+							message: `Canister ${canisterName} is not installed`,
+						}),
 					)
 				}
 				const canisterId = maybeCanisterId.value
@@ -1136,100 +1278,195 @@ export const makeInstallTask = <
 					canisterId,
 					canisterName,
 					network: currentNetwork,
+					// TODO: remove?
 					taskPath,
+					///////////////
 					mode,
 					depCacheKeys,
+					installArgsFn,
 				}
 				return input
 			}),
 		encodingFormat: "string",
+
+		// // TODO: noEncodeArgs messes this up
+		// decode: (prev, input) =>
+		// 	Effect.gen(function* () {
+		// 		// TODO: fix
+		// 		const encoded = prev as Uint8Array<ArrayBufferLike>
+		// 		const { args } = yield* TaskCtx
+		// 		const taskArgs = args as InstallArgsTaskArgs
+		// 		const didJSPath = taskArgs.candid
+		// 		// const path = yield* Path.Path
+		// 		// const { appDir, iceDir, taskPath } = yield* TaskCtx
+		// 		// const canisterName = taskPath.split(":").slice(0, -1).join(":")
+		// 		// const didJSPath = path.join(
+		// 		// 	appDir,
+		// 		// 	iceDir,
+		// 		// 	"canisters",
+		// 		// 	canisterName,
+		// 		// 	`${canisterName}.did.js`,
+		// 		// )
+
+		// 		if (customEncode) {
+		// 			const decoded = JSON.parse(encoded as unknown as string) as A
+		// 			// TODO: use customEncode again
+		// 			const customEncoded = yield* customEncode(decoded)
+		// 			return {
+		// 				encodedArgs: customEncoded,
+		// 				args: decoded,
+		// 				mode: input.mode,
+		// 			}
+		// 		}
+
+		// 		// TODO: can we type it somehow?
+		// 		const canisterDID = yield* Effect.tryPromise({
+		// 			try: () => import(didJSPath) as Promise<CanisterDidModule>,
+		// 			catch: Effect.fail,
+		// 		})
+
+		// 		// TODO: will .init work with upgrades?
+
+		// 		// TODO: custom init IDL. mainly for nns canisters
+		// 		// const idl = customInitIDL ?? canisterDID.init({ IDL })
+		// 		const idl = canisterDID.init({ IDL })
+		// 		yield* Effect.logDebug(
+		// 			"decoding value",
+		// 			"with type:",
+		// 			typeof encoded,
+		// 			"with value:",
+		// 			encoded,
+		// 			"with idl:",
+		// 			idl,
+		// 		)
+		// 		// TODO: customEncode maybe messes this up?
+		// 		const decoded = IDL.decode(idl, encoded.slice().buffer) as A
+
+		// 		yield* Effect.logDebug("decoded:", decoded)
+		// 		return {
+		// 			encodedArgs: encoded,
+		// 			args: decoded,
+		// 			mode: input.mode,
+		// 		}
+		// 	}),
 		encode: (result, input) =>
 			Effect.gen(function* () {
-				const encoded = JSON.stringify({
+				yield* Effect.logDebug("encoding:", result)
+				if (customEncode) {
+					// TODO: stringify? or uint8array?
+
+					// return JSON.stringify(result.args)
+
+					// return JSON.stringify(result.args, (_, value) =>
+					// 	typeof value === "bigint" ? value.toString() : value,
+					// )
+
+					// canisterId: string
+					// canisterName: string
+					// mode: InstallModes
+					// encodedArgs: string
+					// args: I
+					return yield* encodeWithBigInt({
+						canisterId: result.canisterId,
+						canisterName: result.canisterName,
+						mode: result.mode,
+						encodedArgs: uint8ArrayToJsonString(result.encodedArgs),
+						args: result.args,
+					})
+				}
+				// TODO: need to encode mode as well?
+				// return result.encodedArgs
+
+				// const encoded = yield* encodeWithBigInt(result.args)
+				return yield* encodeWithBigInt({
 					canisterId: result.canisterId,
 					canisterName: result.canisterName,
 					mode: result.mode,
+					encodedArgs: uint8ArrayToJsonString(result.encodedArgs),
+					args: result.args,
 				})
-				return encoded
+
+				// const encoded = yield* Effect.try({
+				// 	try: () =>
+				// 		JSON.stringify({
+				// 			canisterId: result.canisterId,
+				// 			canisterName: result.canisterName,
+				// 			mode: result.mode,
+				// 			encodedArgs: uint8ArrayToJsonString(result.encodedArgs),
+				// 			// TODO: bigint!
+				// 			args: result.args,
+				// 		}),
+				// 	catch: (e) =>
+				// 		new TaskError({
+				// 			message: "Encoding failed",
+				// 		}),
+				// })
+				// return encoded
+				// return ""
 			}),
 		decode: (value, input) =>
 			Effect.gen(function* () {
-				const { canisterId, canisterName, mode } = JSON.parse(
-					value as string,
-				) as {
+				const {
+					canisterId,
+					canisterName,
+					mode,
+					encodedArgs: encodedArgsString,
+					args: initArgs,
+				} = (yield* decodeWithBigInt(value as string)) as {
 					canisterId: string
 					canisterName: string
 					mode: InstallModes
+					encodedArgs: string
+					args: I
 				}
+				const encodedArgs = jsonStringToUint8Array(encodedArgsString)
+				// const initArgs = {} as unknown as I
 				const {
 					replica,
 					roles: {
 						deployer: { identity },
 					},
 				} = yield* TaskCtx
-				const { args } = yield* TaskCtx
+				const { appDir, iceDir, args } = yield* TaskCtx
 				const taskArgs = args as InstallTaskArgs
-				const { candid: didJSPath } = taskArgs
+				// const { candid: didJSPath } = taskArgs
+				const path = yield* Path.Path
+				const didJSPath = path.join(
+					appDir,
+					iceDir,
+					"canisters",
+					canisterName,
+					`${canisterName}.did.js`,
+				)
 				// TODO: we should create a service that caches these?
 				// expensive to import every time
 				const canisterDID = yield* Effect.tryPromise({
 					try: () => import(didJSPath) as Promise<CanisterDidModule>,
-					catch: Effect.fail,
+					catch: (e) =>
+						new TaskError({
+							message: "Failed to load canisterDID",
+						}),
 				})
 				const actor = yield* replica.createActor<_SERVICE>({
 					canisterId,
 					canisterDID,
 					identity,
 				})
+				// const encodedArgs = customEncode
+				// 	? yield* customEncode(initArgs)
+				// 	: yield* encodeArgs(initArgs as unknown[], canisterDID)
+
 				const decoded = {
 					mode,
 					canisterId,
 					canisterName,
 					actor: proxyActor(canisterName, actor),
+					encodedArgs,
+					args: initArgs,
 				}
 				return decoded
 			}),
 	}
-}
-
-export const makeDeployTask = <_SERVICE>(
-	tags: string[],
-): DeployTask<_SERVICE> => {
-	return {
-		_tag: "task",
-		// TODO: change
-		id: Symbol("canister/deploy"),
-		dependsOn: {},
-		// TODO: we only want to warn at a type level?
-		// TODO: type Task
-		dependencies: {},
-		namedParams: installParams,
-		params: installParams,
-		positionalParams: [],
-		effect: Effect.gen(function* () {
-			const { taskPath } = yield* TaskCtx
-			const canisterName = taskPath.split(":").slice(0, -1).join(":")
-			const parentScope = (yield* getNodeByPath(
-				canisterName,
-			)) as CanisterScope<_SERVICE>
-			const { args } = yield* TaskCtx
-			const taskArgs = args as {
-				mode: InstallModes
-				args: string
-			}
-			// TODO: we need to pass in mode to installArgs as well somehow?
-			// maybe use some kind of context?
-			const mode = yield* resolveMode()
-			const result = yield* runTask(parentScope.children.install, {
-				mode,
-				args: taskArgs.args,
-			})
-			yield* Effect.logDebug("Canister deployed successfully")
-			return result.result
-		}),
-		description: "Deploy canister code",
-		tags: [Tags.CANISTER, Tags.DEPLOY, ...tags],
-	} satisfies DeployTask<_SERVICE>
 }
 
 export const linkChildren = <A extends Record<string, Task>>(
@@ -1267,261 +1504,6 @@ export const linkChildren = <A extends Record<string, Task>>(
 export interface CanisterDidModule {
 	idlFactory: IDL.InterfaceFactory
 	init: (args: { IDL: typeof IDL }) => IDL.Type[]
-}
-
-export const makeInstallArgsTask = <
-	A,
-	_SERVICE,
-	D extends Record<string, Task>,
-	P extends Record<string, Task>,
->(
-	installArgsFn: (args: {
-		ctx: TaskCtxShape
-		mode: InstallModes
-		deps: ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>
-	}) => Promise<A> | A,
-	dependsOn: D,
-	deps: P & {
-		bindings: BindingsTask
-		create: CreateTask
-	},
-	// canisterTaskDeps: {
-	// },
-	{
-		customEncode,
-		// customInitIDL,
-	}: {
-		customEncode:
-			| undefined
-			| ((args: A) => Effect.Effect<Uint8Array<ArrayBufferLike>>)
-		// customInitIDL: IDL.Type[] | undefined
-	} = {
-		customEncode: undefined,
-		// customInitIDL: undefined,
-	},
-): InstallArgsTask<A, D, typeof deps> => {
-	return {
-		_tag: "task",
-		id: Symbol("canister/installArgs"),
-		// TODO: do we need this?
-		dependsOn,
-		dependencies: deps,
-		namedParams: installParams,
-		positionalParams: [],
-		params: installParams,
-		effect: Effect.gen(function* () {
-			yield* Effect.logDebug("Starting install args generation")
-			const taskCtx = yield* TaskCtx
-			const dependencies = taskCtx.depResults as {
-				[K in keyof typeof deps]: {
-					result: TaskReturnValue<(typeof deps)[K]>
-					cacheKey: string | undefined
-				}
-			}
-			const depResults = Record.map(dependencies, (dep) => dep.result)
-			const { taskPath } = yield* TaskCtx
-			// TODO: this is already passed in from outside?
-			const { args } = yield* TaskCtx
-			const taskArgs = args as {
-				mode: InstallModes
-				args: string
-			}
-			const mode = taskArgs.mode ?? "install"
-			// const mode = yield* resolveMode()
-
-			yield* Effect.logDebug("makeInstallArgsTask TaskCtx.args", args)
-
-			let installArgs = [] as unknown as A
-			if (installArgsFn) {
-				yield* Effect.logDebug("Executing install args function")
-
-				const installFn = installArgsFn as (args: {
-					ctx: TaskCtxShape
-					mode: InstallModes
-					deps: ExtractTaskEffectSuccess<D> & ExtractTaskEffectSuccess<P>
-				}) => Promise<A> | A
-				// TODO: should it catch errors?
-				// TODO: handle different modes
-				const installResult = installFn({
-					mode,
-					ctx: taskCtx,
-					deps: depResults as ExtractTaskEffectSuccess<D> &
-						ExtractTaskEffectSuccess<P>,
-				})
-				if (installResult instanceof Promise) {
-					installArgs = yield* Effect.tryPromise({
-						try: () => installResult,
-						catch: (error) => {
-							// TODO: proper error handling
-							return error instanceof Error ? error : new Error(String(error))
-						},
-					})
-				} else {
-					installArgs = installResult
-				}
-				yield* Effect.logDebug("installArgsFn effect result:", installResult)
-			}
-			yield* Effect.logDebug("Install args generated", { args: installArgs })
-
-			const { result: bindingsResult } = dependencies.bindings
-			const { didJSPath, didTSPath } = bindingsResult
-			const canisterDID = yield* Effect.tryPromise({
-				try: () => import(didJSPath) as Promise<CanisterDidModule>,
-				catch: Effect.fail,
-			})
-			yield* Effect.logDebug("Loaded canisterDID", { canisterDID })
-
-			yield* Effect.logDebug("Encoding args", { installArgs, canisterDID })
-			const encodedArgs = customEncode
-				? yield* customEncode(installArgs)
-				: yield* Effect.try({
-						// TODO: do we accept simple objects as well?
-						try: () => encodeArgs(installArgs as unknown[], canisterDID),
-						catch: (error) => {
-							throw new Error(
-								`Failed to encode args: ${error instanceof Error ? error.message : String(error)}`,
-							)
-						},
-					})
-
-			return { args: installArgs, encodedArgs, mode }
-		}),
-		description: "Generate install args",
-		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.INSTALL_ARGS, Tags.HIDDEN],
-		// TODO: add network?
-		computeCacheKey: (input) => {
-			// const installArgsInput = {
-			// 	argFnHash: input.argFnHash,
-			// 	depsHash: input.depsHash,
-			// }
-			const installArgsInput = {
-				argFnHash: hashConfig(input.installArgsFn),
-				depsHash: hashJson(input.depCacheKeys),
-				mode: input.mode,
-			}
-			const cacheKey = hashJson(installArgsInput)
-			return cacheKey
-		},
-		input: () =>
-			Effect.gen(function* () {
-				const { depResults } = yield* TaskCtx
-				const dependencies = depResults as {
-					[K in keyof typeof deps]: {
-						result: TaskReturnValue<(typeof deps)[K]>
-						cacheKey: string | undefined
-					}
-				}
-				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
-				const { args } = yield* TaskCtx
-				// const taskArgs = args as {
-				// 	mode: "install" | "upgrade" | "reinstall"
-				// }
-				// const taskArgs = args as {
-				// 	mode: "install" | "upgrade" | "reinstall"
-				// }
-				// // TODO: needs to check canister status and other things
-				// let mode: "install" | "upgrade" | "reinstall" = "install"
-				// if ("mode" in taskArgs) {
-				// 	mode = taskArgs.mode
-				// } else {
-				// 	// TODO: check status and other things
-				// 	// const mode = taskArgs.mode ?? "install"
-				// 	// const mode = parentArgs?.mode ?? "install"
-				// 	// const mode = "install"
-				// 	mode = "install"
-				// }
-				const taskArgs = args as {
-					mode: InstallModes
-					args: string
-				}
-				const mode = taskArgs.mode ?? "install"
-				// const mode = yield* resolveMode()
-				yield* Effect.logDebug(
-					"hashing installArgsFn:",
-					installArgsFn.toString(),
-				)
-				const input = {
-					installArgsFn,
-					depCacheKeys,
-					mode,
-				}
-				yield* Effect.logDebug("input:", input)
-				return input
-			}),
-		encodingFormat: customEncode ? "string" : "uint8array",
-		encode: (result, input) =>
-			Effect.gen(function* () {
-				yield* Effect.logDebug("decoding:", result)
-				if (customEncode) {
-					// TODO: stringify? or uint8array?
-					return JSON.stringify(result.args)
-				}
-				yield* Effect.logDebug("encoded:", result.encodedArgs)
-				// TODO: need to encode mode as well?
-				return result.encodedArgs
-			}),
-		// TODO: noEncodeArgs messes this up
-		decode: (prev, input) =>
-			Effect.gen(function* () {
-				// TODO: fix
-				const encoded = prev as Uint8Array<ArrayBufferLike>
-				// TODO: get from candid / bindings task result instead?
-				// this task should depend on that and just get its result
-				// const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
-				// const depResult = dependencies.bindings.result
-				const path = yield* Path.Path
-				const { appDir, iceDir, taskPath } = yield* TaskCtx
-				const canisterName = taskPath.split(":").slice(0, -1).join(":")
-				const didJSPath = path.join(
-					appDir,
-					iceDir,
-					"canisters",
-					canisterName,
-					`${canisterName}.did.js`,
-				)
-
-				if (customEncode) {
-					const decoded = JSON.parse(encoded as unknown as string) as A
-					// TODO: use customEncode again
-					const customEncoded = yield* customEncode(decoded)
-					return {
-						encodedArgs: customEncoded,
-						args: decoded,
-						mode: input.mode,
-					}
-				}
-
-				// TODO: can we type it somehow?
-				const canisterDID = yield* Effect.tryPromise({
-					try: () => import(didJSPath) as Promise<CanisterDidModule>,
-					catch: Effect.fail,
-				})
-
-				// TODO: will .init work with upgrades?
-
-				// TODO: custom init IDL. mainly for nns canisters
-				// const idl = customInitIDL ?? canisterDID.init({ IDL })
-				const idl = canisterDID.init({ IDL })
-				yield* Effect.logDebug(
-					"decoding value",
-					"with type:",
-					typeof encoded,
-					"with value:",
-					encoded,
-					"with idl:",
-					idl,
-				)
-				// TODO: customEncode maybe messes this up?
-				const decoded = IDL.decode(idl, encoded.slice().buffer) as A
-
-				yield* Effect.logDebug("decoded:", decoded)
-				return {
-					encodedArgs: encoded,
-					args: decoded,
-					mode: input.mode,
-				}
-			}),
-	}
 }
 
 const testTask = {

@@ -13,7 +13,7 @@ import type { PlatformError } from "@effect/platform/Error"
 import os from "node:os"
 import psList from "ps-list"
 
-export class ConfigError extends Data.TaggedError("ConfigError")<{
+export class IdsError extends Data.TaggedError("IdsError")<{
 	message: string
 }> {}
 
@@ -78,7 +78,7 @@ const getIdentity = (selection?: string) =>
 		const exists = yield* fs.exists(identityPath)
 		if (!exists) {
 			return yield* Effect.fail(
-				new ConfigError({ message: "Identity does not exist" }),
+				new IdsError({ message: "Identity does not exist" }),
 			)
 		}
 

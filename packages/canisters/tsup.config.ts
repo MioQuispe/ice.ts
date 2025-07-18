@@ -1,4 +1,4 @@
-import { defineConfig } from 'tsup';
+import { defineConfig } from "tsup"
 
 /**
  * tsup configuration for the @ice.ts/canisters package.
@@ -10,21 +10,20 @@ import { defineConfig } from 'tsup';
  * - Cleans the output directory before building
  */
 export default defineConfig({
-  entry: {
-    bundle: 'src/index.ts' // Entry keyed as "bundle" to output "bundle.js"
-  },
-  outDir: 'dist',
-  format: ['esm'],
-  bundle: true,
-  splitting: false,
-  sourcemap: true,
-  clean: true,
-  dts: true,
-  external: ['@ice.ts/runner'],
-  esbuildOptions(options) {
-    options.loader = {
-      ...options.loader,
-      '.wasm': 'file'
-    };
-  }
-}); 
+	entry: {
+		bundle: "src/index.ts", // Entry keyed as "bundle" to output "bundle.js"
+	},
+	outDir: "dist",
+	format: ["esm"],
+	bundle: true,
+	splitting: false,
+	sourcemap: true,
+	clean: true,
+	dts: true,
+	esbuildOptions(options) {
+		options.loader = {
+			...options.loader,
+			".wasm": "file",
+		}
+	},
+})

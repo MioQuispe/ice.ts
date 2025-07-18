@@ -11,7 +11,6 @@ export class DeploymentError extends Data.TaggedError("DeploymentError")<{
 	message: string
 }> {}
 
-
 // TODO: just one place to define this
 export type Opt<T> = [T] | []
 export const Opt = <T>(value?: T): Opt<T> => {
@@ -26,7 +25,9 @@ export const compileMotokoCanister = (
 	Effect.gen(function* () {
 		const moc = yield* Moc
 		// Create output directories if they don't exist
-		yield* Effect.logDebug(`Compiling from ${src}, with name ${canisterName} to ${wasmOutputFilePath}`)
+		yield* Effect.logDebug(
+			`Compiling from ${src}, with name ${canisterName} to ${wasmOutputFilePath}`,
+		)
 		// TODO: we need to make dirs if they don't exist
 		yield* moc.compile(src, wasmOutputFilePath)
 		yield* Effect.logDebug(
@@ -34,7 +35,6 @@ export const compileMotokoCanister = (
 		)
 		return wasmOutputFilePath
 	})
-
 
 /**
  * Creates a canister using the provisional_create_canister_with_cycles method via the management canister.
@@ -46,14 +46,17 @@ export const compileMotokoCanister = (
 export const createCanister = (canisterId?: string) =>
 	Effect.gen(function* () {
 		const { users, replica } = yield* TaskCtx
-		const { roles: { deployer: { identity } } } = yield* TaskCtx
+		const {
+			roles: {
+				deployer: { identity },
+			},
+		} = yield* TaskCtx
 		const createdCanisterId = yield* replica.createCanister({
 			canisterId,
 			identity,
 		})
 		return createdCanisterId
 	})
-
 
 // TODO: types for DIDJS
 export const generateDIDJS = (canisterName: string, didPath: string) =>
@@ -110,15 +113,23 @@ export interface CanisterDidModule {
 	init: (args: { IDL: typeof IDL }) => IDL.Type[]
 }
 
-export const encodeArgs = (
-	args: unknown[],
-	canisterDID: CanisterDidModule,
-): Uint8Array => {
-	const encodedArgs = args
-		? new Uint8Array(IDL.encode(canisterDID.init({ IDL }), args))
-		: new Uint8Array()
-	return encodedArgs
-}
+export const encodeArgs = (args: unknown[], canisterDID: CanisterDidModule) =>
+	Effect.gen(function* () {
+		return yield* Effect.try({
+			try: () => {
+				const encodedArgs = args
+					? new Uint8Array(IDL.encode(canisterDID.init({ IDL }), args))
+					: new Uint8Array()
+				return encodedArgs
+			},
+			catch: (error) => {
+				// TODO: change error type
+				return new DeploymentError({
+					message: `Failed to encode args: ${error instanceof Error ? error.message : String(error)}, with args: ${args}`,
+				})
+			},
+		})
+	})
 
 export const createActor = <T>({
 	canisterId,
@@ -136,10 +147,11 @@ export const createActor = <T>({
 		// TODO: pic has its own createActor ? cant use HttpAgent directly?
 		// TODO: optimize / cache?
 		const agent = yield* Effect.tryPromise({
-			try: () => HttpAgent.create({ 
-				identity,
-				host: `${replica.host}:${replica.port}`,
-			}),
+			try: () =>
+				HttpAgent.create({
+					identity,
+					host: `${replica.host}:${replica.port}`,
+				}),
 			catch: (error) =>
 				new DeploymentError({
 					message: `Failed to create agent: ${error instanceof Error ? error.message : String(error)}`,
@@ -205,4 +217,3 @@ export const createActor = <T>({
 		//   setControllers,
 		// }
 	})
-

@@ -2,13 +2,31 @@ import path from "node:path"
 import { Opt } from "../types"
 import { idlFactory } from "./ledger.private.did.js"
 // import { idlFactory as ledgerPublicIdlFactory } from "./ledger.public.did.js"
-import type { ICPTs, LedgerCanisterInitPayload, _SERVICE } from "./ledger.private.types"
+import type { ArchiveOptions, Duration, ICPTs, LedgerCanisterInitPayload, _SERVICE } from "./ledger.private.types"
 import * as url from "node:url"
 import { customCanister, type TaskCtxShape } from "@ice.ts/runner"
+import { Record, Array as EffectArray } from "effect"
+
+export type {
+  _SERVICE as LedgerCanisterService,
+  LedgerCanisterInitPayload,
+  InitArgsSimple as LedgerCanisterInitArgsSimple,
+}
+
+export type ArchiveOptionsExtras = {
+  cycles_for_archive_creation : [] | [bigint]
+}
+
+export type LedgerCanisterExtras = Omit<LedgerCanisterInitPayload, "archive_options"> & {
+  token_symbol : [] | [string]
+  transfer_fee : [] | [ICPTs]
+  token_name : [] | [string]
+  archive_options : Opt<ArchiveOptions & ArchiveOptionsExtras>
+}
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 
-type InitArgs = {
+type InitArgsSimple = {
   minting_account: string
   // TODO: fix
   initial_values: { [account: string]: number }
@@ -20,9 +38,7 @@ const LedgerIds = {
 }
 
 const canisterName = "ledger"
-export const Ledger = (
-  initArgsOrFn?: InitArgs | ((args: { ctx: TaskCtxShape }) => InitArgs),
-) => {
+export const Ledger = () => {
   // initial_values: [
   //   [
   //     // "bf748c9308687512ecf828a0d33a39d487d2399c426f62466bb9a2a4e84c7bd0",
@@ -35,8 +51,8 @@ export const Ledger = (
 
   // TODO: return config
   // - get paths
-  return customCanister<_SERVICE, [LedgerCanisterInitPayload]>({
-    canisterId: LedgerIds.local,
+  return customCanister<_SERVICE, [LedgerCanisterExtras]>({
+    // canisterId: LedgerIds.local,
     // TODO: change from private => public
     candid: path.resolve(__dirname, `${canisterName}/${canisterName}.private.did`),
     wasm: path.resolve(__dirname, `${canisterName}/${canisterName}.wasm.gz`),
@@ -53,32 +69,31 @@ export const Ledger = (
     //    archive_options = null;
     //    send_whitelist = vec {}
     //  }`
-  }).installArgs(async ({ mode, ctx }) => {
-    const initArgs =
-      typeof initArgsOrFn === "function"
-        ? initArgsOrFn({ ctx })
-        : initArgsOrFn
-    const transformedValues = Object.keys(initArgs.initial_values).map(
-      (accountId) => {
-        const val = initArgs.initial_values[accountId]
+  })
+}
+
+Ledger.makeArgs = (initArgs: InitArgsSimple): [LedgerCanisterExtras] => {
+    const transformedValues = EffectArray.map(Record.toEntries(initArgs.initial_values),
+      ([accountId, amount]): [string, ICPTs] => {
         return [
           accountId,
-          // BigInt? json serialization fails
-          { e8s: BigInt(val) },
-        ] as [string, ICPTs]
+          { e8s: BigInt(amount) },
+        ] as const
       },
     )
-    return [{
+  return [{
       minting_account: initArgs.minting_account, // TODO: this is accountID
       initial_values: transformedValues, // and this too
       // initial_values: "",
-      max_message_size_bytes: Opt(null),
-      transaction_window: Opt(null),
-      archive_options: Opt(null),
+      max_message_size_bytes: Opt<bigint>(),
+      transaction_window: Opt<Duration>(),
+      archive_options: Opt<ArchiveOptions & ArchiveOptionsExtras>(),
       send_whitelist: [],
+      token_symbol: Opt<string>(),
+      transfer_fee: Opt<ICPTs>(),
+      token_name: Opt<string>(),
       // hello: "world",
-    }]
-  })
+  }]
 }
 
 // TODO:

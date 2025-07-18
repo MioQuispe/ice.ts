@@ -3,6 +3,11 @@ import * as url from "node:url"
 import { customCanister, type TaskCtxShape } from "@ice.ts/runner"
 import type { _SERVICE } from "./cycles_wallet.types"
 
+export type {
+  _SERVICE as CyclesWalletService,
+  InitArgs as CyclesWalletInitArgs,
+}
+
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 
 type InitArgs = []

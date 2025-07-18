@@ -17,12 +17,12 @@ import type { _SERVICE as NNSRootService } from "./nns-root/nns-root.types.ts"
 import type { _SERVICE as NNSRegistryService } from "./nns-registry/nns-registry.types.ts"
 import type {
 	_SERVICE as NNSGovernanceService,
-	Governance as GovernanceInitArgs,
-	NeuronStakeTransfer,
+	Governance as NNSGovernanceInitArgs,
 } from "./nns-governance/governance_latest.types.ts"
 import type {
 	_SERVICE as NNSLedgerService,
 	LedgerCanisterPayload,
+	UpgradeArgs as NNSLedgerUpgradeArgs,
 } from "./nns-ledger/ledger-canister.types.ts"
 import type { _SERVICE as NNSGenesisTokenService } from "./nns-genesis-token/nns-genesis-token.types.ts"
 import type {
@@ -31,11 +31,23 @@ import type {
 } from "./nns-cycles-minting/nns-cycles-minting.types.ts"
 import type { _SERVICE as NNSLifelineService } from "./nns-lifeline/nns-lifeline.types.ts"
 // import type { _SERVICE as NNSICCKBTCMinterService } from "./nns-ic-ckbtc-minter/nns-ic-ckbtc-minter.types"
-import { InternetIdentity, Ledger } from "@ice.ts/canisters"
 import { serializeGtc, type Gtc } from "./nns-genesis-token/encodeArgs.js"
 import { Principal } from "@dfinity/principal"
 import { IDL } from "@dfinity/candid"
-import { Effect } from "effect"
+
+export type { NNSDappService, NNSDappInitArgs }
+export type {
+	NNSSNSWasmService,
+	SnsWasmCanisterInitPayload,
+	NNSSNSWasmInitArgs,
+}
+export type { NNSRootService, NNSRootInitArgs }
+export type { NNSRegistryService }
+export type { NNSGovernanceService, NNSGovernanceInitArgs }
+export type { NNSLedgerService, LedgerCanisterPayload, NNSLedgerUpgradeArgs }
+export type { NNSGenesisTokenService, Gtc as NNSGenesisTokenInitArgs }
+export type { NNSCyclesMintingService, NNSCyclesInitArgs }
+export type { NNSLifelineService, NNSLifelineInitArgs }
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 
@@ -378,36 +390,36 @@ export const NNSRegistry = (
 		},
 		{
 			// TODO: add mode
-			customEncode: (args) =>
-				Effect.gen(function* () {
-					const init = ({ IDL }) => {
-						// build IDL types exactly as declared above
-						const RegistryMutation = IDL.Record({
-							key: IDL.Vec(IDL.Nat8),
-							mutation_type: IDL.Int32,
-							value: IDL.Vec(IDL.Nat8),
-						})
-						const Precondition = IDL.Record({
-							key: IDL.Vec(IDL.Nat8),
-							expected_version: IDL.Nat64,
-						})
-						const RegistryAtomicMutateRequest = IDL.Record({
-							mutations: IDL.Vec(RegistryMutation),
-							preconditions: IDL.Vec(Precondition),
-						})
-						const RegistryCanisterInitPayload = IDL.Record({
-							mutations: IDL.Vec(RegistryAtomicMutateRequest),
-						})
-						return [RegistryCanisterInitPayload]
-					}
-					const idlFactory = undefined
-					// return args
-					const encodedInitPayload = encodeArgs(args, {
-						init,
-						idlFactory,
+			customEncode: async (args) => {
+				// TODO: fix, this is disabled for now
+				// encoding is broken
+				const idlFactory = undefined as any
+				// return args
+				const encodedInitPayload = encodeArgs(args, {
+					init: ({ IDL }) => {
+					// build IDL types exactly as declared above
+					const RegistryMutation = IDL.Record({
+						key: IDL.Vec(IDL.Nat8),
+						mutation_type: IDL.Int32,
+						value: IDL.Vec(IDL.Nat8),
 					})
-					return encodedInitPayload
-				}),
+					const Precondition = IDL.Record({
+						key: IDL.Vec(IDL.Nat8),
+						expected_version: IDL.Nat64,
+					})
+					const RegistryAtomicMutateRequest = IDL.Record({
+						mutations: IDL.Vec(RegistryMutation),
+						preconditions: IDL.Vec(Precondition),
+					})
+					const RegistryCanisterInitPayload = IDL.Record({
+						mutations: IDL.Vec(RegistryAtomicMutateRequest),
+					})
+					return [RegistryCanisterInitPayload]
+				},
+					idlFactory,
+				})
+				return encodedInitPayload
+			},
 		},
 	)
 }
@@ -421,7 +433,7 @@ const NNSGovernanceIds = {
 	ic: "rrkah-fqaaa-aaaaa-aaaaq-cai",
 }
 
-type NNSGovernanceInitArgs = []
+// type NNSGovernanceInitArgs = []
 
 export const NNSGovernance = (
 	initArgsOrFn?:
@@ -429,7 +441,7 @@ export const NNSGovernance = (
 		| ((args: { ctx: TaskCtxShape }) => NNSGovernanceInitArgs)
 		| ((args: { ctx: TaskCtxShape }) => Promise<NNSGovernanceInitArgs>),
 ) => {
-	return customCanister<NNSGovernanceService, [GovernanceInitArgs]>(
+	return customCanister<NNSGovernanceService, [NNSGovernanceInitArgs]>(
 		async ({ ctx }) => {
 			const initArgs =
 				typeof initArgsOrFn === "function"
@@ -453,7 +465,7 @@ export const NNSGovernance = (
 				? await initArgsOrFn({ ctx })
 				: initArgsOrFn
 		// return null
-		const governanceInitArgs: GovernanceInitArgs = {
+		const governanceInitArgs: NNSGovernanceInitArgs = {
 			default_followees: [],
 			making_sns_proposal: [],
 			most_recent_monthly_node_provider_rewards: [],
@@ -702,12 +714,11 @@ export const NNSGenesisToken = (
 			return exampleGtc
 		},
 		{
-			customEncode: (args) =>
-				Effect.gen(function* () {
-					// return args
-					const serialized = serializeGtc(args)
-					return serialized
-				}),
+			customEncode: async (args) => {
+				// return args
+				const serialized = serializeGtc(args)
+				return serialized
+			},
 		},
 	)
 }

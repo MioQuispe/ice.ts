@@ -1,8 +1,15 @@
 import path from "node:path"
 import * as url from "node:url"
 import { customCanister, Opt, type TaskCtxShape } from "@ice.ts/runner"
-import type { _SERVICE, LedgerArgs } from "./cycles_ledger.types"
+import type { _SERVICE, LedgerArgs, UpgradeArgs } from "./cycles_ledger.types"
 import type { Principal } from "@dfinity/principal"
+
+export type {
+  _SERVICE as CyclesLedgerService,
+  LedgerArgs as CyclesLedgerLedgerArgs,
+  UpgradeArgs as CyclesLedgerUpgradeArgs,
+  InitArgs as CyclesLedgerInitArgs,
+}
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 

@@ -2,6 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { Ids } from "../ids.js"
 import { ICEUser } from "../types/types.js"
 import { DefaultReplica, ReplicaService } from "./replica.js"
+import { TaskRuntimeError } from "../tasks/lib.js"
 
 // const DfxReplicaService = DfxReplica.pipe(
 // 	Layer.provide(NodeContext.layer),
@@ -38,8 +39,7 @@ export class DefaultConfig extends Context.Tag("DefaultConfig")<
 			const defaultReplica = yield* DefaultReplica
 			const defaultUser = yield* Effect.tryPromise({
 				try: () => Ids.fromDfx("default"),
-				// TODO: tagged error
-				catch: () => new Error("Failed to get default user"),
+				catch: () => new TaskRuntimeError({ message: "Failed to get default user" }),
 			})
 			const defaultNetworks = {
 				local: {

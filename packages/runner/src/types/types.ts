@@ -1,21 +1,29 @@
-import type {
-	ActorSubclass,
-	SignIdentity
-} from "@dfinity/agent"
+import type { ActorSubclass, SignIdentity } from "@dfinity/agent"
 import { NodeContext } from "@effect/platform-node"
 import type { StandardSchemaV1 } from "@standard-schema/spec"
-import type { Effect } from "effect"
+import type { ConfigError, Effect } from "effect"
 import { CanisterIdsService } from "../services/canisterIds.js"
 import { CLIFlags } from "../services/cliFlags.js"
 import { DefaultConfig } from "../services/defaultConfig.js"
-import { ICEConfigService } from "../services/iceConfig.js"
-import { Moc } from "../services/moc.js"
-import type { ReplicaService } from "../services/replica.js"
+import { ICEConfigError, ICEConfigService } from "../services/iceConfig.js"
+import { Moc, MocError } from "../services/moc.js"
+import type {
+	AgentError,
+	CanisterCreateError,
+	CanisterDeleteError,
+	CanisterInstallError,
+	CanisterStatusError,
+	CanisterStopError,
+	ReplicaService,
+} from "../services/replica.js"
 import { DefaultReplica } from "../services/replica.js"
 import { TaskArgsService } from "../services/taskArgs.js"
 import { TaskRegistry } from "../services/taskRegistry.js"
 import { TaskCtxService } from "../services/taskCtx.js"
-import type { TaskCtx } from "../tasks/lib.js"
+import type { TaskArgsParseError, TaskCtx, TaskNotFoundError, TaskRuntimeError } from "../tasks/lib.js"
+import { TaskError } from "../builders/lib.js"
+import { PlatformError } from "@effect/platform/Error"
+import { DeploymentError } from "../canister.js"
 
 export type CanisterActor = {
 	actor: ActorSubclass<unknown>
@@ -144,7 +152,6 @@ export interface PositionalParam<T = unknown> extends TaskParam<T> {
 // })
 // export const positionalParamSchema = type.and(taskParamSchema)
 
-
 // export const makeTask = <A, D extends Record<string, Task>, P extends Record<string, Task>, E, R, I>({
 // 	effect: Effect.Effect<A, E, R>,
 // 	description: string,
@@ -175,26 +182,44 @@ export interface PositionalParam<T = unknown> extends TaskParam<T> {
 // 	} satisfies Task<A, D, P, E, R>
 // }
 
-type TaskRequirements = 
-		| TaskCtx
-		| TaskCtxService
-		| TaskRegistry
-		| CanisterIdsService
-		| NodeContext.NodeContext
-		| ICEConfigService
-		| Moc
-		| DefaultConfig
-		| DefaultReplica
-		| CLIFlags
-		| TaskArgsService
+type TaskRequirements =
+	| TaskCtx
+	| TaskCtxService
+	| TaskRegistry
+	| CanisterIdsService
+	| NodeContext.NodeContext
+	| ICEConfigService
+	| Moc
+	| DefaultConfig
+	| DefaultReplica
+	| CLIFlags
+	| TaskArgsService
+
+// TODO: separate per task... 
+export type TaskErrors =
+	| TaskError
+	| PlatformError
+	| DeploymentError
+	| AgentError
+	| TaskNotFoundError
+	| ICEConfigError
+	| ConfigError.ConfigError
+	| CanisterStatusError
+	| CanisterStopError
+	| CanisterDeleteError
+	| CanisterCreateError
+	| CanisterInstallError
+	| MocError
+	| TaskRuntimeError
+	| TaskArgsParseError
 
 export interface Task<
 	out A = unknown,
 	D extends Record<string, Task> = {},
 	P extends Record<string, Task> = {},
 	// TODO:
-	out E = unknown,
-	out R = TaskRequirements
+	out E = TaskErrors,
+	out R = TaskRequirements,
 > {
 	_tag: "task"
 	readonly id: symbol // assigned by the builder
@@ -209,21 +234,20 @@ export interface Task<
 	params: Record<string, NamedParam | PositionalParam>
 }
 
-
 export type CachedTask<
 	A = unknown,
 	D extends Record<string, Task> = {},
 	P extends Record<string, Task> = {},
 	Input = unknown,
 	// TODO:
-	E = unknown,
-	R = TaskRequirements
+	E = TaskErrors,
+	R = TaskRequirements,
 > = Task<A, D, P, E, R> & {
 	input: () => Effect.Effect<Input, E, R> // optional input
 	encode: (
 		value: A,
 		input: Input,
-	) => Effect.Effect<string | Uint8Array<ArrayBufferLike>>
+	) => Effect.Effect<string | Uint8Array<ArrayBufferLike>, E, R>
 	encodingFormat: "string" | "uint8array"
 	decode: (
 		value: string | Uint8Array<ArrayBufferLike>,

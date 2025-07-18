@@ -4,7 +4,12 @@ import path from "node:path"
 import { customCanister } from "@ice.ts/runner"
 import type { TaskCtxShape } from "@ice.ts/runner"
 import { Principal } from "@dfinity/principal"
-import type { InitArgs, _SERVICE } from "./dip721.did.d"
+import type { InitArgs, _SERVICE } from "./dip721.types.js"
+
+export type {
+  _SERVICE as DIP721Service,
+  InitArgs as DIP721InitArgs,
+}
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 

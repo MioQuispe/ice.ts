@@ -1,5 +1,6 @@
 export * from "./internet-identity"
-export * from "./ledger"
+// TODO: need to update wasm & did to latest
+// export * from "./ledger"
 export * from "./icrc1_ledger"
 export * from "./dip721"
 export * from "./dip20"
@@ -15,3 +16,15 @@ export * from "./nfid"
 // export * from "./wicp"
 // export * from "./assets"
 // export * from "./management"
+
+// TODO: can we change some tsconfig setting instead?
+// {
+//   "compilerOptions": {
+//     "declaration": true,
+//     "declarationMap": true,
+//     "preserveSymlinks": true,
+//     // Try these options:
+//     "skipLibCheck": true,
+//     "isolatedModules": false
+//   }
+// }

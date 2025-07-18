@@ -11,6 +11,14 @@ import type {
 // import type { _SERVICE } from "./icrc7_nft.did.js"
 import * as url from "node:url"
 
+export type {
+  _SERVICE as ICRC7NFTService,
+  InitArgList as ICRC7NFTInitArgList,
+  InitArgList__1 as ICRC7NFTInitArgList__1,
+  InitArgs as ICRC7NFTInitArgs,
+  InitArgs__1 as ICRC7NFTInitArgs__1,
+}
+
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 const canisterName = "icrc7_nft"
 

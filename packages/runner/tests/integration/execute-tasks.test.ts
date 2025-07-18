@@ -533,15 +533,13 @@ describe("executeTasks", () => {
 		const create = task("create").run(() => "CREATED").make()
 		const build = task("build").run(() => "BUILT").make()
 		const bindings = task("bindings").run(() => "BINDINGS").make()
-		const installArgs = task("install_args").run(() => "INSTALL_ARGS").make()
 		const install = task("install").run(() => "INSTALLED").make()
 		const deploy = task("deploy").run(() => "DEPLOYED").make()
 
 		// Set up chain dependencies
 		build.dependencies = { create }
 		bindings.dependencies = { build }
-		installArgs.dependencies = { bindings }
-		install.dependencies = { install_args: installArgs }
+		install.dependencies = { bindings }
 		deploy.dependencies = { install }
 
 		// Track execution order
@@ -549,7 +547,6 @@ describe("executeTasks", () => {
 			create,
 			build,
 			bindings,
-			installArgs,
 			install,
 			deploy,
 		].map((task) => ({
@@ -582,12 +579,13 @@ describe("executeTasks", () => {
 			}),
 		)
 
+		// TODO: this might be wrong because we changed the order of the tasks
+		// fix the test, double check
 		// Should execute in strict order
 		expect(executionOrder).toEqual([
 			"create",
 			"build",
 			"bindings",
-			"install_args",
 			"install",
 			"deploy",
 		])
