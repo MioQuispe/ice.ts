@@ -37,12 +37,13 @@ import {
 	Tags,
 	resolveMode,
 	TaskError,
+	makeUpgradeTask,
 } from "./lib.js"
 import { type } from "arktype"
 import { deployParams } from "./custom.js"
 import { ActorSubclass } from "../types/actor.js"
 
-type MotokoCanisterConfig = {
+export type MotokoCanisterConfig = {
 	src: string
 	canisterId?: string
 }
@@ -50,6 +51,7 @@ type MotokoCanisterConfig = {
 export type MotokoCanisterScope<
 	_SERVICE = any,
 	I = any,
+	U = any,
 	D extends Record<string, Task> = Record<string, Task>,
 	P extends Record<string, Task> = Record<string, Task>,
 > = {
@@ -66,6 +68,7 @@ export type MotokoCanisterScope<
 		bindings: MotokoBindingsTask
 		build: MotokoBuildTask
 		install: InstallTask<_SERVICE, I, D, P>
+		upgrade: InstallTask<_SERVICE, U, D, P>
 		// D,
 		// P
 		stop: StopTask
@@ -182,7 +185,7 @@ export const makeMotokoDeployTask = <_SERVICE>(): MotokoDeployTask<_SERVICE> => 
 			const parentScope = (yield* getNodeByPath(canisterName)) as MotokoCanisterScope<_SERVICE>
 			const { args } = yield* TaskCtx
 			const taskArgs = args as MotokoDeployTaskArgs
-			const mode = yield* resolveMode()
+			const mode = taskArgs.mode === "auto" ? yield* resolveMode() : taskArgs.mode
 			const [canisterId, { wasmPath, candidPath }] = yield* Effect.all(
 				[
 					Effect.gen(function* () {
@@ -471,7 +474,8 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 
 export class MotokoCanisterBuilder<
 	I extends unknown[],
-	S extends MotokoCanisterScope<_SERVICE, I, D, P>,
+	U extends unknown[],
+	S extends MotokoCanisterScope<_SERVICE, I, U, D, P>,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
 	Config extends MotokoCanisterConfig,
@@ -488,7 +492,8 @@ export class MotokoCanisterBuilder<
 			| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<Config>),
 	): MotokoCanisterBuilder<
 		I,
-		MotokoCanisterScope<_SERVICE, I, D, P>,
+		U,
+		MotokoCanisterScope<_SERVICE, I, U, D, P>,
 		D,
 		P,
 		Config,
@@ -500,7 +505,7 @@ export class MotokoCanisterBuilder<
 				...this.#scope.children,
 				create: makeCreateTask<P>(canisterConfigOrFn, [Tags.MOTOKO]),
 			},
-		} satisfies MotokoCanisterScope<_SERVICE, I, D, P>
+		} satisfies MotokoCanisterScope<_SERVICE, I, U, D, P>
 		return new MotokoCanisterBuilder(updatedScope)
 	}
 
@@ -511,7 +516,8 @@ export class MotokoCanisterBuilder<
 			| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<Config>),
 	): MotokoCanisterBuilder<
 		I,
-		MotokoCanisterScope<_SERVICE, I, D, P>,
+		U,
+		MotokoCanisterScope<_SERVICE, I, U, D, P>,
 		D,
 		P,
 		Config,
@@ -523,7 +529,7 @@ export class MotokoCanisterBuilder<
 				...this.#scope.children,
 				build: makeMotokoBuildTask<P>(canisterConfigOrFn),
 			},
-		} satisfies MotokoCanisterScope<_SERVICE, I, D, P>
+		} satisfies MotokoCanisterScope<_SERVICE, I, U, D, P>
 		return new MotokoCanisterBuilder(updatedScope)
 	}
 
@@ -544,7 +550,8 @@ export class MotokoCanisterBuilder<
 		},
 	): MotokoCanisterBuilder<
 		I,
-		MotokoCanisterScope<_SERVICE, I, D, P>,
+		U,
+		MotokoCanisterScope<_SERVICE, I, U, D, P>,
 		D,
 		P,
 		Config,
@@ -577,7 +584,53 @@ export class MotokoCanisterBuilder<
 				...this.#scope.children,
 				install: installTask,
 			},
-		} satisfies MotokoCanisterScope<_SERVICE, I, D, P>
+		} satisfies MotokoCanisterScope<_SERVICE, I, U, D, P>
+
+		return new MotokoCanisterBuilder(updatedScope)
+	}
+
+	upgradeArgs(
+		upgradeArgsFn: (args: {
+			ctx: TaskCtxShape
+			deps: ExtractScopeSuccesses<D> & ExtractScopeSuccesses<P>
+		}) => U | Promise<U>,
+		{
+			customEncode,
+		}: {
+			customEncode:
+				| undefined
+				| ((args: U) => Promise<Uint8Array<ArrayBufferLike>>)
+		} = {
+			customEncode: undefined,
+		},
+	): MotokoCanisterBuilder<
+		I,
+		U,
+		MotokoCanisterScope<_SERVICE, I, U, D, P>,
+		D,
+		P,
+		Config,
+		_SERVICE
+	> {
+		// TODO: passing in I makes the return type: any
+		// TODO: we need to inject dependencies again! or they can be overwritten
+
+		const updatedScope = {
+			...this.#scope,
+			children: {
+				...this.#scope.children,
+				// TODO: add these to the task type
+				upgrade: {
+					// TODO: makeUpgradeTask
+					...makeUpgradeTask<U, D, P, _SERVICE>(upgradeArgsFn, {
+						customEncode,
+					}),
+					// TODO: ...?
+					dependsOn: this.#scope.children.install.dependsOn,
+					dependencies: this.#scope.children.install.dependencies,
+				} as InstallTask<_SERVICE, U, D, P>,
+			},
+		} satisfies MotokoCanisterScope<_SERVICE, I, U, D, P>
 
 		return new MotokoCanisterBuilder(updatedScope)
 	}
@@ -586,7 +639,8 @@ export class MotokoCanisterBuilder<
 		providedDeps: ValidProvidedDeps<D, UP>,
 	): MotokoCanisterBuilder<
 		I,
-		MotokoCanisterScope<_SERVICE, I, D, NP>,
+		U,
+		MotokoCanisterScope<_SERVICE, I, U, D, NP>,
 		D,
 		NP,
 		Config,
@@ -598,16 +652,21 @@ export class MotokoCanisterBuilder<
 			...this.#scope.children.install,
 			dependencies: finalDeps,
 		} as InstallTask<_SERVICE, I, D, NP>
+		const upgradeTask = {
+			...this.#scope.children.upgrade,
+			dependencies: finalDeps,
+		} as InstallTask<_SERVICE, U, D, NP>
 
 		const updatedChildren = {
 			...this.#scope.children,
 			install: installTask,
+			upgrade: upgradeTask,
 		}
 
 		const updatedScope = {
 			...this.#scope,
 			children: updatedChildren,
-		} satisfies MotokoCanisterScope<_SERVICE, I, D, NP>
+		} satisfies MotokoCanisterScope<_SERVICE, I, U, D, NP>
 		return new MotokoCanisterBuilder(updatedScope)
 	}
 
@@ -618,7 +677,8 @@ export class MotokoCanisterBuilder<
 		dependencies: UD,
 	): MotokoCanisterBuilder<
 		I,
-		MotokoCanisterScope<_SERVICE, I, ND, P>,
+		U,
+		MotokoCanisterScope<_SERVICE, I, U, ND, P>,
 		ND,
 		P,
 		Config,
@@ -629,25 +689,30 @@ export class MotokoCanisterBuilder<
 			...this.#scope.children.install,
 			dependsOn: updatedDependsOn,
 		} as InstallTask<_SERVICE, I, ND, P>
+		const upgradeTask = {
+			...this.#scope.children.upgrade,
+			dependsOn: updatedDependsOn,
+		} as InstallTask<_SERVICE, U, ND, P>
 		const updatedChildren = {
 			...this.#scope.children,
 			install: installTask,
+			upgrade: upgradeTask,
 		}
 
 		const updatedScope = {
 			...this.#scope,
 			children: updatedChildren,
-		} satisfies MotokoCanisterScope<_SERVICE, I, ND, P>
+		} satisfies MotokoCanisterScope<_SERVICE, I, U, ND, P>
 		return new MotokoCanisterBuilder(updatedScope)
 	}
 
 	make(
 		this: IsValid<S> extends true
-			? MotokoCanisterBuilder<I, S, D, P, Config, _SERVICE>
+			? MotokoCanisterBuilder<I, U, S, D, P, Config, _SERVICE>
 			: DependencyMismatchError<S>,
 	): S {
 		// // Otherwise we get a type error
-		const self = this as MotokoCanisterBuilder<I, S, D, P, Config, _SERVICE>
+		const self = this as MotokoCanisterBuilder<I, U, S, D, P, Config, _SERVICE>
 
 		// TODO: can we do this in a type-safe way?
 		// so we get warnings about stale dependencies?
@@ -657,7 +722,7 @@ export class MotokoCanisterBuilder<
 			...self.#scope,
 			id: Symbol("scope"),
 			children: linkedChildren,
-		} satisfies MotokoCanisterScope<_SERVICE, I, D, P>
+		} satisfies MotokoCanisterScope<_SERVICE, I, U, D, P>
 		return finalScope
 	}
 }
@@ -665,6 +730,7 @@ export class MotokoCanisterBuilder<
 export const motokoCanister = <
 	_SERVICE = unknown,
 	I extends unknown[] = unknown[],
+	U extends unknown[] = unknown[],
 	P extends Record<string, unknown> = Record<string, unknown>,
 >(
 	canisterConfigOrFn:
@@ -685,14 +751,16 @@ export const motokoCanister = <
 			stop: makeStopTask(),
 			remove: makeRemoveTask(),
 			install: makeInstallTask<I, {}, {}, _SERVICE>(),
+			upgrade: makeUpgradeTask<U, {}, {}, _SERVICE>(),
 			deploy: makeMotokoDeployTask<_SERVICE>(),
 			status: makeCanisterStatusTask([Tags.MOTOKO]),
 		},
-	} satisfies MotokoCanisterScope<_SERVICE, I, {}, {}>
+	} satisfies MotokoCanisterScope<_SERVICE, I, U, {}, {}>
 
 	return new MotokoCanisterBuilder<
 		I,
-		MotokoCanisterScope<_SERVICE, I, {}, {}>,
+		U,
+		MotokoCanisterScope<_SERVICE, I, U, {}, {}>,
 		{},
 		{},
 		MotokoCanisterConfig,

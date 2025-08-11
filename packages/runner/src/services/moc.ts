@@ -28,7 +28,7 @@ export class Moc extends Context.Tag("Moc")<
       const version = yield* commandExecutor.string(versionCommand)
 
       if (!resolvedMocPath) {
-        yield* Effect.fail(
+        return yield* Effect.fail(
           new MocError({
             message: "Moc not found",
           }),

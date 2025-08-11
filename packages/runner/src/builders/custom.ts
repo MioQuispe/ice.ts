@@ -35,13 +35,14 @@ import {
 	Tags,
 	ValidProvidedDeps,
 	resolveMode,
+	makeUpgradeTask,
 } from "./lib.js"
 // TODO: move to lib.ts
 import { generateDIDJS } from "../canister.js"
 import { TaskCtx } from "../tasks/lib.js"
 import { type } from "arktype"
 
-type CustomCanisterConfig = {
+export type CustomCanisterConfig = {
 	wasm: string
 	candid: string
 	canisterId?: string
@@ -49,10 +50,10 @@ type CustomCanisterConfig = {
 
 export const deployParams = {
 	mode: {
-		type: InstallModes,
+		type: InstallModes.or("'auto'"),
 		description: "The mode to install the canister in",
 		// TODO: add "auto"
-		default: "install" as const,
+		default: "auto" as const,
 		isFlag: true as const,
 		isOptional: true as const,
 		isVariadic: false as const,
@@ -135,7 +136,8 @@ export const makeCustomDeployTask = <_SERVICE>(): DeployTask<_SERVICE> => {
 			)) as CanisterScope<_SERVICE>
 			const { args } = yield* TaskCtx
 			const taskArgs = args as DeployTaskArgs
-			const mode = yield* resolveMode()
+			// const mode = yield* resolveMode()
+			const mode = taskArgs.mode === "auto" ? yield* resolveMode() : taskArgs.mode
 			const [
 				canisterId,
 				[
@@ -374,7 +376,8 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 
 export class CustomCanisterBuilder<
 	I,
-	S extends CanisterScope<_SERVICE, I, D, P>,
+	U,
+	S extends CanisterScope<_SERVICE, I, U, D, P>,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
 	Config extends CustomCanisterConfig,
@@ -392,7 +395,8 @@ export class CustomCanisterBuilder<
 			| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<Config>),
 	): CustomCanisterBuilder<
 		I,
-		CanisterScope<_SERVICE, I, D, P>,
+		U,
+		CanisterScope<_SERVICE, I, U, D, P>,
 		D,
 		P,
 		Config,
@@ -404,7 +408,7 @@ export class CustomCanisterBuilder<
 				...this.#scope.children,
 				create: makeCreateTask<P>(canisterConfigOrFn, [Tags.CUSTOM]),
 			},
-		} satisfies CanisterScope<_SERVICE, I, D, P>
+		} satisfies CanisterScope<_SERVICE, I, U, D, P>
 		return new CustomCanisterBuilder(updatedScope)
 	}
 
@@ -415,7 +419,8 @@ export class CustomCanisterBuilder<
 			| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<Config>),
 	): CustomCanisterBuilder<
 		I,
-		CanisterScope<_SERVICE, I, D, P>,
+		U,
+		CanisterScope<_SERVICE, I, U, D, P>,
 		D,
 		P,
 		Config,
@@ -427,7 +432,7 @@ export class CustomCanisterBuilder<
 				...this.#scope.children,
 				build: makeCustomBuildTask<P>(canisterConfigOrFn),
 			},
-		} satisfies CanisterScope<_SERVICE, I, D, P>
+		} satisfies CanisterScope<_SERVICE, I, U, D, P>
 		return new CustomCanisterBuilder(updatedScope)
 	}
 
@@ -448,7 +453,8 @@ export class CustomCanisterBuilder<
 		},
 	): CustomCanisterBuilder<
 		I,
-		CanisterScope<_SERVICE, I, D, P>,
+		U,
+		CanisterScope<_SERVICE, I, U, D, P>,
 		D,
 		P,
 		Config,
@@ -470,7 +476,53 @@ export class CustomCanisterBuilder<
 					dependencies: this.#scope.children.install.dependencies,
 				} as InstallTask<_SERVICE, I, D, P>,
 			},
-		} satisfies CanisterScope<_SERVICE, I, D, P>
+		} satisfies CanisterScope<_SERVICE, I, U, D, P>
+
+		return new CustomCanisterBuilder(updatedScope)
+	}
+
+	upgradeArgs(
+		upgradeArgsFn: (args: {
+			ctx: TaskCtxShape
+			deps: ExtractScopeSuccesses<D> & ExtractScopeSuccesses<P>
+		}) => U | Promise<U>,
+		{
+			customEncode,
+		}: {
+			customEncode:
+				| undefined
+				| ((args: U) => Promise<Uint8Array<ArrayBufferLike>>)
+		} = {
+			customEncode: undefined,
+		},
+	): CustomCanisterBuilder<
+		I,
+		U,
+		CanisterScope<_SERVICE, I, U, D, P>,
+		D,
+		P,
+		Config,
+		_SERVICE
+	> {
+		// TODO: passing in I makes the return type: any
+		// TODO: we need to inject dependencies again! or they can be overwritten
+
+		const updatedScope = {
+			...this.#scope,
+			children: {
+				...this.#scope.children,
+				// TODO: add these to the task type
+				upgrade: {
+					// TODO: makeUpgradeTask
+					...makeUpgradeTask<U, D, P, _SERVICE>(upgradeArgsFn, {
+						customEncode,
+					}),
+					// TODO: ...?
+					dependsOn: this.#scope.children.install.dependsOn,
+					dependencies: this.#scope.children.install.dependencies,
+				} as InstallTask<_SERVICE, U, D, P>,
+			},
+		} satisfies CanisterScope<_SERVICE, I, U, D, P>
 
 		return new CustomCanisterBuilder(updatedScope)
 	}
@@ -479,7 +531,8 @@ export class CustomCanisterBuilder<
 		dependencies: ValidProvidedDeps<D, UP>,
 	): CustomCanisterBuilder<
 		I,
-		CanisterScope<_SERVICE, I, D, NP>,
+		U,
+		CanisterScope<_SERVICE, I, U, D, NP>,
 		D,
 		NP,
 		Config,
@@ -494,8 +547,12 @@ export class CustomCanisterBuilder<
 					...this.#scope.children.install,
 					dependencies: updatedDependencies,
 				} as InstallTask<_SERVICE, I, D, NP>,
+				upgrade: {
+					...this.#scope.children.upgrade,
+					dependencies: updatedDependencies,
+				} as InstallTask<_SERVICE, U, D, NP>,
 			},
-		} satisfies CanisterScope<_SERVICE, I, D, NP>
+		} satisfies CanisterScope<_SERVICE, I, U, D, NP>
 		return new CustomCanisterBuilder(updatedScope)
 	}
 
@@ -506,7 +563,8 @@ export class CustomCanisterBuilder<
 		dependsOn: UD,
 	): CustomCanisterBuilder<
 		I,
-		CanisterScope<_SERVICE, I, ND, P>,
+		U,
+		CanisterScope<_SERVICE, I, U, ND, P>,
 		ND,
 		P,
 		Config,
@@ -521,24 +579,28 @@ export class CustomCanisterBuilder<
 					...this.#scope.children.install,
 					dependsOn: updatedDependsOn,
 				} as InstallTask<_SERVICE, I, ND, P>,
+				upgrade: {
+					...this.#scope.children.upgrade,
+					dependsOn: updatedDependsOn,
+				} as InstallTask<_SERVICE, U, ND, P>,
 			},
-		} satisfies CanisterScope<_SERVICE, I, ND, P>
+		} satisfies CanisterScope<_SERVICE, I, U, ND, P>
 		return new CustomCanisterBuilder(updatedScope)
 	}
 
 	make(
 		this: IsValid<S> extends true
-			? CustomCanisterBuilder<I, S, D, P, Config, _SERVICE>
+			? CustomCanisterBuilder<I, U, S, D, P, Config, _SERVICE>
 			: DependencyMismatchError<S>,
 	): S {
 		// Otherwise we get a type error
-		const self = this as CustomCanisterBuilder<I, S, D, P, Config, _SERVICE>
+		const self = this as CustomCanisterBuilder<I, U, S, D, P, Config, _SERVICE>
 		const linkedChildren = linkChildren(self.#scope.children)
 		const finalScope = {
 			...self.#scope,
 			id: Symbol("scope"),
 			children: linkedChildren,
-		} satisfies CanisterScope<_SERVICE, I, D, P>
+		} satisfies CanisterScope<_SERVICE, I, U, D, P>
 		return finalScope
 		// const self = this as CustomCanisterBuilder<I, S, D, P, Config, _SERVICE>
 		// return {
@@ -554,14 +616,15 @@ export class CustomCanisterBuilder<
 
 // TODO: some kind of metadata?
 // TODO: warn about context if not provided
-export const customCanister = <_SERVICE = unknown, I = unknown[]>(
+export const customCanister = <_SERVICE = unknown, I = unknown[], U = unknown[]>(
 	canisterConfigOrFn:
 		| ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)
 		| ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)
 		| CustomCanisterConfig,
 ): CustomCanisterBuilder<
 	I,
-	CanisterScope<_SERVICE, I, {}, {}>,
+	U,
+	CanisterScope<_SERVICE, I, U, {}, {}>,
 	{},
 	{},
 	CustomCanisterConfig,
@@ -579,16 +642,18 @@ export const customCanister = <_SERVICE = unknown, I = unknown[]>(
 			bindings: makeBindingsTask(canisterConfigOrFn),
 			build: makeCustomBuildTask(canisterConfigOrFn),
 			install: makeInstallTask<I, {}, {}, _SERVICE>(),
+			upgrade: makeUpgradeTask<U, {}, {}, _SERVICE>(),
 			stop: makeStopTask(),
 			remove: makeRemoveTask(),
 			deploy: makeCustomDeployTask<_SERVICE>(),
 			status: makeCanisterStatusTask([Tags.CUSTOM]),
 		},
-	} satisfies CanisterScope<_SERVICE, I, {}, {}>
+	} satisfies CanisterScope<_SERVICE, I, U, {}, {}>
 
 	return new CustomCanisterBuilder<
 		I,
-		CanisterScope<_SERVICE, I, {}, {}>,
+		U,
+		CanisterScope<_SERVICE, I, U, {}, {}>,
 		{},
 		{},
 		CustomCanisterConfig,

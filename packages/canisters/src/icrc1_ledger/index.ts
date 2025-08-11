@@ -79,7 +79,7 @@ export const ICRC1Ledger = (
 	})
 }
 
-ICRC1Ledger.makeUpgradeArgs = () => [
+ICRC1Ledger.makeUpgradeArgs = (): [LedgerArg] => [
 	{
 		Upgrade: [],
 	},

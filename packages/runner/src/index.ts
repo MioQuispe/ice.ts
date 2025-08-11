@@ -1,4 +1,5 @@
-import { NodeContext } from "@effect/platform-node"
+// import { DevTools } from "@effect/experimental"
+import { NodeContext, NodeSocket } from "@effect/platform-node"
 import { layerFileSystem } from "@effect/platform/KeyValueStore"
 import { StandardSchemaV1 } from "@standard-schema/spec"
 import { type } from "arktype"
@@ -63,6 +64,9 @@ export const DefaultsLayer = Layer.mergeAll(
 		Layer.provide(NodeContext.layer),
 		Layer.provide(configLayer),
 	),
+	// DevTools.layerWebSocket().pipe(
+	// 	Layer.provide(NodeSocket.layerWebSocketConstructor),
+	// ),
 )
 
 // export const TUILayer = Layer.mergeAll(
@@ -142,9 +146,9 @@ export const makeRuntime = ({
 			),
 		)
 	const CLIFlagsLayer = Layer.succeed(CLIFlags, {
-				globalArgs,
-				taskArgs: cliTaskArgs,
-			})
+		globalArgs,
+		taskArgs: cliTaskArgs,
+	})
 	const TaskArgsLayer = Layer.succeed(TaskArgsService, { taskArgs })
 	const TaskCtxLayer = TaskCtxService.Live.pipe(
 		// TODO: it doesnt need the whole DefaultsLayer
@@ -170,4 +174,3 @@ export const makeRuntime = ({
 export { Opt } from "./canister.js"
 export { runCli } from "./cli/index.js"
 export type { TaskCtxShape } from "./tasks/lib.js"
-
