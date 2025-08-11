@@ -565,14 +565,12 @@ export const executeTasks = (
 						"task.args found:",
 						task.args,
 						taskPath,
-						task,
 					)
 					argsMap = task.args
 				} else {
 					yield* Effect.logDebug(
 						"task.args not found, resolving task args",
 						taskPath,
-						task,
 					)
 					// TODO: causes issues if task is called programmatically
 					const resolvedTaskArgs = yield* resolveTaskArgs(
@@ -638,11 +636,15 @@ export const executeTasks = (
 					)
 					cacheKey = Option.some(cachedTask.computeCacheKey(input))
 
-					if ("revalidate" in cachedTask) {
-						const ok = yield* cachedTask.revalidate({ input })
-					}
+					const isCacheValid =
+						"revalidate" in cachedTask
+							? yield* cachedTask.revalidate({ input }).pipe(
+                                Effect.provide(taskLayer)
+                            )
+							: true
 
 					if (
+						isCacheValid &&
 						Option.isSome(cacheKey) &&
 						(yield* taskRegistry.has(cacheKey.value))
 					) {

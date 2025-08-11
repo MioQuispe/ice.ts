@@ -125,6 +125,7 @@ interface TaskCtxServiceShape {
 	) => Effect.Effect<TaskCtxShape, ConfigError.ConfigError | TaskRuntimeError>
 }
 
+// TODO: no need to be a service? just Effect is enough?
 export class TaskCtxService extends Context.Tag("TaskCtxService")<
 	TaskCtxService,
 	TaskCtxServiceShape
