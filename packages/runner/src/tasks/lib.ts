@@ -164,7 +164,9 @@ export const collectDependencies = (
 		for (const key in rootTask.dependencies) {
 			// TODO: fix? Task dependencies are {}, cant be indexed.
 			// But Record<string, Task> as default is circular. not allowed
-			const dependency = (rootTask.dependencies as Record<string, Task>)[key]
+			const dependency = (rootTask.dependencies as Record<string, Task>)[
+				key
+			]
 			if (!dependency) continue
 			collectDependencies([dependency], collected)
 		}
@@ -297,7 +299,10 @@ export const resolveTaskArgs = (
  * @throws Error if a cycle is detected.
  */
 export const topologicalSortTasks = <A, E, R>(
-	tasks: Map<symbol, Task<A, Record<string, Task>, Record<string, Task>, E, R>>,
+	tasks: Map<
+		symbol,
+		Task<A, Record<string, Task>, Record<string, Task>, E, R>
+	>,
 ): Task<A, Record<string, Task>, Record<string, Task>, E, R>[] => {
 	const indegree = new Map<symbol, number>()
 	const adjList = new Map<symbol, symbol[]>()
@@ -408,14 +413,19 @@ export const logDetailedError = (
 		// Get task context safely
 		const getTaskContext = Effect.gen(function* () {
 			return {
-				canisterName: taskCtx.taskPath.split(":").slice(0, -1).join(":"),
+				canisterName: taskCtx.taskPath
+					.split(":")
+					.slice(0, -1)
+					.join(":"),
 				appDir: taskCtx.appDir,
 				iceDir: taskCtx.iceDir,
 				currentNetwork: taskCtx.currentNetwork,
 				dependencies: Object.keys(taskCtx.depResults),
 			}
 		}).pipe(
-			Effect.orElse(() => Effect.succeed({ error: "TaskCtx unavailable" })),
+			Effect.orElse(() =>
+				Effect.succeed({ error: "TaskCtx unavailable" }),
+			),
 		)
 
 		const taskContext = yield* getTaskContext
@@ -430,7 +440,9 @@ export const logDetailedError = (
 					// For SystemError specifically
 					syscall: "syscall" in error ? error.syscall : undefined,
 					pathOrDescriptor:
-						"pathOrDescriptor" in error ? error.pathOrDescriptor : undefined,
+						"pathOrDescriptor" in error
+							? error.pathOrDescriptor
+							: undefined,
 					reason: "reason" in error ? error.reason : undefined,
 					module: "module" in error ? error.module : undefined,
 					method: "method" in error ? error.method : undefined,
@@ -549,7 +561,12 @@ export const executeTasks = (
 				// this is purely for the cli
 				let argsMap: Record<string, unknown>
 				if ("args" in task && Object.keys(task.args).length > 0) {
-					yield* Effect.logDebug("task.args found:", task.args, taskPath, task)
+					yield* Effect.logDebug(
+						"task.args found:",
+						task.args,
+						taskPath,
+						task,
+					)
 					argsMap = task.args
 				} else {
 					yield* Effect.logDebug(
@@ -558,19 +575,21 @@ export const executeTasks = (
 						task,
 					)
 					// TODO: causes issues if task is called programmatically
-					const resolvedTaskArgs = yield* resolveTaskArgs(task, cliTaskArgs)
+					const resolvedTaskArgs = yield* resolveTaskArgs(
+						task,
+						cliTaskArgs,
+					)
 					// TODO: clean up
 					const hasTaskArgs = Object.keys(taskArgs).length > 0
 					argsMap = hasTaskArgs
 						? taskArgs
 						: Object.fromEntries([
-								...Object.entries(resolvedTaskArgs.named).map(([name, arg]) => [
-									arg.param.name,
-									arg.arg,
-								]),
-								...Object.entries(resolvedTaskArgs.positional).map(
-									([index, arg]) => [index, arg.arg],
+								...Object.entries(resolvedTaskArgs.named).map(
+									([name, arg]) => [arg.param.name, arg.arg],
 								),
+								...Object.entries(
+									resolvedTaskArgs.positional,
+								).map(([index, arg]) => [index, arg.arg]),
 							])
 				}
 				const currentContext =
@@ -581,7 +600,10 @@ export const executeTasks = (
 					>()
 				// We have to reuse the service or task references will be different
 				// as the task tree gets recreated each time
-				const iceConfigService = Context.get(currentContext, ICEConfigService)
+				const iceConfigService = Context.get(
+					currentContext,
+					ICEConfigService,
+				)
 				const iceConfigServiceLayer = Layer.succeed(
 					ICEConfigService,
 					iceConfigService,
@@ -605,17 +627,28 @@ export const executeTasks = (
 					const cachedTask = maybeCachedTask.value
 					const input = yield* cachedTask.input().pipe(
 						Effect.provide(taskLayer),
+						// Effect.option,
 						Effect.catchAll((error) =>
-							logDetailedError(error, taskCtx, "cached task input()"),
+							logDetailedError(
+								error,
+								taskCtx,
+								"cached task input()",
+							),
 						),
 					)
 					cacheKey = Option.some(cachedTask.computeCacheKey(input))
+
+					if ("revalidate" in cachedTask) {
+						const ok = yield* cachedTask.revalidate({ input })
+					}
 
 					if (
 						Option.isSome(cacheKey) &&
 						(yield* taskRegistry.has(cacheKey.value))
 					) {
-						yield* Effect.logDebug(`Cache hit for cacheKey: ${cacheKey}`)
+						yield* Effect.logDebug(
+							`Cache hit for cacheKey: ${cacheKey}`,
+						)
 						const encodingFormat = cachedTask.encodingFormat
 						const maybeResult = yield* taskRegistry.get(
 							cacheKey.value,
@@ -623,17 +656,27 @@ export const executeTasks = (
 						)
 						if (Option.isSome(maybeResult)) {
 							const encodedResult = maybeResult.value
-							yield* Effect.logDebug("decoding result:", encodedResult)
+							yield* Effect.logDebug(
+								"decoding result:",
+								encodedResult,
+							)
 							const decodedResult = yield* cachedTask
 								.decode(encodedResult, input)
 								.pipe(
 									Effect.provide(taskLayer),
 									Effect.catchAll((error) =>
-										logDetailedError(error, taskCtx, "cached task decode()"),
+										logDetailedError(
+											error,
+											taskCtx,
+											"cached task decode()",
+										),
 									),
 								)
 							result = Option.some(decodedResult)
-							yield* Effect.logDebug("decoded result:", decodedResult)
+							yield* Effect.logDebug(
+								"decoded result:",
+								decodedResult,
+							)
 						} else {
 							// TODO: reading cache failed, why would this happen?
 							// get rid of this and just throw?
@@ -641,7 +684,11 @@ export const executeTasks = (
 								yield* cachedTask.effect.pipe(
 									Effect.provide(taskLayer),
 									Effect.catchAll((error) =>
-										logDetailedError(error, taskCtx, "cached task effect()"),
+										logDetailedError(
+											error,
+											taskCtx,
+											"cached task effect()",
+										),
 									),
 								),
 							)
@@ -659,20 +706,32 @@ export const executeTasks = (
 							),
 						)
 						if (Option.isNone(result)) {
-							yield* Effect.logDebug("No result for task", taskPath)
+							yield* Effect.logDebug(
+								"No result for task",
+								taskPath,
+							)
 							return yield* Effect.fail(
-								new TaskRuntimeError({ message: `No result for task ${taskPath}` }),
+								new TaskRuntimeError({
+									message: `No result for task ${taskPath}`,
+								}),
 							)
 						}
 						// TODO: fix. maybe not json stringify?
 						if (Option.isSome(cacheKey)) {
-							yield* Effect.logDebug("encoding result:", result.value)
+							yield* Effect.logDebug(
+								"encoding result:",
+								result.value,
+							)
 							const encodedResult = yield* cachedTask
 								.encode(result.value, input)
 								.pipe(
 									Effect.provide(taskLayer),
 									Effect.catchAll((error) =>
-										logDetailedError(error, taskCtx, "cached task encode()"),
+										logDetailedError(
+											error,
+											taskCtx,
+											"cached task encode()",
+										),
 									),
 								)
 							yield* Effect.logDebug(
@@ -682,7 +741,10 @@ export const executeTasks = (
 								"with value:",
 								encodedResult,
 							)
-							yield* taskRegistry.set(cacheKey.value, encodedResult)
+							yield* taskRegistry.set(
+								cacheKey.value,
+								encodedResult,
+							)
 						} else {
 							// ????
 							yield* Effect.logDebug(
@@ -697,7 +759,11 @@ export const executeTasks = (
 						yield* task.effect.pipe(
 							Effect.provide(taskLayer),
 							Effect.catchAll((error) =>
-								logDetailedError(error, taskCtx, "task effect()"),
+								logDetailedError(
+									error,
+									taskCtx,
+									"task effect()",
+								),
 							),
 						),
 					)
@@ -705,7 +771,11 @@ export const executeTasks = (
 
 				if (Option.isNone(result)) {
 					yield* Effect.logDebug("No result for task", taskPath)
-					return yield* Effect.fail(new TaskRuntimeError({ message: `No result for task ${taskPath}` }))
+					return yield* Effect.fail(
+						new TaskRuntimeError({
+							message: `No result for task ${taskPath}`,
+						}),
+					)
 				}
 				if (Option.isNone(cacheKey)) {
 					yield* Effect.logDebug(
@@ -722,7 +792,9 @@ export const executeTasks = (
 				const currentDeferred = deferredMap.get(task.id)
 				if (currentDeferred) {
 					yield* Deferred.succeed(currentDeferred, {
-						cacheKey: Option.isSome(cacheKey) ? cacheKey.value : undefined,
+						cacheKey: Option.isSome(cacheKey)
+							? cacheKey.value
+							: undefined,
 						result: result.value,
 					})
 				}

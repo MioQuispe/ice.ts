@@ -42,9 +42,7 @@ export type ExtractPositionalParams<TP extends TaskParams> = Extract<
 	PositionalParam
 >[]
 
-export type ExtractArgsFromTaskParams<
-	TP extends TaskParams,
-> = {
+export type ExtractArgsFromTaskParams<TP extends TaskParams> = {
 	// TODO: schema needs to be typed as StandardSchemaV1
 	[K in keyof TP]: TP[K] extends { isOptional: true }
 		? StandardSchemaV1.InferOutput<TP[K]["type"]> | undefined
@@ -203,10 +201,13 @@ class TaskBuilder<
 	}
 
 	params<const IP extends ValidateInputParams<IP>>(inputParams: IP) {
-		const updatedParams = Record.map(inputParams as InputParams, (v, k) => ({
-			...v,
-			name: k,
-		})) as unknown as AddNameToParams<IP>
+		const updatedParams = Record.map(
+			inputParams as InputParams,
+			(v, k) => ({
+				...v,
+				name: k,
+			}),
+		) as unknown as AddNameToParams<IP>
 		// TODO: use arktype?
 		const namedParams: Record<string, NamedParam> = {}
 		const positionalParams: Array<PositionalParam> = []
@@ -295,7 +296,10 @@ class TaskBuilder<
 						? yield* Effect.tryPromise({
 								try: () => patchGlobals(() => maybePromise),
 								catch: (error) => {
-									console.error("Error executing task:", error)
+									console.error(
+										"Error executing task:",
+										error,
+									)
 									return error instanceof Error
 										? error
 										: new Error(String(error))
@@ -467,23 +471,23 @@ const params = {
 		isVariadic: false,
 		isFlag: true,
 		aliases: ["a"],
-	}
+	},
 }
 const paramTask = task()
 	.params({
-	amount: {
-		// TODO: takes either string or standard schema
-		type: type("number"),
-		description: "The amount of tokens to mint",
-		// default: "100",
-		default: 100,
-		parse: (value: string) => Number(value),
-		isOptional: true,
-		isVariadic: false,
-		isFlag: true,
-		aliases: ["a"],
-	}
-})
+		amount: {
+			// TODO: takes either string or standard schema
+			type: type("number"),
+			description: "The amount of tokens to mint",
+			// default: "100",
+			default: 100,
+			parse: (value: string) => Number(value),
+			isOptional: true,
+			isVariadic: false,
+			isFlag: true,
+			aliases: ["a"],
+		},
+	})
 	.run(async ({ args }) => {
 		return args.amount
 	})

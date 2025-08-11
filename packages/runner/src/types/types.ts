@@ -20,7 +20,12 @@ import { DefaultReplica } from "../services/replica.js"
 import { TaskArgsService } from "../services/taskArgs.js"
 import { TaskRegistry } from "../services/taskRegistry.js"
 import { TaskCtxService } from "../services/taskCtx.js"
-import type { TaskArgsParseError, TaskCtx, TaskNotFoundError, TaskRuntimeError } from "../tasks/lib.js"
+import type {
+	TaskArgsParseError,
+	TaskCtx,
+	TaskNotFoundError,
+	TaskRuntimeError,
+} from "../tasks/lib.js"
 import { TaskError } from "../builders/lib.js"
 import { PlatformError } from "@effect/platform/Error"
 import { DeploymentError } from "../canister.js"
@@ -195,7 +200,7 @@ type TaskRequirements =
 	| CLIFlags
 	| TaskArgsService
 
-// TODO: separate per task... 
+// TODO: separate per task...
 export type TaskErrors =
 	| TaskError
 	| PlatformError
@@ -244,6 +249,7 @@ export type CachedTask<
 	R = TaskRequirements,
 > = Task<A, D, P, E, R> & {
 	input: () => Effect.Effect<Input, E, R> // optional input
+	revalidate?: (args: { input: Input }) => Effect.Effect<boolean, E, R>
 	encode: (
 		value: A,
 		input: Input,

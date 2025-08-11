@@ -211,7 +211,10 @@ export const picReplicaImpl = Effect.gen(function* () {
 	const getCanisterStatus = ({
 		canisterId,
 		identity,
-	}: { canisterId: string; identity: SignIdentity }) =>
+	}: {
+		canisterId: string
+		identity: SignIdentity
+	}) =>
 		Effect.gen(function* () {
 			const mgmt = yield* getMgmt(identity)
 			const canisterInfo = yield* Effect.tryPromise({
@@ -258,7 +261,10 @@ export const picReplicaImpl = Effect.gen(function* () {
 	const getCanisterInfo = ({
 		canisterId,
 		identity,
-	}: { canisterId: string; identity: SignIdentity }) =>
+	}: {
+		canisterId: string
+		identity: SignIdentity
+	}) =>
 		Effect.gen(function* () {
 			const mgmt = yield* getMgmt(identity)
 
@@ -296,7 +302,9 @@ export const picReplicaImpl = Effect.gen(function* () {
 			// } as const
 			const canisterInfo = {
 				...canisterStatusResult,
-				status: Object.keys(canisterStatusResult.status)[0] as CanisterStatus,
+				status: Object.keys(
+					canisterStatusResult.status,
+				)[0] as CanisterStatus,
 			}
 			return canisterInfo
 		})
@@ -366,12 +374,15 @@ export const picReplicaImpl = Effect.gen(function* () {
 								try: () =>
 									mgmt.upload_chunk({
 										chunk: Array.from(chunk),
-										canister_id: Principal.fromText(canisterId),
+										canister_id:
+											Principal.fromText(canisterId),
 									}),
 								catch: (error) =>
 									new CanisterInstallError({
 										message: `Failed to upload chunk: ${
-											error instanceof Error ? error.message : String(error)
+											error instanceof Error
+												? error.message
+												: String(error)
 										}`,
 									}),
 							}).pipe(
@@ -398,9 +409,12 @@ export const picReplicaImpl = Effect.gen(function* () {
 								mode: modePayload,
 								chunk_hashes_list: chunkHashes,
 								store_canister: Opt<Principal>(),
-								wasm_module_hash: new Uint8Array(wasmModuleHash),
+								wasm_module_hash: new Uint8Array(
+									wasmModuleHash,
+								),
 							}
-							const encodedPayload = encodeInstallCodeChunkedRequest(payload)
+							const encodedPayload =
+								encodeInstallCodeChunkedRequest(payload)
 
 							const req = {
 								canisterId: Principal.fromText("aaaaa-aa"),
@@ -409,7 +423,10 @@ export const picReplicaImpl = Effect.gen(function* () {
 								payload: encodedPayload,
 								effectivePrincipal: (targetSubnetId
 									? {
-											subnetId: Principal.fromText(targetSubnetId),
+											subnetId:
+												Principal.fromText(
+													targetSubnetId,
+												),
 										}
 									: undefined) as EffectivePrincipal,
 							}
@@ -542,7 +559,11 @@ export const picReplicaImpl = Effect.gen(function* () {
 			canisterId,
 			canisterDID,
 			identity,
-		}: { canisterId: string; canisterDID: any; identity: SignIdentity }) =>
+		}: {
+			canisterId: string
+			canisterDID: any
+			identity: SignIdentity
+		}) =>
 			Effect.gen(function* () {
 				const actor = pic.createActor(
 					canisterDID.idlFactory,

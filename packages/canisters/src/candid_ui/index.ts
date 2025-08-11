@@ -7,8 +7,8 @@ import type { _SERVICE } from "./candid_ui.types"
 import { Effect } from "effect"
 
 export type {
-  _SERVICE as CandidUIService,
-  CanisterInitArgs as CandidUIInitArgs,
+	_SERVICE as CandidUIService,
+	CanisterInitArgs as CandidUIInitArgs,
 }
 
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
@@ -19,12 +19,20 @@ type CanisterInitArgs = []
 const canisterName = "candid_ui"
 
 export const CandidUI = () => {
-  const result = customCanister<_SERVICE, CanisterInitArgs>(async ({ ctx }) => {
-    return {
-      wasm: path.resolve(__dirname, `./${canisterName}/${canisterName}.wasm.gz`),
-      candid: path.resolve(__dirname, `./${canisterName}/${canisterName}.did`),
-    }
-  })
+	const result = customCanister<_SERVICE, CanisterInitArgs>(
+		async ({ ctx }) => {
+			return {
+				wasm: path.resolve(
+					__dirname,
+					`./${canisterName}/${canisterName}.wasm.gz`,
+				),
+				candid: path.resolve(
+					__dirname,
+					`./${canisterName}/${canisterName}.did`,
+				),
+			}
+		},
+	)
 
-  return result
+	return result
 }

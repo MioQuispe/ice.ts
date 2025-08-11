@@ -137,7 +137,8 @@ export const makeCustomDeployTask = <_SERVICE>(): DeployTask<_SERVICE> => {
 			const { args } = yield* TaskCtx
 			const taskArgs = args as DeployTaskArgs
 			// const mode = yield* resolveMode()
-			const mode = taskArgs.mode === "auto" ? yield* resolveMode() : taskArgs.mode
+			const mode =
+				taskArgs.mode === "auto" ? yield* resolveMode() : taskArgs.mode
 			const [
 				canisterId,
 				[
@@ -231,7 +232,10 @@ export const makeBindingsTask = (
 		input: () =>
 			Effect.gen(function* () {
 				const { taskPath, depResults } = yield* TaskCtx
-				const depCacheKeys = Record.map(depResults, (dep) => dep.cacheKey)
+				const depCacheKeys = Record.map(
+					depResults,
+					(dep) => dep.cacheKey,
+				)
 				const input = {
 					taskPath,
 					depCacheKeys,
@@ -252,7 +256,10 @@ export const makeBindingsTask = (
 // TODO: pass in wasm and candid as task params instead?
 export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 	canisterConfigOrFn:
-		| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<CustomCanisterConfig>)
+		| ((args: {
+				ctx: TaskCtxShape
+				deps: P
+		  }) => Promise<CustomCanisterConfig>)
 		| ((args: { ctx: TaskCtxShape; deps: P }) => CustomCanisterConfig)
 		| CustomCanisterConfig,
 ): BuildTask => {
@@ -292,7 +299,9 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 			yield* Effect.logDebug("Reading wasm file", canisterConfig.wasm)
 			const wasm = yield* fs.readFile(canisterConfig.wasm)
 			// Ensure the directory exists
-			yield* fs.makeDirectory(path.dirname(outWasmPath), { recursive: true })
+			yield* fs.makeDirectory(path.dirname(outWasmPath), {
+				recursive: true,
+			})
 			yield* fs.writeFile(outWasmPath, wasm)
 
 			const outCandidPath = path.join(
@@ -328,7 +337,10 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 			Effect.gen(function* () {
 				const { taskPath, depResults } = yield* TaskCtx
 				const canisterName = taskPath.split(":").slice(0, -1).join(":")
-				const depCacheKeys = Record.map(depResults, (dep) => dep.cacheKey)
+				const depCacheKeys = Record.map(
+					depResults,
+					(dep) => dep.cacheKey,
+				)
 				const path = yield* Path.Path
 				const { appDir, iceDir } = yield* TaskCtx
 				// TODO...? might be problematic if user does lots of async
@@ -337,10 +349,8 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 				const candidPath = canisterConfig.candid
 				// TODO: we need a separate cache for this?
 				const prevWasmDigest = undefined
-				const { fresh, digest: wasmDigest } = yield* isArtifactCachedEffect(
-					wasmPath,
-					prevWasmDigest,
-				)
+				const { fresh, digest: wasmDigest } =
+					yield* isArtifactCachedEffect(wasmPath, prevWasmDigest)
 				// yield* Effect.tryPromise({
 				// 	//
 				// 	try: () => isArtifactCached(wasmPath, prevWasmDigest),
@@ -594,7 +604,15 @@ export class CustomCanisterBuilder<
 			: DependencyMismatchError<S>,
 	): S {
 		// Otherwise we get a type error
-		const self = this as CustomCanisterBuilder<I, U, S, D, P, Config, _SERVICE>
+		const self = this as CustomCanisterBuilder<
+			I,
+			U,
+			S,
+			D,
+			P,
+			Config,
+			_SERVICE
+		>
 		const linkedChildren = linkChildren(self.#scope.children)
 		const finalScope = {
 			...self.#scope,
@@ -616,7 +634,11 @@ export class CustomCanisterBuilder<
 
 // TODO: some kind of metadata?
 // TODO: warn about context if not provided
-export const customCanister = <_SERVICE = unknown, I = unknown[], U = unknown[]>(
+export const customCanister = <
+	_SERVICE = unknown,
+	I = unknown[],
+	U = unknown[],
+>(
 	canisterConfigOrFn:
 		| ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)
 		| ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)

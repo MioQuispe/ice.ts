@@ -1,6 +1,4 @@
-import {
-	Effect
-} from "effect"
+import { Effect } from "effect"
 import type { Task } from "../types/types.js"
 import {
 	collectDependencies,
@@ -52,20 +50,30 @@ export const runTask = <T extends Task>(
 		const sortedTasks = yield* Effect.try({
 			try: () => topologicalSortTasks(collectedTasks),
 			catch: (error) => {
-				return new TaskRuntimeError({ message: "Error sorting tasks", error })
-			}
+				return new TaskRuntimeError({
+					message: "Error sorting tasks",
+					error,
+				})
+			},
 		})
 		yield* Effect.logDebug("Sorted tasks")
 		yield* Effect.logDebug("Executing tasks...")
 		const taskEffects = yield* executeTasks(sortedTasks, progressCb)
 		// TODO:
-		const results = yield* Effect.all(taskEffects, { concurrency: "unbounded" })
+		const results = yield* Effect.all(taskEffects, {
+			concurrency: "unbounded",
+		})
 		yield* Effect.logDebug("Tasks executed")
 		const maybeResult = results.find((r) => r.taskId === task.id)
 		if (!maybeResult) {
-			return yield* Effect.fail(new TaskRuntimeError({ message: `Task ${task.description} not found in results`, error: maybeResult }))
+			return yield* Effect.fail(
+				new TaskRuntimeError({
+					message: `Task ${task.description} not found in results`,
+					error: maybeResult,
+				}),
+			)
 		}
-		return maybeResult as { 
+		return maybeResult as {
 			result: TaskSuccess<T>
 			taskId: symbol
 			taskPath: string
