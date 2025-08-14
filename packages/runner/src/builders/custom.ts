@@ -14,6 +14,7 @@ import type {
 	InstallTaskArgs,
 	IsValid,
 	TaskCtxShape,
+	UpgradeTask,
 } from "./lib.js"
 import { getNodeByPath, ParamsToArgs } from "../tasks/lib.js"
 import { runTask } from "../tasks/run.js"
@@ -115,7 +116,12 @@ export const deployParams = {
 
 export type DeployTaskArgs = ParamsToArgs<typeof deployParams>
 
-export const makeCustomDeployTask = <_SERVICE>(): DeployTask<_SERVICE> => {
+export const makeCustomDeployTask = <_SERVICE>(
+	canisterConfigOrFn:
+		| ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)
+		| ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)
+		| CustomCanisterConfig,
+): DeployTask<_SERVICE> => {
 	return {
 		_tag: "task",
 		// TODO: change
@@ -130,6 +136,7 @@ export const makeCustomDeployTask = <_SERVICE>(): DeployTask<_SERVICE> => {
 		effect: Effect.gen(function* () {
 			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
+			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
 			// TODO: include this in taskCtx instead? as { scope }
 			const parentScope = (yield* getNodeByPath(
 				canisterName,
@@ -137,8 +144,13 @@ export const makeCustomDeployTask = <_SERVICE>(): DeployTask<_SERVICE> => {
 			const { args } = yield* TaskCtx
 			const taskArgs = args as DeployTaskArgs
 			// const mode = yield* resolveMode()
+
+			// TODO: this requires create, because some have canisterId hardcoded?
 			const mode =
-				taskArgs.mode === "auto" ? yield* resolveMode() : taskArgs.mode
+				taskArgs.mode === "auto"
+					? yield* resolveMode(canisterConfig?.canisterId)
+					: taskArgs.mode
+			console.log("mode", mode, "taskArgs.mode", taskArgs.mode)
 			const [
 				canisterId,
 				[
@@ -174,19 +186,32 @@ export const makeCustomDeployTask = <_SERVICE>(): DeployTask<_SERVICE> => {
 			)
 
 			yield* Effect.logDebug("Now running install task")
-			const { result: installResult } = yield* runTask(
-				parentScope.children.install,
-				{
-					mode,
-					// TODO: currently does nothing. they are generated inside the installTask from the installArgsFn
-					// do we run the installArgsFn here instead? separate the task again?
-					// args: taskArgs.args,
-					canisterId,
-					wasm: wasmPath,
-				},
-			)
+			let taskResult
+			if (mode === "upgrade") {
+				const { result } = yield* runTask(
+					parentScope.children.upgrade,
+					{
+						canisterId,
+						wasm: wasmPath,
+					},
+				)
+				taskResult = result
+			} else {
+				const { result } = yield* runTask(
+					parentScope.children.install,
+					{
+						mode,
+						// TODO: currently does nothing. they are generated inside the installTask from the installArgsFn
+						// do we run the installArgsFn here instead? separate the task again?
+						// args: taskArgs.args,
+						canisterId,
+						wasm: wasmPath,
+					},
+				)
+				taskResult = result
+			}
 			yield* Effect.logDebug("Canister deployed successfully")
-			return installResult
+			return taskResult
 		}),
 		description: "Deploy canister code",
 		tags: [Tags.CANISTER, Tags.DEPLOY, Tags.CUSTOM],
@@ -450,7 +475,6 @@ export class CustomCanisterBuilder<
 		installArgsFn: (args: {
 			ctx: TaskCtxShape
 			deps: ExtractScopeSuccesses<D> & ExtractScopeSuccesses<P>
-			mode: InstallModes
 		}) => I | Promise<I>,
 		{
 			customEncode,
@@ -530,7 +554,7 @@ export class CustomCanisterBuilder<
 					// TODO: ...?
 					dependsOn: this.#scope.children.install.dependsOn,
 					dependencies: this.#scope.children.install.dependencies,
-				} as InstallTask<_SERVICE, U, D, P>,
+				} as UpgradeTask<_SERVICE, U, D, P>,
 			},
 		} satisfies CanisterScope<_SERVICE, I, U, D, P>
 
@@ -560,7 +584,7 @@ export class CustomCanisterBuilder<
 				upgrade: {
 					...this.#scope.children.upgrade,
 					dependencies: updatedDependencies,
-				} as InstallTask<_SERVICE, U, D, NP>,
+				} as UpgradeTask<_SERVICE, U, D, NP>,
 			},
 		} satisfies CanisterScope<_SERVICE, I, U, D, NP>
 		return new CustomCanisterBuilder(updatedScope)
@@ -592,7 +616,7 @@ export class CustomCanisterBuilder<
 				upgrade: {
 					...this.#scope.children.upgrade,
 					dependsOn: updatedDependsOn,
-				} as InstallTask<_SERVICE, U, ND, P>,
+				} as UpgradeTask<_SERVICE, U, ND, P>,
 			},
 		} satisfies CanisterScope<_SERVICE, I, U, ND, P>
 		return new CustomCanisterBuilder(updatedScope)
@@ -667,7 +691,7 @@ export const customCanister = <
 			upgrade: makeUpgradeTask<U, {}, {}, _SERVICE>(),
 			stop: makeStopTask(),
 			remove: makeRemoveTask(),
-			deploy: makeCustomDeployTask<_SERVICE>(),
+			deploy: makeCustomDeployTask<_SERVICE>(canisterConfigOrFn),
 			status: makeCanisterStatusTask([Tags.CUSTOM]),
 		},
 	} satisfies CanisterScope<_SERVICE, I, U, {}, {}>
@@ -840,7 +864,7 @@ const t = test
 		// asd2: test._scope.children.install,
 	})
 	// ._scope.children
-	.installArgs(async ({ ctx, mode, deps }) => {
+	.installArgs(async ({ ctx, deps }) => {
 		// TODO: allow chaining builders with ice.customCanister()
 		// to pass in context?
 		// ctx.users.default

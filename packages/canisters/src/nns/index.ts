@@ -184,6 +184,20 @@ export const NNSSNSWasm = (
 		//   min_icp_e8s: [],
 		// }]
 	})
+	.upgradeArgs(async ({ ctx }) => {
+		const initArgs =
+			typeof initArgsOrFn === "function"
+				? await initArgsOrFn({ ctx })
+				: initArgsOrFn
+
+		return [
+			{
+				allowed_principals: [],
+				access_controls_enabled: false,
+				sns_subnet_ids: [],
+			},
+		]
+	})
 }
 
 NNSSNSWasm.id = NNSSNSWasmIds
@@ -218,6 +232,8 @@ export const NNSRoot = (
 			typeof initArgsOrFn === "function"
 				? await initArgsOrFn({ ctx })
 				: initArgsOrFn
+		return []
+	}).upgradeArgs(async ({ ctx }) => {
 		return []
 	})
 }
@@ -331,7 +347,7 @@ export const NNSRegistry = (
 			}
 		},
 	).installArgs(
-		async ({ ctx, mode }) => {
+		async ({ ctx }) => {
 			const initArgs =
 				typeof initArgsOrFn === "function"
 					? await initArgsOrFn({ ctx })
@@ -422,6 +438,67 @@ export const NNSRegistry = (
 			},
 		},
 	)
+	.upgradeArgs(
+		async ({ ctx }) => {
+			const initArgs =
+				typeof initArgsOrFn === "function"
+					? await initArgsOrFn({ ctx })
+					: initArgsOrFn
+			const initPayload: [RegistryCanisterInitPayload] = [
+				{
+					mutations: [
+						// {}
+						//   {
+						//   preconditions: [],
+						//   mutations: [],
+						// }
+					],
+				},
+			]
+			return initPayload
+		},
+		{
+			// TODO: add mode
+			customEncode: async (args) => {
+				// TODO: fix, this is disabled for now
+				// encoding is broken
+				const idlFactory = undefined as any
+				// return args
+				const encodedInitPayload = encodeArgs(args, {
+					init: ({ IDL }) => {
+					// build IDL types exactly as declared above
+					const RegistryMutation = IDL.Record({
+						key: IDL.Vec(IDL.Nat8),
+						mutation_type: IDL.Int32,
+						value: IDL.Vec(IDL.Nat8),
+					})
+					const Precondition = IDL.Record({
+						key: IDL.Vec(IDL.Nat8),
+						expected_version: IDL.Nat64,
+					})
+					const RegistryAtomicMutateRequest = IDL.Record({
+						mutations: IDL.Vec(RegistryMutation),
+						preconditions: IDL.Vec(Precondition),
+					})
+					const RegistryCanisterInitPayload = IDL.Record({
+						mutations: IDL.Vec(RegistryAtomicMutateRequest),
+					})
+					return [RegistryCanisterInitPayload]
+				},
+					idlFactory,
+				})
+				return encodedInitPayload
+			},
+		},
+	)
+    // TODO: ? custom upgrade args?
+    // .upgradeArgs(async ({ ctx }) => {
+	// 	return [
+	// 		{
+	// 			Upgrade: [],
+	// 		},
+	// 	]
+	// })
 }
 
 NNSRegistry.id = NNSRegistryIds
@@ -584,6 +661,131 @@ export const NNSGovernance = (
 		//   genesis_timestamp_seconds : nat64;
 		// };
 	})
+	.upgradeArgs(async ({ ctx }) => {
+		const initArgs =
+			typeof initArgsOrFn === "function"
+				? await initArgsOrFn({ ctx })
+				: initArgsOrFn
+		// return null
+		const governanceInitArgs: NNSGovernanceInitArgs = {
+			default_followees: [],
+			making_sns_proposal: [],
+			most_recent_monthly_node_provider_rewards: [],
+			maturity_modulation_last_updated_at_timestamp_seconds: [],
+			wait_for_quiet_threshold_seconds: BigInt(60 * 60 * 24 * 4), // 4 days
+			metrics: [],
+			neuron_management_voting_period_seconds: [BigInt(60 * 60 * 48)], // 48 hours
+			node_providers: [],
+			cached_daily_maturity_modulation_basis_points: [],
+			economics: [
+				{
+					neuron_minimum_stake_e8s: 0n,
+					voting_power_economics: [
+						{
+							start_reducing_voting_power_after_seconds: [0n],
+							clear_following_after_seconds: [0n],
+							neuron_minimum_dissolve_delay_to_vote_seconds: [0n],
+						},
+					],
+					max_proposals_to_keep_per_topic: 0,
+					neuron_management_fee_per_proposal_e8s: 0n,
+					reject_cost_e8s: 0n,
+					transaction_fee_e8s: 0n,
+					neuron_spawn_dissolve_delay_seconds: 0n,
+					minimum_icp_xdr_rate: 0n,
+					maximum_node_provider_rewards_e8s: 0n,
+					neurons_fund_economics: [
+						{
+							maximum_icp_xdr_rate: [
+								{
+									// human_readable: ["0"],
+									basis_points: [0n],
+								},
+							],
+							neurons_fund_matched_funding_curve_coefficients: [
+								{
+									contribution_threshold_xdr: [
+										{
+											human_readable: ["0"],
+											// basis_points: [0n],
+										},
+									],
+									one_third_participation_milestone_xdr: [
+										{
+											human_readable: ["0"],
+											// basis_points: [0n],
+										},
+									],
+									full_participation_milestone_xdr: [
+										{
+											human_readable: ["0"],
+											// basis_points: [0n],
+										},
+									],
+								},
+							],
+							max_theoretical_neurons_fund_participation_amount_xdr: [
+								{
+									human_readable: ["0"],
+									// basis_points: [0n],
+								},
+							],
+							minimum_icp_xdr_rate: [
+								{
+									// human_readable: ["0"],
+									basis_points: [0n],
+								},
+							],
+						},
+					],
+				},
+			],
+			restore_aging_summary: [],
+			spawning_neurons: [],
+			latest_reward_event: [],
+			to_claim_transfers: [],
+			short_voting_period_seconds: BigInt(60 * 60 * 12), // 12 hours
+			// topic_followee_index: [],
+			// migrations: [],
+			proposals: [],
+			xdr_conversion_rate: [
+				{
+					xdr_permyriad_per_icp: [10_000n],
+					// exchange_rate: [0n],
+					timestamp_seconds: [0n],
+				},
+			],
+			in_flight_commands: [],
+			neurons: [],
+			genesis_timestamp_seconds: 0n,
+		}
+
+		return [governanceInitArgs]
+		// type Governance = record {
+		//   default_followees : vec record { int32; Followees };
+		//   making_sns_proposal : opt MakingSnsProposal;
+		//   most_recent_monthly_node_provider_rewards : opt MonthlyNodeProviderRewards;
+		//   maturity_modulation_last_updated_at_timestamp_seconds : opt nat64;
+		//   wait_for_quiet_threshold_seconds : nat64;
+		//   metrics : opt GovernanceCachedMetrics;
+		//   neuron_management_voting_period_seconds : opt nat64;
+		//   node_providers : vec NodeProvider;
+		//   cached_daily_maturity_modulation_basis_points : opt int32;
+		//   economics : opt NetworkEconomics;
+		//   restore_aging_summary : opt RestoreAgingSummary;
+		//   spawning_neurons : opt bool;
+		//   latest_reward_event : opt RewardEvent;
+		//   to_claim_transfers : vec NeuronStakeTransfer;
+		//   short_voting_period_seconds : nat64;
+		//   topic_followee_index : vec record { int32; FollowersMap };
+		//   migrations : opt Migrations;
+		//   proposals : vec record { nat64; ProposalData };
+		//   xdr_conversion_rate : opt XdrConversionRate;
+		//   in_flight_commands : vec record { nat64; NeuronInFlightCommand };
+		//   neurons : vec record { nat64; Neuron };
+		//   genesis_timestamp_seconds : nat64;
+		// };
+	})
 }
 
 NNSGovernance.id = NNSGovernanceIds
@@ -618,24 +820,12 @@ export const NNSLedger = (
 				candid: path.resolve(__dirname, "./nns/nns-ledger/ledger-canister.did"),
 			}
 		},
-	).installArgs(async ({ ctx, mode }) => {
+	).installArgs(async ({ ctx }) => {
 		const initArgs =
 			typeof initArgsOrFn === "function"
 				? await initArgsOrFn({ ctx })
 				: initArgsOrFn
 		// TODO:
-		if (mode === "upgrade") {
-			return [
-				{
-					Upgrade: [],
-					// TODO: ??
-					// 					[{
-					//   'icrc1_minting_account' : [] | [Account],
-					//   'feature_flags' : [] | [FeatureFlags],
-					// 					}]
-				},
-			]
-		}
 		return [
 			{
 				Init: {
@@ -653,6 +843,13 @@ export const NNSLedger = (
 					token_name: [],
 					feature_flags: [],
 				},
+			},
+		]
+	}).upgradeArgs(async ({ ctx }) => {
+        // TODO: add missing fields?
+		return [
+			{
+				Upgrade: [],
 			},
 		]
 	})
@@ -675,7 +872,7 @@ export const NNSGenesisToken = (
 		| ((args: { ctx: TaskCtxShape }) => NNSGenesisTokenInitArgs)
 		| ((args: { ctx: TaskCtxShape }) => Promise<NNSGenesisTokenInitArgs>),
 ) => {
-	return customCanister<NNSGenesisTokenService, Gtc>(async ({ ctx }) => {
+	return customCanister<NNSGenesisTokenService, Gtc, Gtc>(async ({ ctx }) => {
 		const initArgs =
 			typeof initArgsOrFn === "function"
 				? await initArgsOrFn({ ctx })
@@ -692,6 +889,36 @@ export const NNSGenesisToken = (
 			),
 		}
 	}).installArgs(
+		async ({ ctx }) => {
+			const initArgs =
+				typeof initArgsOrFn === "function"
+					? await initArgsOrFn({ ctx })
+					: initArgsOrFn
+			// We need to serialize it to protobuf format
+			const exampleGtc: Gtc = {
+				accounts: {
+					// address1: { icpts: 150 },
+					// address2: { icpts: 250 },
+				},
+				total_alloc: 400,
+				genesis_timestamp_seconds: Math.floor(Date.now() / 1000),
+				donate_account_recipient_neuron_id: { id: 123456789 },
+				// You can set this to null (or leave undefined) if not used.
+				forward_whitelisted_unclaimed_accounts_recipient_neuron_id: null,
+				whitelisted_accounts_to_forward: ["address1", "address2"],
+			}
+			// const serialized = serializeGtc(exampleGtc)
+			return exampleGtc
+		},
+		{
+			customEncode: async (args) => {
+				// return args
+				const serialized = serializeGtc(args)
+				return serialized
+			},
+		},
+	)
+	.upgradeArgs(
 		async ({ ctx }) => {
 			const initArgs =
 				typeof initArgsOrFn === "function"
@@ -810,6 +1037,51 @@ export const NNSCyclesMinting = (
 					}),
 				]
 			})
+			.upgradeArgs(async ({ ctx }) => {
+				const initArgs =
+					typeof initArgsOrFn === "function"
+						? await initArgsOrFn({ ctx })
+						: initArgsOrFn
+				// TODO:
+				//     export interface AccountIdentifier { 'bytes' : Array<number> }
+				// export type BlockIndex = bigint;
+				// export type Cycles = bigint;
+				// export interface CyclesCanisterInitPayload {
+				//   'exchange_rate_canister' : [] | [ExchangeRateCanister],
+				//   'last_purged_notification' : [] | [bigint],
+				//   'governance_canister_id' : [] | [Principal],
+				//   'minting_account_id' : [] | [AccountIdentifier],
+				//   'ledger_canister_id' : [] | [Principal],
+				// }
+				// export type ExchangeRateCanister = { 'Set' : Principal } |
+				//   { 'Unset' : null };
+				return [
+					Opt({
+						// 'exchange_rate_canister' : [] | [ExchangeRateCanister],
+						// 'last_purged_notification' : [] | [bigint],
+						// 'governance_canister_id' : [] | [Principal],
+						// 'minting_account_id' : [] | [AccountIdentifier],
+						// 'ledger_canister_id' : [] | [Principal],
+						// TODO:
+						exchange_rate_canister: [
+							// { Unset: null }
+						],
+						last_purged_notification: Opt<bigint>(),
+						// TODO: get from dependencies instead?
+						governance_canister_id: [Principal.fromText(NNSGovernanceIds.ic)],
+						minting_account_id: [
+							// TODO: ...? also how to handle when tasks require users?
+							// Use context somehow?
+							// Maybe scopes can declare requirements?
+							// Or do we need some concept of contexts?
+							// {
+							//   bytes: [ctx.users.default.accountId.toBytes()],
+							// },
+						],
+						ledger_canister_id: [Principal.fromText(NNSLedgerIds.ic)],
+					}),
+				]
+			})
 	)
 }
 
@@ -841,6 +1113,13 @@ export const NNSLifeline = (
 			candid: path.resolve(__dirname, "./nns/nns-lifeline/nns-lifeline.did"),
 		}
 	}).installArgs(async ({ ctx }) => {
+		const initArgs =
+			typeof initArgsOrFn === "function"
+				? await initArgsOrFn({ ctx })
+				: initArgsOrFn
+		return []
+	})
+	.upgradeArgs(async ({ ctx }) => {
 		const initArgs =
 			typeof initArgsOrFn === "function"
 				? await initArgsOrFn({ ctx })

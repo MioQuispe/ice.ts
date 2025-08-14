@@ -33,7 +33,7 @@ export const NFIDSwapTrsStorage = (
     }
   })
     .dependsOn({ NFIDIdentityManager: NFIDIdentityManager.provides })
-    .installArgs(async ({ ctx, mode, deps }) => {
+    .installArgs(async ({ ctx, deps }) => {
       // TODO: Add installation logic if needed.
       const initArgs =
         typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn

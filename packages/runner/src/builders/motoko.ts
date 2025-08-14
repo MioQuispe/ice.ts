@@ -19,6 +19,7 @@ import type {
 	StatusTask,
 	StopTask,
 	TaskCtxShape,
+	UpgradeTask,
 	ValidProvidedDeps,
 } from "./lib.js"
 import { getNodeByPath } from "../tasks/lib.js"
@@ -68,7 +69,7 @@ export type MotokoCanisterScope<
 		bindings: MotokoBindingsTask
 		build: MotokoBuildTask
 		install: InstallTask<_SERVICE, I, D, P>
-		upgrade: InstallTask<_SERVICE, U, D, P>
+		upgrade: UpgradeTask<_SERVICE, U, D, P>
 		// D,
 		// P
 		stop: StopTask
@@ -164,10 +165,14 @@ export type MotokoDeployTask<
 	params: typeof motokoDeployParams
 }
 
-
 export type MotokoDeployTaskArgs = ParamsToArgs<typeof motokoDeployParams>
 
-export const makeMotokoDeployTask = <_SERVICE>(): MotokoDeployTask<_SERVICE> => {
+export const makeMotokoDeployTask = <_SERVICE, P extends Record<string, unknown>>(
+	canisterConfigOrFn:
+		| ((args: { ctx: TaskCtxShape, deps: P }) => Promise<MotokoCanisterConfig>)
+		| ((args: { ctx: TaskCtxShape, deps: P }) => MotokoCanisterConfig)
+		| MotokoCanisterConfig,
+): MotokoDeployTask<_SERVICE> => {
 	return {
 		_tag: "task",
 		// TODO: change
@@ -182,10 +187,16 @@ export const makeMotokoDeployTask = <_SERVICE>(): MotokoDeployTask<_SERVICE> => 
 		effect: Effect.gen(function* () {
 			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
-			const parentScope = (yield* getNodeByPath(canisterName)) as MotokoCanisterScope<_SERVICE>
+			const parentScope = (yield* getNodeByPath(
+				canisterName,
+			)) as MotokoCanisterScope<_SERVICE>
 			const { args } = yield* TaskCtx
 			const taskArgs = args as MotokoDeployTaskArgs
-			const mode = taskArgs.mode === "auto" ? yield* resolveMode() : taskArgs.mode
+			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
+			const mode =
+				taskArgs.mode === "auto"
+					? yield* resolveMode(canisterConfig?.canisterId)
+					: taskArgs.mode
 			const [canisterId, { wasmPath, candidPath }] = yield* Effect.all(
 				[
 					Effect.gen(function* () {
@@ -201,10 +212,7 @@ export const makeMotokoDeployTask = <_SERVICE>(): MotokoDeployTask<_SERVICE> => 
 						// Moc generates candid and wasm files in the same phase
 						yield* Effect.logDebug("Now running build task")
 						const {
-							result: {
-								wasmPath,
-								candidPath,
-							},
+							result: { wasmPath, candidPath },
 						} = yield* runTask(parentScope.children.build)
 						yield* Effect.logDebug("Now running bindings task")
 						yield* runTask(parentScope.children.bindings)
@@ -221,17 +229,34 @@ export const makeMotokoDeployTask = <_SERVICE>(): MotokoDeployTask<_SERVICE> => 
 
 			yield* Effect.logDebug("Now running install task")
 			// TODO: no type error if params not provided at all
-			const { result: installResult } = yield* runTask(parentScope.children.install, {
-					mode,
-					// TODO: currently does nothing. they are generated inside the installTask from the installArgsFn
-					// args: taskArgs.args,
-					canisterId,
-					candid: candidPath,
-					wasm: wasmPath,
-			})
+			let taskResult
+			if (mode === "upgrade") {
+				const { result } = yield* runTask(
+					parentScope.children.upgrade,
+					{
+						canisterId,
+						candid: candidPath,
+						wasm: wasmPath,
+					},
+				)
+				taskResult = result
+			} else {
+				const { result } = yield* runTask(
+					parentScope.children.install,
+					{
+						mode,
+						// TODO: currently does nothing. they are generated inside the installTask from the installArgsFn
+						// args: taskArgs.args,
+						canisterId,
+						candid: candidPath,
+						wasm: wasmPath,
+					},
+				)
+				taskResult = result
+			}
 
 			yield* Effect.logDebug("Canister deployed successfully")
-			return installResult
+			return taskResult
 		}),
 		description: "Deploy canister code",
 		tags: [Tags.CANISTER, Tags.DEPLOY, Tags.MOTOKO],
@@ -326,7 +351,10 @@ export const makeMotokoBindingsTask = (): MotokoBindingsTask => {
 		input: () =>
 			Effect.gen(function* () {
 				const { taskPath, depResults } = yield* TaskCtx
-				const depCacheKeys = Record.map(depResults, (dep) => dep.cacheKey)
+				const depCacheKeys = Record.map(
+					depResults,
+					(dep) => dep.cacheKey,
+				)
 				const input = {
 					taskPath,
 					depCacheKeys,
@@ -357,7 +385,10 @@ export type MotokoBuildTask = CachedTask<
 
 const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 	canisterConfigOrFn:
-		| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<MotokoCanisterConfig>)
+		| ((args: {
+				ctx: TaskCtxShape
+				deps: P
+		  }) => Promise<MotokoCanisterConfig>)
 		| ((args: { ctx: TaskCtxShape; deps: P }) => MotokoCanisterConfig)
 		| MotokoCanisterConfig,
 ): MotokoBuildTask => {
@@ -430,7 +461,10 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 			Effect.gen(function* () {
 				const { taskPath, depResults } = yield* TaskCtx
 				const dependencies = depResults
-				const depCacheKeys = Record.map(dependencies, (dep) => dep.cacheKey)
+				const depCacheKeys = Record.map(
+					dependencies,
+					(dep) => dep.cacheKey,
+				)
 				const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
 				const path = yield* Path.Path
 				const fs = yield* FileSystem.FileSystem
@@ -438,7 +472,9 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 				const entries = yield* fs.readDirectory(srcDir, {
 					recursive: true,
 				})
-				const srcFiles = entries.filter((entry) => entry.endsWith(".mo"))
+				const srcFiles = entries.filter((entry) =>
+					entry.endsWith(".mo"),
+				)
 				const prevSrcDigests: Array<FileDigest> = []
 				const srcDigests: Array<FileDigest> = []
 				for (const [index, file] of srcFiles.entries()) {
@@ -446,10 +482,12 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 					const filePath = path.join(srcDir, file)
 					const { fresh: srcFresh, digest: srcDigest } =
 						yield* Effect.tryPromise({
-							try: () => isArtifactCached(filePath, prevSrcDigest),
+							try: () =>
+								isArtifactCached(filePath, prevSrcDigest),
 							catch: (e) =>
 								new TaskError({
-									message: "Failed to check if artifact is cached",
+									message:
+										"Failed to check if artifact is cached",
 								}),
 						})
 					srcDigests.push(srcDigest)
@@ -537,7 +575,6 @@ export class MotokoCanisterBuilder<
 		installArgsFn: (args: {
 			ctx: TaskCtxShape
 			deps: ExtractScopeSuccesses<D> & ExtractScopeSuccesses<P>
-			mode: string
 		}) => I | Promise<I>,
 		{
 			customEncode,
@@ -628,7 +665,7 @@ export class MotokoCanisterBuilder<
 					// TODO: ...?
 					dependsOn: this.#scope.children.install.dependsOn,
 					dependencies: this.#scope.children.install.dependencies,
-				} as InstallTask<_SERVICE, U, D, P>,
+				} as UpgradeTask<_SERVICE, U, D, P>,
 			},
 		} satisfies MotokoCanisterScope<_SERVICE, I, U, D, P>
 
@@ -655,7 +692,7 @@ export class MotokoCanisterBuilder<
 		const upgradeTask = {
 			...this.#scope.children.upgrade,
 			dependencies: finalDeps,
-		} as InstallTask<_SERVICE, U, D, NP>
+		} as UpgradeTask<_SERVICE, U, D, NP>
 
 		const updatedChildren = {
 			...this.#scope.children,
@@ -692,7 +729,7 @@ export class MotokoCanisterBuilder<
 		const upgradeTask = {
 			...this.#scope.children.upgrade,
 			dependsOn: updatedDependsOn,
-		} as InstallTask<_SERVICE, U, ND, P>
+		} as UpgradeTask<_SERVICE, U, ND, P>
 		const updatedChildren = {
 			...this.#scope.children,
 			install: installTask,
@@ -712,7 +749,15 @@ export class MotokoCanisterBuilder<
 			: DependencyMismatchError<S>,
 	): S {
 		// // Otherwise we get a type error
-		const self = this as MotokoCanisterBuilder<I, U, S, D, P, Config, _SERVICE>
+		const self = this as MotokoCanisterBuilder<
+			I,
+			U,
+			S,
+			D,
+			P,
+			Config,
+			_SERVICE
+		>
 
 		// TODO: can we do this in a type-safe way?
 		// so we get warnings about stale dependencies?
@@ -736,7 +781,10 @@ export const motokoCanister = <
 	canisterConfigOrFn:
 		| MotokoCanisterConfig
 		| ((args: { ctx: TaskCtxShape; deps: P }) => MotokoCanisterConfig)
-		| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<MotokoCanisterConfig>),
+		| ((args: {
+				ctx: TaskCtxShape
+				deps: P
+		  }) => Promise<MotokoCanisterConfig>),
 ) => {
 	const initialScope = {
 		_tag: "scope",
@@ -752,7 +800,7 @@ export const motokoCanister = <
 			remove: makeRemoveTask(),
 			install: makeInstallTask<I, {}, {}, _SERVICE>(),
 			upgrade: makeUpgradeTask<U, {}, {}, _SERVICE>(),
-			deploy: makeMotokoDeployTask<_SERVICE>(),
+			deploy: makeMotokoDeployTask<_SERVICE, P>(canisterConfigOrFn),
 			status: makeCanisterStatusTask([Tags.MOTOKO]),
 		},
 	} satisfies MotokoCanisterScope<_SERVICE, I, U, {}, {}>

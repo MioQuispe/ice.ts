@@ -54,7 +54,7 @@ export const CapBucket = (
       wasm: path.resolve(__dirname, "./cap/cap-bucket/cap-bucket.wasm.gz"),
       canisterId: CapBucketIds.local,
     }
-  }).installArgs(async ({ ctx, mode }) => {
+  }).installArgs(async ({ ctx }) => {
     return [
       // args: [{
       //   contract, // TokenContractId,
@@ -62,6 +62,8 @@ export const CapBucket = (
       //   next_canisters, // Vec<BucketId>
       // }],
     ]
+  }).upgradeArgs(async ({ ctx }) => {
+    return []
   })
 }
 

@@ -130,6 +130,23 @@ export const encodeArgs = (args: unknown[], canisterDID: CanisterDidModule) =>
 			},
 		})
 	})
+export const encodeUpgradeArgs = (args: unknown[], canisterDID: CanisterDidModule) =>
+	Effect.gen(function* () {
+		return yield* Effect.try({
+			try: () => {
+				const encodedArgs = args
+					? new Uint8Array(IDL.encode(canisterDID.init({ IDL }), args))
+					: new Uint8Array()
+				return encodedArgs
+			},
+			catch: (error) => {
+				// TODO: change error type
+				return new DeploymentError({
+					message: `Failed to encode args: ${error instanceof Error ? error.message : String(error)}, with args: ${args}`,
+				})
+			},
+		})
+	})
 
 export const createActor = <T>({
 	canisterId,

@@ -36,7 +36,7 @@ type WrapperInitArgs = {
 export const ICRC7NFT = (
   initArgsOrFn?: WrapperInitArgs | ((args: { ctx: TaskCtxShape }) => WrapperInitArgs),
 ) => {
-  return customCanister<_SERVICE, [ICRC7NFTInitArgs]>(({ ctx }) => {
+  return customCanister<_SERVICE, [ICRC7NFTInitArgs], [ICRC7NFTInitArgs]>(({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     return {
@@ -44,7 +44,7 @@ export const ICRC7NFT = (
       wasm: path.resolve(__dirname, `./${canisterName}/${canisterName}.wasm.gz`),
       candid: path.resolve(__dirname, `./${canisterName}/${canisterName}.did`),
     }
-  }).installArgs(async ({ ctx, mode }) => {
+  }).installArgs(async ({ ctx }) => {
     const initArgs =
       typeof initArgsOrFn === "function" ? initArgsOrFn({ ctx }) : initArgsOrFn
     //   return [
@@ -93,5 +93,50 @@ export const ICRC7NFT = (
         ],
       },
     ]
+  }).upgradeArgs(async ({ ctx }) => {
+    // Standard doesnt separate init and upgrade args
+    return [
+      {
+        icrc3_args: [
+          {
+            maxRecordsToArchive: 0n,
+            archiveIndexType: {
+              Stable: null,
+            },
+            maxArchivePages: 0n,
+            settleToRecords: 0n,
+            archiveCycles: 0n,
+            maxActiveRecords: 0n,
+            maxRecordsInArchiveInstance: 0n,
+            archiveControllers: [
+              // Array<Principal>
+              // []
+            ],
+            supportedBlocks: [],
+          } satisfies InitArgs__1,
+        ],
+        icrc37_args: [
+          //     {
+          //     'deployer' : ctx.users.default.principal,
+          //     'max_approvals' : [0n],
+          //     'max_approvals_per_token_or_collection' : [0n],
+          //     'settle_to_approvals' : [0n],
+          //     'max_revoke_approvals' : [0n],
+          //     'collection_approval_requires_token' : [false],
+          // }
+        ],
+        icrc7_args: [
+        //   {
+        //     deployer: ctx.users.default.principal,
+        //     max_approvals: [0n],
+        //     max_approvals_per_token_or_collection: [0n],
+        //   },
+        ],
+      },
+    ]
   })
 }
+
+// cond([])
+// 	.when([], a)
+// 	// .when((a) => a)
