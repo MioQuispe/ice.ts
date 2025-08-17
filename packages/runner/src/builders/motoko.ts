@@ -6,7 +6,7 @@ import { FileSystem, Path } from "@effect/platform"
 import { compileMotokoCanister, generateDIDJS } from "../canister.js"
 import { ParamsToArgs, TaskCtx } from "../tasks/lib.js"
 import { InstallModes } from "../services/replica.js"
-import type {
+import {
 	AllowedDep,
 	CreateTask,
 	DependencyMismatchError,
@@ -21,9 +21,9 @@ import type {
 	TaskCtxShape,
 	UpgradeTask,
 	ValidProvidedDeps,
+    runTaskEffect,
 } from "./lib.js"
 import { getNodeByPath } from "../tasks/lib.js"
-import { runTask } from "../tasks/run.js"
 import {
 	hashJson,
 	isArtifactCached,
@@ -208,8 +208,9 @@ export const makeMotokoDeployTask = <
 					Effect.gen(function* () {
 						const taskPath = `${canisterName}:create`
 						yield* Effect.logDebug("Now running create task")
-						const { result: canisterId } = yield* runTask(
+						const { result: canisterId } = yield* runTaskEffect(
 							parentScope.children.create,
+                            {}
 						)
 						yield* Effect.logDebug("Finished running create task")
 						return canisterId
@@ -219,9 +220,9 @@ export const makeMotokoDeployTask = <
 						yield* Effect.logDebug("Now running build task")
 						const {
 							result: { wasmPath, candidPath },
-						} = yield* runTask(parentScope.children.build)
+						} = yield* runTaskEffect(parentScope.children.build, {})
 						yield* Effect.logDebug("Now running bindings task")
-						yield* runTask(parentScope.children.bindings)
+						yield* runTaskEffect(parentScope.children.bindings, {})
 						return {
 							wasmPath,
 							candidPath,
@@ -237,7 +238,7 @@ export const makeMotokoDeployTask = <
 			// TODO: no type error if params not provided at all
 			let taskResult
 			if (mode === "upgrade") {
-				const { result } = yield* runTask(
+				const { result } = yield* runTaskEffect(
 					parentScope.children.upgrade,
 					{
 						canisterId,
@@ -247,7 +248,7 @@ export const makeMotokoDeployTask = <
 				)
 				taskResult = result
 			} else {
-				const { result } = yield* runTask(
+				const { result } = yield* runTaskEffect(
 					parentScope.children.install,
 					{
 						mode,

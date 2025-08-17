@@ -23,6 +23,7 @@ import {
 	ValidProvidedDeps,
 	type TaskCtxShape,
 	TaskError,
+    runTaskEffect,
 } from "./lib.js"
 
 type MergeTaskParams<

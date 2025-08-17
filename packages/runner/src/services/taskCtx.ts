@@ -48,11 +48,19 @@ export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
 	readonly replica: ReplicaService
 
 	readonly runTask: {
-		<T extends Task>(task: T): Promise<TaskSuccess<T>>
+		<T extends Task>(task: T): Promise<{
+			result: TaskSuccess<T>
+			taskId: symbol
+			taskPath: string
+		}>
 		<T extends Task>(
 			task: T,
 			args: TaskParamsToArgs<T>,
-		): Promise<TaskSuccess<T>>
+		): Promise<{
+			result: TaskSuccess<T>
+			taskId: symbol
+			taskPath: string
+		}>
 	}
 
 	readonly currentNetwork: string
@@ -202,7 +210,11 @@ export class TaskCtxService extends Context.Tag("TaskCtxService")<
 						runTask: async <T extends Task>(
 							task: T,
 							args?: TaskParamsToArgs<T>,
-						): Promise<TaskSuccess<T>> => {
+						): Promise<{
+							result: TaskSuccess<T>
+							taskId: symbol
+							taskPath: string
+						}> => {
 							// TODO: convert to positional and named args
 							// const taskArgs = mapToTaskArgs(task, args)
 							// const { positional, named } = resolveArgsMap(task, args)
@@ -224,10 +236,14 @@ export class TaskCtxService extends Context.Tag("TaskCtxService")<
 								taskArgs: resolvedArgs,
 								iceConfigServiceLayer,
 							})
-							const result = runtime
+							const result = await runtime
 								.runPromise(runTask(task, resolvedArgs, progressCb))
 								.then((result) => result.result)
-							return result
+							return {
+								result,
+								taskId: task.id,
+								taskPath,
+							}
 						},
 						replica: currentReplica,
 						currentNetwork,

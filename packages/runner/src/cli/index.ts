@@ -176,7 +176,7 @@ const deployRun = async ({
 		network,
 		logLevel,
 	}
-	const program = Effect.gen(function* () {
+	const program = Effect.fn("deploy")(function* () {
 		const { taskTree } = yield* ICEConfigService
 		const tasksWithPath = (yield* filterNodes(
 			taskTree,
@@ -187,6 +187,7 @@ const deployRun = async ({
 		)) as Array<{ node: Task; path: string[] }>
 		const tasks = tasksWithPath.map(({ node }) => node)
 		const args = mode ? { mode } : {}
+        // TODO: wrong. deps not deduplicated
 		yield* Effect.all(
 			tasks.map((task) =>
 				runTask(task, args, (update) => {
@@ -222,7 +223,7 @@ const deployRun = async ({
 			hitCount.count,
 			"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
 		)
-	})
+	})()
 	// .pipe(
 	// 	// TODO: Task has any as error type
 	// 	Effect.tapError(e => Effect.logError(e satisfies never)),

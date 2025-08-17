@@ -3,7 +3,7 @@ import type { Scope, Task, TaskTree } from "../types/types.js"
 // import mo from "motoko"
 import { FileSystem, Path } from "@effect/platform"
 import { InstallModes } from "../services/replica.js"
-import type {
+import {
 	BindingsTask,
 	BuildTask,
 	DeployTask,
@@ -15,9 +15,10 @@ import type {
 	IsValid,
 	TaskCtxShape,
 	UpgradeTask,
+	TaskError,
+    runTaskEffect,
 } from "./lib.js"
-import { getNodeByPath, ParamsToArgs } from "../tasks/lib.js"
-import { runTask } from "../tasks/run.js"
+import { getNodeByPath, ParamsToArgs, TaskParamsToArgs } from "../tasks/lib.js"
 import {
 	AllowedDep,
 	hashConfig,
@@ -161,17 +162,15 @@ export const makeCustomDeployTask = <_SERVICE>(
 				[
 					Effect.gen(function* () {
 						yield* Effect.logDebug("Now running create task")
-						const { result: canisterId } = yield* runTask(
-							parentScope.children.create,
-						)
+						const { result: canisterId } = yield* runTaskEffect(parentScope.children.create, {})
 						yield* Effect.logDebug("Finished running create task")
 						return canisterId
 					}),
 					Effect.gen(function* () {
 						return yield* Effect.all(
 							[
-								runTask(parentScope.children.build),
-								runTask(parentScope.children.bindings),
+								runTaskEffect(parentScope.children.build, {}),
+								runTaskEffect(parentScope.children.bindings, {}),
 							],
 							{
 								concurrency: "unbounded",
@@ -187,8 +186,8 @@ export const makeCustomDeployTask = <_SERVICE>(
 			yield* Effect.logDebug("Now running install task")
 			let taskResult
 			if (mode === "upgrade") {
-                // TODO: but if its the first time, unnecessary? how do we know to run it
-				const { result } = yield* runTask(
+				// TODO: but if its the first time, unnecessary? how do we know to run it
+				const { result } = yield* runTaskEffect(
 					parentScope.children.upgrade,
 					{
 						canisterId,
@@ -197,7 +196,7 @@ export const makeCustomDeployTask = <_SERVICE>(
 				)
 				taskResult = result
 			} else {
-				const { result } = yield* runTask(
+				const { result } = yield* runTaskEffect(
 					parentScope.children.install,
 					{
 						mode,
@@ -267,12 +266,14 @@ export const makeBindingsTask = (
 				}
 				return input
 			})(),
-		encode: (value) => Effect.fn("task_encode")(function* () {
-			return JSON.stringify(value)
-		})(),
-		decode: (value) => Effect.fn("task_decode")(function* () {
-			return JSON.parse(value as string)
-		})(),
+		encode: (value) =>
+			Effect.fn("task_encode")(function* () {
+				return JSON.stringify(value)
+			})(),
+		decode: (value) =>
+			Effect.fn("task_decode")(function* () {
+				return JSON.parse(value as string)
+			})(),
 		encodingFormat: "string",
 		description: "Generate bindings for custom canister",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BINDINGS],
@@ -402,12 +403,14 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 				}
 				return input
 			})(),
-		encode: (value) => Effect.fn("task_encode")(function* () {
-			return JSON.stringify(value)
-		})(),
-		decode: (value) => Effect.fn("task_decode")(function* () {
-			return JSON.parse(value as string)
-		})(),
+		encode: (value) =>
+			Effect.fn("task_encode")(function* () {
+				return JSON.stringify(value)
+			})(),
+		decode: (value) =>
+			Effect.fn("task_decode")(function* () {
+				return JSON.parse(value as string)
+			})(),
 		encodingFormat: "string",
 		description: "Build custom canister",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BUILD],
@@ -518,9 +521,9 @@ export class CustomCanisterBuilder<
 					dependencies: this.#scope.children.install.dependencies,
 				} as InstallTask<_SERVICE, I, D, P>,
 				// reuse installTask as upgradeTask by default unless overridden by user
-                // how will it affect caching? both get invalidated when argsFn has changed
+				// how will it affect caching? both get invalidated when argsFn has changed
 
-                // TODO: check in make instead?
+				// TODO: check in make instead?
 				upgrade: {
 					// TODO: makeUpgradeTask
 					...makeUpgradeTask<I, D, P, _SERVICE>(installArgsFn, {
@@ -677,11 +680,7 @@ export class CustomCanisterBuilder<
 
 // TODO: some kind of metadata?
 // TODO: warn about context if not provided
-export const customCanister = <
-	_SERVICE = unknown,
-	I = unknown,
-	U = unknown,
->(
+export const customCanister = <_SERVICE = unknown, I = unknown, U = unknown>(
 	canisterConfigOrFn:
 		| ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)
 		| ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)

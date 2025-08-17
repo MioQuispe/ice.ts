@@ -21,12 +21,15 @@ export const runTaskByPath = (
 	args: TaskParamsToArgs<Task> = {},
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) =>
-	Effect.gen(function* () {
+	Effect.fn("runTaskByPath")(function* () {
+        yield* Effect.annotateCurrentSpan({
+            taskPath,
+        })
 		yield* Effect.logDebug("Running task by path", { taskPath })
 		const { task } = yield* getTaskByPath(taskPath)
 		yield* Effect.logDebug("Task found", taskPath)
 		return yield* runTask(task, args, progressCb)
-	})
+	})()
 
 export const runTask = Effect.fn("runTask")(function* <T extends Task>(
 	task: T,

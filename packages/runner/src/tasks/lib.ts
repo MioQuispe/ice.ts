@@ -101,11 +101,21 @@ export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
 	readonly replica: ReplicaService
 
 	readonly runTask: {
-		<T extends Task>(task: T): Promise<TaskSuccess<T>>
+		<T extends Task>(
+			task: T,
+		): Promise<{
+			result: TaskSuccess<T>
+			taskId: symbol
+			taskPath: string
+		}>
 		<T extends Task>(
 			task: T,
 			args: TaskParamsToArgs<T>,
-		): Promise<TaskSuccess<T>>
+		): Promise<{
+			result: TaskSuccess<T>
+			taskId: symbol
+			taskPath: string
+		}>
 	}
 
 	readonly currentNetwork: string
@@ -675,8 +685,8 @@ export const executeTasks = Effect.fn("executeTasks")(function* (
 						encodingFormat,
 					)
 					yield* Effect.annotateCurrentSpan({
-                        decoding: Option.isSome(maybeResult),
-                    })
+						decoding: Option.isSome(maybeResult),
+					})
 					if (Option.isSome(maybeResult)) {
 						const encodedResult = maybeResult.value
 						yield* Effect.logDebug(
@@ -745,9 +755,9 @@ export const executeTasks = Effect.fn("executeTasks")(function* (
 						)
 					}
 					// TODO: fix. maybe not json stringify?
-                    yield* Effect.annotateCurrentSpan({
-                        encoding: Option.isSome(result),
-                    })
+					yield* Effect.annotateCurrentSpan({
+						encoding: Option.isSome(result),
+					})
 					if (Option.isSome(cacheKey)) {
 						yield* Effect.logDebug("encoding result:", result.value)
 						const encodedResult = yield* cachedTask

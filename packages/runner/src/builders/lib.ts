@@ -23,13 +23,25 @@ import type {
 	TaskSuccess,
 } from "../tasks/lib.js"
 import { getNodeByPath, TaskCtx } from "../tasks/lib.js"
-import { runTask } from "../tasks/run.js"
 import type { ActorSubclass } from "../types/actor.js"
 import type { CachedTask, Task } from "../types/types.js"
 import { proxyActor } from "../utils/extension.js"
 import { ExtractArgsFromTaskParams } from "./task.js"
 import { CustomCanisterConfig, deployParams } from "./custom.js"
 export type { TaskCtxShape }
+
+export const runTaskEffect = <T extends Task>(task: T, args: TaskParamsToArgs<T>) => Effect.gen(function* () {
+	const { runTask } = yield* TaskCtx
+	return yield* Effect.tryPromise({
+		try: () => runTask(task, args),
+		catch: (error) => {
+			return new TaskError({
+				message: String(error),
+			})
+		},
+	})
+})
+
 
 export class TaskError extends Data.TaggedError("TaskError")<{
 	message?: string
