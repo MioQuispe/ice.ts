@@ -223,8 +223,8 @@ export interface Task<
 	D extends Record<string, Task> = {},
 	P extends Record<string, Task> = {},
 	// TODO:
-	out E = TaskErrors,
-	out R = TaskRequirements,
+	out E = unknown,
+	out R = unknown,
 > {
 	_tag: "task"
 	readonly id: symbol // assigned by the builder
@@ -245,8 +245,8 @@ export type CachedTask<
 	P extends Record<string, Task> = {},
 	Input = unknown,
 	// TODO:
-	E = TaskErrors,
-	R = TaskRequirements,
+	E = unknown,
+	R = unknown,
 > = Task<A, D, P, E, R> & {
 	input: () => Effect.Effect<Input, E, R> // optional input
 	revalidate?: (args: { input: Input }) => Effect.Effect<boolean, E, R>

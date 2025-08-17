@@ -16,7 +16,7 @@
     "@dfinity/agent": "2.3.0",
     "@dfinity/candid": "2.3.0",
     "@dfinity/principal": "^2.3.0",
-    "effect": "^3.13.2",
+    "effect": "^3.17.7",
     "protobufjs": "^7.4.0"
   },
   "peerDependencies": {

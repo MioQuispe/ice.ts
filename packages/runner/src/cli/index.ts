@@ -2,7 +2,7 @@ import * as p from "@clack/prompts"
 import { cancel, isCancel } from "@clack/prompts"
 import { Ed25519KeyIdentity } from "@dfinity/identity"
 import { Resolvable, createMain, defineCommand, type ArgsDef } from "citty"
-import { Console, Effect, Either } from "effect"
+import { Console, Effect, Either, Metric } from "effect"
 import mri from "mri"
 import color from "picocolors"
 import { Tags } from "../builders/lib.js"
@@ -12,7 +12,14 @@ import { CanisterIdsService } from "../services/canisterIds.js"
 import { ICEConfigService } from "../services/iceConfig.js"
 import { CanisterStatus, DefaultReplica } from "../services/replica.js"
 import { runTask, runTaskByPath } from "../tasks/index.js"
-import { filterNodes, TaskCtx } from "../tasks/lib.js"
+import {
+	filterNodes,
+	TaskCtx,
+	totalTaskCount,
+	cachedTaskCount,
+	uncachedTaskCount,
+	cacheHitCount,
+} from "../tasks/lib.js"
 import type { Task } from "../types/types.js"
 import { task } from "../builders/task.js"
 // import { uiTask } from "./ui/index.js"
@@ -108,7 +115,31 @@ const runCommand = defineCommand({
 				positionalArgs,
 				namedArgs,
 			},
-		}).runPromise(runTaskByPath(args.taskPath))
+		}).runPromise(
+			runTaskByPath(args.taskPath).pipe(
+				Effect.tap((result) =>
+					Effect.gen(function* () {
+						const count = yield* Metric.value(totalTaskCount)
+						const cachedCount = yield* Metric.value(cachedTaskCount)
+						const uncachedCount =
+							yield* Metric.value(uncachedTaskCount)
+						const hitCount = yield* Metric.value(cacheHitCount)
+						console.log(
+							"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! task metrics:",
+							"total:",
+							count,
+							"cached:",
+							cachedCount,
+							"uncached:",
+							uncachedCount,
+							"cache hits:",
+							hitCount,
+							"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
+						)
+					}),
+				),
+			),
+		)
 		s.stop(`Finished task: ${color.green(color.underline(args.taskPath))}`)
 	},
 })
@@ -174,6 +205,22 @@ const deployRun = async ({
 					}
 				}),
 			),
+		)
+		const count = yield* Metric.value(totalTaskCount)
+		const cachedCount = yield* Metric.value(cachedTaskCount)
+		const uncachedCount = yield* Metric.value(uncachedTaskCount)
+		const hitCount = yield* Metric.value(cacheHitCount)
+		console.log(
+			"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! task metrics:",
+			"total:",
+			count.count,
+			"cached:",
+			cachedCount.count,
+			"uncached:",
+			uncachedCount.count,
+			"cache hits:",
+			hitCount.count,
+			"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
 		)
 	})
 	// .pipe(

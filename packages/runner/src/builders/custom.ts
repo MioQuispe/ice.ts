@@ -27,7 +27,6 @@ import {
 	makeCanisterStatusTask,
 	makeCreateTask,
 	makeInstallTask,
-	installParams,
 	makeRemoveTask,
 	makeStopTask,
 	NormalizeDeps,
@@ -133,7 +132,7 @@ export const makeCustomDeployTask = <_SERVICE>(
 		namedParams: deployParams,
 		params: deployParams,
 		positionalParams: [],
-		effect: Effect.gen(function* () {
+		effect: Effect.fn("task_effect")(function* () {
 			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
@@ -188,6 +187,7 @@ export const makeCustomDeployTask = <_SERVICE>(
 			yield* Effect.logDebug("Now running install task")
 			let taskResult
 			if (mode === "upgrade") {
+                // TODO: but if its the first time, unnecessary? how do we know to run it
 				const { result } = yield* runTask(
 					parentScope.children.upgrade,
 					{
@@ -212,7 +212,7 @@ export const makeCustomDeployTask = <_SERVICE>(
 			}
 			yield* Effect.logDebug("Canister deployed successfully")
 			return taskResult
-		}),
+		})(),
 		description: "Deploy canister code",
 		tags: [Tags.CANISTER, Tags.DEPLOY, Tags.CUSTOM],
 	} satisfies DeployTask<_SERVICE>
@@ -230,7 +230,7 @@ export const makeBindingsTask = (
 		dependsOn: {},
 		dependencies: {},
 		// TODO: do we allow a fn as args here?
-		effect: Effect.gen(function* () {
+		effect: Effect.fn("task_effect")(function* () {
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
 			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
@@ -246,7 +246,7 @@ export const makeBindingsTask = (
 				didJSPath,
 				didTSPath,
 			}
-		}),
+		})(),
 		computeCacheKey: (input) => {
 			return hashJson({
 				depsHash: hashJson(input.depCacheKeys),
@@ -255,7 +255,7 @@ export const makeBindingsTask = (
 			})
 		},
 		input: () =>
-			Effect.gen(function* () {
+			Effect.fn("task_input")(function* () {
 				const { taskPath, depResults } = yield* TaskCtx
 				const depCacheKeys = Record.map(
 					depResults,
@@ -266,9 +266,13 @@ export const makeBindingsTask = (
 					depCacheKeys,
 				}
 				return input
-			}),
-		encode: (value) => Effect.succeed(JSON.stringify(value)),
-		decode: (value) => Effect.succeed(JSON.parse(value as string)),
+			})(),
+		encode: (value) => Effect.fn("task_encode")(function* () {
+			return JSON.stringify(value)
+		})(),
+		decode: (value) => Effect.fn("task_decode")(function* () {
+			return JSON.parse(value as string)
+		})(),
 		encodingFormat: "string",
 		description: "Generate bindings for custom canister",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BINDINGS],
@@ -295,7 +299,7 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 		dependencies: {
 			// no deps
 		},
-		effect: Effect.gen(function* () {
+		effect: Effect.fn("task_effect")(function* () {
 			const fs = yield* FileSystem.FileSystem
 			const path = yield* Path.Path
 			// TODO: could be a promise
@@ -346,7 +350,7 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 				wasmPath: outWasmPath,
 				candidPath: outCandidPath,
 			}
-		}),
+		})(),
 		computeCacheKey: (input) => {
 			// TODO: pocket-ic could be restarted?
 			const installInput = {
@@ -359,7 +363,7 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 			return cacheKey
 		},
 		input: () =>
-			Effect.gen(function* () {
+			Effect.fn("task_input")(function* () {
 				const { taskPath, depResults } = yield* TaskCtx
 				const canisterName = taskPath.split(":").slice(0, -1).join(":")
 				const depCacheKeys = Record.map(
@@ -397,9 +401,13 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 					depCacheKeys,
 				}
 				return input
-			}),
-		encode: (value) => Effect.succeed(JSON.stringify(value)),
-		decode: (value) => Effect.succeed(JSON.parse(value as string)),
+			})(),
+		encode: (value) => Effect.fn("task_encode")(function* () {
+			return JSON.stringify(value)
+		})(),
+		decode: (value) => Effect.fn("task_decode")(function* () {
+			return JSON.parse(value as string)
+		})(),
 		encodingFormat: "string",
 		description: "Build custom canister",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BUILD],
@@ -509,8 +517,21 @@ export class CustomCanisterBuilder<
 					dependsOn: this.#scope.children.install.dependsOn,
 					dependencies: this.#scope.children.install.dependencies,
 				} as InstallTask<_SERVICE, I, D, P>,
+				// reuse installTask as upgradeTask by default unless overridden by user
+                // how will it affect caching? both get invalidated when argsFn has changed
+
+                // TODO: check in make instead?
+				upgrade: {
+					// TODO: makeUpgradeTask
+					...makeUpgradeTask<I, D, P, _SERVICE>(installArgsFn, {
+						customEncode,
+					}),
+					// TODO: ...?
+					dependsOn: this.#scope.children.install.dependsOn,
+					dependencies: this.#scope.children.install.dependencies,
+				} as UpgradeTask<_SERVICE, I, D, P>,
 			},
-		} satisfies CanisterScope<_SERVICE, I, U, D, P>
+		} satisfies CanisterScope<_SERVICE, I, I, D, P>
 
 		return new CustomCanisterBuilder(updatedScope)
 	}
@@ -545,9 +566,7 @@ export class CustomCanisterBuilder<
 			...this.#scope,
 			children: {
 				...this.#scope.children,
-				// TODO: add these to the task type
 				upgrade: {
-					// TODO: makeUpgradeTask
 					...makeUpgradeTask<U, D, P, _SERVICE>(upgradeArgsFn, {
 						customEncode,
 					}),
@@ -660,8 +679,8 @@ export class CustomCanisterBuilder<
 // TODO: warn about context if not provided
 export const customCanister = <
 	_SERVICE = unknown,
-	I = unknown[],
-	U = unknown[],
+	I = unknown,
+	U = unknown,
 >(
 	canisterConfigOrFn:
 		| ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)

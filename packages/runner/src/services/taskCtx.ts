@@ -215,6 +215,8 @@ export class TaskCtxService extends Context.Tag("TaskCtxService")<
 							// )
 							// const taskArgs = args.map((arg) => {
 							const resolvedArgs = args ?? ({} as TaskParamsToArgs<T>)
+                            // TODO: bad... shouldnt recreate runtime
+                            // expose a runTask in public api
 							const runtime = makeRuntime({
 								globalArgs,
 								// TODO: pass in as strings now

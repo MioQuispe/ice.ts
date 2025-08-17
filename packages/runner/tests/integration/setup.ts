@@ -1,6 +1,6 @@
 import { NodeContext } from "@effect/platform-node"
 import { layerMemory } from "@effect/platform/KeyValueStore"
-import { Effect, Layer, Logger, LogLevel, ManagedRuntime, Ref } from "effect"
+import { Effect, Layer, Logger, LogLevel, ManagedRuntime, Ref, Metric } from "effect"
 import { task } from "../../src/builders/task.js"
 import { configLayer } from "../../src/index.js"
 import { CanisterIdsService } from "../../src/services/canisterIds.js"
@@ -20,6 +20,7 @@ const DefaultReplicaService = Layer.effect(DefaultReplica, picReplicaImpl).pipe(
 	Layer.provide(NodeContext.layer),
 	Layer.provide(configLayer),
 )
+
 
 export const makeTestLayer = (
 	{ cliTaskArgs = { positionalArgs: [], namedArgs: {} }, taskArgs = {} } = {

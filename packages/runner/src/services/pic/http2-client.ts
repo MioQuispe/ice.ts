@@ -104,6 +104,7 @@ export class Http2Client {
 			const res = await fetch(url, {
 				method: init.method,
 				headers: init.headers,
+                // @ts-ignore
 				body: init.body,
 				signal: requestAbortController.signal,
 			})

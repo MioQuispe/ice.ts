@@ -6,7 +6,18 @@ import { Principal } from "@dfinity/principal"
 import { Ed25519KeyIdentity } from "@dfinity/identity"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
-import { configLayer, customCanister } from "../../src/index.js"
+import {
+	BindingsTask,
+	BuildTask,
+	CanisterScope,
+	CanisterScopeSimple,
+	configLayer,
+	CreateTask,
+	customCanister,
+	CustomCanisterConfig,
+	InstallTask,
+    // telemetryLayer,
+} from "../../src/index.js"
 import { CanisterIdsService } from "../../src/services/canisterIds.js"
 import { CLIFlags } from "../../src/services/cliFlags.js"
 import { DefaultConfig } from "../../src/services/defaultConfig.js"
@@ -20,6 +31,16 @@ import { TaskCtxService } from "../../src/services/taskCtx.js"
 import { executeTasks, topologicalSortTasks } from "../../src/tasks/lib.js"
 import { runTask } from "../../src/tasks/run.js"
 import { ICEConfig, Task, TaskTree } from "../../src/types/types.js"
+import { NodeSdk as OpenTelemetryNodeSdk } from "@effect/opentelemetry"
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
+
+const telemetryLayer = OpenTelemetryNodeSdk.layer(() => ({
+	resource: { serviceName: "ice" },
+	spanProcessor: new BatchSpanProcessor(
+		new OTLPTraceExporter(),
+	),
+}))
 
 const DefaultReplicaService = Layer.effect(DefaultReplica, picReplicaImpl).pipe(
 	Layer.provide(NodeContext.layer),
@@ -168,6 +189,7 @@ const makeTestRuntime = (
 	// }),
 	// Layer.succeed(TaskArgsService, { taskArgs }),
 	const layer = Layer.mergeAll(
+        telemetryLayer,
 		NodeContext.layer,
 		CLIFlagsLayer,
 		TaskArgsLayer,
@@ -194,6 +216,43 @@ const makeTestRuntime = (
 	)
 	return ManagedRuntime.make(layer)
 }
+
+const makeTestCanister = () => {
+	const canisterConfig = {
+		wasm: path.resolve(__dirname, "../fixtures/canister/example.wasm"),
+		candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
+	}
+	const test_canister = customCanister(canisterConfig)
+		.installArgs(async ({ ctx }) => {
+			return []
+		})
+		.make()
+
+	return {
+		canisterConfig,
+		canister: test_canister,
+	}
+}
+
+const initializeCanister = <T extends CanisterScope>(canister: T) =>
+	Effect.gen(function* () {
+		const { result: createResult } = yield* runTask(
+			canister.children.create,
+		)
+		const {
+			result: { wasmPath, candidPath },
+		} = yield* runTask(canister.children.build)
+		const {
+			result: { didJSPath, didTSPath },
+		} = yield* runTask(canister.children.bindings)
+		return {
+			canisterId: createResult,
+			wasmPath,
+			candidPath,
+			didJSPath,
+			didTSPath,
+		}
+	})
 
 describe("custom builder", () => {
 	it("deploy should work", async () => {
@@ -222,32 +281,27 @@ describe("custom builder", () => {
 	})
 
 	it("should execute canister tasks in correct dependency order", async () => {
-		const executionOrder: Array<string> = []
-
-		const test_canister = customCanister({
-			wasm: path.resolve(__dirname, "../fixtures/canister/example.wasm"),
-			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
-		}).make()
-
+		const { canister: test_canister } = makeTestCanister()
 		// Track execution order by wrapping tasks
-		const trackingTasks = [
-			test_canister.children.create,
-			test_canister.children.build,
-			test_canister.children.bindings,
-			test_canister.children.install_args,
-			test_canister.children.install,
-		].map((task) => ({
-			...task,
-			effect: Effect.gen(function* () {
-				executionOrder.push(task.description)
-				const result = yield* task.effect
-				return result
-			}),
-		}))
 
-		const tasks = topologicalSortTasks(
-			new Map(trackingTasks.map((task) => [task.id, task])),
-		)
+		// const trackTask = <T extends Task>(task: T) => ({
+		// 	...task,
+		// 	effect: Effect.gen(function* () {
+		// 		executionOrder.push(task.description)
+		// 		const result = yield* task.effect
+		// 		return result
+		// 	}),
+		// })
+
+        // const trackingTasks = [
+        //     test_canister.children.create,
+        //     test_canister.children.build,
+        //     test_canister.children.bindings,
+        //     test_canister.children.install,
+        // ]
+		// const tasks = topologicalSortTasks(
+		// 	new Map(trackingTasks.map((task) => [task.id, task])),
+		// )
 
 		const taskTree = {
 			test_canister,
@@ -255,20 +309,34 @@ describe("custom builder", () => {
 
 		const runtime = makeTestRuntime({}, taskTree)
 
-		await runtime.runPromise(
+		const executionOrder = await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks(tasks)
-				const results = yield* Effect.all(taskEffects, {
-					concurrency: "unbounded",
-				})
-				return results
+				const {
+					canisterId,
+					wasmPath,
+					candidPath,
+					didJSPath,
+					didTSPath,
+				} = yield* initializeCanister(test_canister)
+                // TODO: .pipe(span / observe / tracing)
+                const executionOrder: Array<string> = []
+
+				// const taskEffects = yield* executeTasks(tasks)
+
+				// const results = yield* Effect.all(taskEffects, {
+				// 	concurrency: "unbounded",
+				// })
+				// return results
+                return executionOrder
 			}),
 		)
 
 		// Should execute in dependency order: create, build, bindings, install_args, install
 		expect(executionOrder).toContain("Create custom canister")
 		expect(executionOrder).toContain("Build custom canister")
-		expect(executionOrder).toContain("Generate bindings for custom canister")
+		expect(executionOrder).toContain(
+			"Generate bindings for custom canister",
+		)
 		expect(executionOrder).toContain("Generate install args")
 		expect(executionOrder).toContain("Install canister code")
 
@@ -379,7 +447,7 @@ describe("custom builder", () => {
 			.deps({
 				dependency: dependency_canister.children.install,
 			})
-			.installArgs(async ({ ctx, mode, deps }) => {
+			.installArgs(async ({ ctx, deps }) => {
 				// Use the dependency canister in install args
 				expect(deps.dependency.canisterId).toBeTruthy()
 				return []
@@ -420,7 +488,9 @@ describe("custom builder", () => {
 		await expect(
 			runtime.runPromise(
 				Effect.gen(function* () {
-					const result = yield* runTask(failing_canister.children.deploy)
+					const result = yield* runTask(
+						failing_canister.children.deploy,
+					)
 					return result
 				}),
 			),
@@ -445,7 +515,7 @@ describe("custom builder", () => {
 			.deps({
 				canister1: canister1.children.install,
 			})
-			.installArgs(async ({ ctx, mode, deps }) => {
+			.installArgs(async ({ ctx, deps }) => {
 				executionOrder.push("canister2_install_args")
 				return []
 			})
@@ -461,7 +531,7 @@ describe("custom builder", () => {
 			.deps({
 				canister2: canister2.children.install,
 			})
-			.installArgs(async ({ ctx, mode, deps }) => {
+			.installArgs(async ({ ctx, deps }) => {
 				executionOrder.push("canister3_install_args")
 				return []
 			})
@@ -494,19 +564,29 @@ describe("custom builder", () => {
 
 		const createTimedCanister = (name: string) => {
 			return customCanister({
-				wasm: path.resolve(__dirname, "../fixtures/canister/example.wasm"),
-				candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
+				wasm: path.resolve(
+					__dirname,
+					"../fixtures/canister/example.wasm",
+				),
+				candid: path.resolve(
+					__dirname,
+					"../fixtures/canister/example.did",
+				),
 			})
-				.installArgs(async ({ ctx, mode }) => {
+				.installArgs(async ({ ctx }) => {
 					const current = await Effect.runPromise(
 						Ref.updateAndGet(concurrentCounter, (n) => n + 1),
 					)
 					await Effect.runPromise(
-						Ref.update(maxConcurrent, (max) => Math.max(max, current)),
+						Ref.update(maxConcurrent, (max) =>
+							Math.max(max, current),
+						),
 					)
 					// Simulate work
 					await new Promise((resolve) => setTimeout(resolve, 30))
-					await Effect.runPromise(Ref.update(concurrentCounter, (n) => n - 1))
+					await Effect.runPromise(
+						Ref.update(concurrentCounter, (n) => n - 1),
+					)
 					return []
 				})
 				.make()
@@ -554,7 +634,7 @@ describe("custom builder", () => {
 			// Change configuration to invalidate cache
 			canisterId,
 		}))
-			.installArgs(async ({ ctx, mode }) => {
+			.installArgs(async ({ ctx }) => {
 				return []
 			})
 			.make()
@@ -608,7 +688,10 @@ describe("custom builder", () => {
 		// Test with install mode
 		const runtime = makeTestRuntime(
 			{
-				cliTaskArgs: { positionalArgs: [], namedArgs: { mode: "install" } },
+				cliTaskArgs: {
+					positionalArgs: [],
+					namedArgs: { mode: "install" },
+				},
 			},
 			taskTree,
 		)
@@ -709,8 +792,8 @@ describe("custom builder", () => {
 			wasm: path.resolve(__dirname, "../fixtures/canister/example.wasm"),
 			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
 		})
-			.installArgs(async ({ ctx, mode }) => {
-				executionOrder.push("install_args_executed")
+			.installArgs(async ({ ctx }) => {
+				executionOrder.push("install_executed")
 				return []
 			})
 			.make()
@@ -718,14 +801,30 @@ describe("custom builder", () => {
 		const taskTree = {
 			test_canister,
 		}
-
 		const runtime = makeTestRuntime({}, taskTree)
+
+		const res = await runtime.runPromise(
+			Effect.gen(function* () {
+				const result = yield* runTask(test_canister.children.create, {})
+				yield* runTask(test_canister.children.build)
+				yield* runTask(test_canister.children.bindings)
+				return result
+			}),
+		)
+		const canisterId = res.result
+
+		const canisterConfig = {
+			canisterId: canisterId,
+			wasm: path.resolve(__dirname, "../fixtures/canister/example.wasm"),
+			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
+		}
 
 		// First run - should execute install_args
 		await runtime.runPromise(
 			Effect.gen(function* () {
 				const result = yield* runTask(test_canister.children.install, {
 					mode: "reinstall",
+					...canisterConfig,
 				})
 				return result
 			}),
@@ -742,13 +841,14 @@ describe("custom builder", () => {
 				// TODO: it runs upgrade even though we set "reinstall"
 				const result = yield* runTask(test_canister.children.install, {
 					mode: "reinstall",
+					...canisterConfig,
 				})
 				return result
 			}),
 		)
 
-		// install_args should be cached (not executed again)
-		expect(executionOrder).not.toContain("install_args_executed")
+		// install should be cached (not executed again)
+		expect(executionOrder).not.toContain("install_executed")
 	})
 
 	it("should handle error propagation in canister dependency chains", async () => {
@@ -756,7 +856,7 @@ describe("custom builder", () => {
 			wasm: path.resolve(__dirname, "../fixtures/canister/example.wasm"),
 			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
 		})
-			.installArgs(async ({ ctx, mode }) => {
+			.installArgs(async ({ ctx }) => {
 				throw new Error("Install args failed")
 			})
 			.make()
@@ -771,7 +871,7 @@ describe("custom builder", () => {
 			.deps({
 				failing: failing_canister.children.install,
 			})
-			.installArgs(async ({ ctx, mode, deps }) => {
+			.installArgs(async ({ ctx, deps }) => {
 				return []
 			})
 			.make()
@@ -786,7 +886,9 @@ describe("custom builder", () => {
 		await expect(
 			runtime.runPromise(
 				Effect.gen(function* () {
-					const result = yield* runTask(dependent_canister.children.deploy)
+					const result = yield* runTask(
+						dependent_canister.children.deploy,
+					)
 					return result
 				}),
 			),
@@ -800,7 +902,7 @@ describe("custom builder", () => {
 			wasm: path.resolve(__dirname, "../fixtures/canister/example.wasm"),
 			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
 		})
-			.installArgs(async ({ ctx, mode }) => {
+			.installArgs(async ({ ctx }) => {
 				executionOrder.push("root")
 				return []
 			})
@@ -816,7 +918,7 @@ describe("custom builder", () => {
 			.deps({
 				root: root_canister.children.install,
 			})
-			.installArgs(async ({ ctx, mode, deps }) => {
+			.installArgs(async ({ ctx, deps }) => {
 				executionOrder.push("branch1")
 				return []
 			})
@@ -832,7 +934,7 @@ describe("custom builder", () => {
 			.deps({
 				root: root_canister.children.install,
 			})
-			.installArgs(async ({ ctx, mode, deps }) => {
+			.installArgs(async ({ ctx, deps }) => {
 				executionOrder.push("branch2")
 				return []
 			})
@@ -850,7 +952,7 @@ describe("custom builder", () => {
 				branch1: branch1_canister.children.install,
 				branch2: branch2_canister.children.install,
 			})
-			.installArgs(async ({ ctx, mode, deps }) => {
+			.installArgs(async ({ ctx, deps }) => {
 				executionOrder.push("convergence")
 				return []
 			})
@@ -867,7 +969,9 @@ describe("custom builder", () => {
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
-				const result = yield* runTask(convergence_canister.children.deploy)
+				const result = yield* runTask(
+					convergence_canister.children.deploy,
+				)
 				return result
 			}),
 		)
@@ -876,6 +980,9 @@ describe("custom builder", () => {
 		expect(executionOrder[0]).toBe("root")
 		expect(executionOrder[3]).toBe("convergence")
 		// Branch1 and branch2 can run in parallel after root
-		expect(executionOrder.slice(1, 3).sort()).toEqual(["branch1", "branch2"])
+		expect(executionOrder.slice(1, 3).sort()).toEqual([
+			"branch1",
+			"branch2",
+		])
 	})
 })

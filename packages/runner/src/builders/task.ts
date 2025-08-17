@@ -22,6 +22,7 @@ import {
 	normalizeDepsMap,
 	ValidProvidedDeps,
 	type TaskCtxShape,
+	TaskError,
 } from "./lib.js"
 
 type MergeTaskParams<
@@ -282,7 +283,7 @@ class TaskBuilder<
 	) {
 		const newTask = {
 			...this.#task,
-			effect: Effect.gen(function* () {
+			effect: Effect.fn("task_effect")(function* () {
 				const taskCtx = yield* TaskCtx
 				const deps = Record.map(taskCtx.depResults, (dep) => dep.result)
 				const maybePromise = fn({
@@ -296,18 +297,17 @@ class TaskBuilder<
 						? yield* Effect.tryPromise({
 								try: () => patchGlobals(() => maybePromise),
 								catch: (error) => {
-									console.error(
-										"Error executing task:",
-										error,
-									)
-									return error instanceof Error
-										? error
-										: new Error(String(error))
+									return new TaskError({
+										message: String(error),
+									})
+									// return error instanceof Error
+									// 	? error
+									// 	: new Error(String(error))
 								},
 							})
 						: maybePromise
 				return result
-			}),
+			})(),
 			// TODO: create a task constructor for this, which fixes the type errors
 		} satisfies Task
 
@@ -341,7 +341,7 @@ export function task(description = "") {
 		params: {},
 		namedParams: {},
 		positionalParams: [],
-		effect: Effect.gen(function* () {}),
+		effect: Effect.fn("task_effect")(function* () {})(),
 	} satisfies Task
 	return new TaskBuilder<Start, typeof baseTask, {}>(baseTask)
 }

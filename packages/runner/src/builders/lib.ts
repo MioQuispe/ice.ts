@@ -28,7 +28,7 @@ import type { ActorSubclass } from "../types/actor.js"
 import type { CachedTask, Task } from "../types/types.js"
 import { proxyActor } from "../utils/extension.js"
 import { ExtractArgsFromTaskParams } from "./task.js"
-import { deployParams } from "./custom.js"
+import { CustomCanisterConfig, deployParams } from "./custom.js"
 export type { TaskCtxShape }
 
 export class TaskError extends Data.TaggedError("TaskError")<{
@@ -91,7 +91,7 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 		id,
 		dependsOn: {},
 		dependencies: {},
-		effect: Effect.gen(function* () {
+		effect: Effect.fn("task_effect")(function* () {
 			const path = yield* Path.Path
 			const fs = yield* FileSystem.FileSystem
 			const canisterIdsService = yield* CanisterIdsService
@@ -161,7 +161,7 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 			const outDir = path.join(appDir, iceDir, "canisters", canisterName)
 			yield* fs.makeDirectory(outDir, { recursive: true })
 			return canisterId
-		}),
+		})(),
 		description: "Create custom canister",
 		// TODO: caching? now task handles it already
 		tags: [Tags.CANISTER, Tags.CREATE, ...tags],
@@ -721,7 +721,7 @@ export const makeStopTask = (): StopTask => {
 		dependsOn: {},
 		dependencies: {},
 		// TODO: do we allow a fn as args here?
-		effect: Effect.gen(function* () {
+		effect: Effect.fn("task_effect")(function* () {
 			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			// TODO: handle error
@@ -758,7 +758,7 @@ export const makeStopTask = (): StopTask => {
 				identity,
 			})
 			yield* Effect.logDebug(`Stopped canister ${canisterName}`)
-		}),
+		})(),
 		description: "Stop canister",
 		// TODO: no tag custom
 		tags: [Tags.CANISTER, Tags.STOP],
@@ -775,7 +775,7 @@ export const makeRemoveTask = (): RemoveTask => {
 		dependsOn: {},
 		dependencies: {},
 		// TODO: do we allow a fn as args here?
-		effect: Effect.gen(function* () {
+		effect: Effect.fn("task_effect")(function* () {
 			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			// TODO: handle error
@@ -801,7 +801,7 @@ export const makeRemoveTask = (): RemoveTask => {
 			const canisterIdsService = yield* CanisterIdsService
 			yield* canisterIdsService.removeCanisterId(canisterName)
 			yield* Effect.logDebug(`Removed canister ${canisterName}`)
-		}),
+		})(),
 		description: "Remove canister",
 		// TODO: no tag custom
 		tags: [Tags.CANISTER, Tags.REMOVE],
@@ -820,7 +820,7 @@ export const makeCanisterStatusTask = (tags: string[]): StatusTask => {
 		// TODO: we only want to warn at a type level?
 		// TODO: type Task
 		dependencies: {},
-		effect: Effect.gen(function* () {
+		effect: Effect.fn("task_effect")(function* () {
 			// TODO:
 			const { replica, currentNetwork } = yield* TaskCtx
 			const { taskPath } = yield* TaskCtx
@@ -888,7 +888,7 @@ export const makeCanisterStatusTask = (tags: string[]): StatusTask => {
 			})
 			const status = canisterInfo.status
 			return { canisterName, canisterId, status, info: canisterInfo }
-		}),
+		})(),
 		description: "Get canister status",
 		tags: [Tags.CANISTER, Tags.STATUS, ...tags],
 		namedParams: {},
@@ -916,9 +916,6 @@ export const resolveMode = (configCanisterId: string | undefined) => {
 		const canisterIdsMap = yield* canisterIdsService.getCanisterIds()
 		const canisterId =
 			canisterIdsMap[canisterName]?.[currentNetwork] ?? configCanisterId
-		// TODO: canisterIdsMap out of sync? nope, need to run create first maybe?
-		// check passed in config??
-		console.log("getCanisterInfo canisterId", canisterId)
 		// TODO: use Option.Option?
 		const canisterInfo = canisterId
 			? yield* replica
@@ -939,10 +936,6 @@ export const resolveMode = (configCanisterId: string | undefined) => {
 			: ({
 					status: CanisterStatus.NOT_FOUND,
 				} as const)
-
-		// const notInstalled =
-		// 	canisterInfo.status !== CanisterStatus.NOT_FOUND &&
-		// 	canisterInfo.module_hash.length === 0
 
 		const noModule =
 			canisterInfo.status === CanisterStatus.NOT_FOUND ||
@@ -983,28 +976,6 @@ export const resolveMode = (configCanisterId: string | undefined) => {
 			}
 		}
 
-		// // let mode = taskArgs?.mode
-		// let mode: InstallModes = "install"
-		// // TODO: taskArgs should override this!!!
-		// // or throw error???
-		// if (canisterInfo.status === CanisterStatus.STOPPING) {
-		// 	mode = "reinstall"
-		// 	if (notInstalled) {
-		// 		mode = "install"
-		// 	}
-		// } else if (canisterInfo.status === CanisterStatus.NOT_FOUND) {
-		// 	mode = "install"
-		// } else if (canisterInfo.status === CanisterStatus.STOPPED) {
-		// 	mode = "upgrade"
-		// 	if (notInstalled) {
-		// 		mode = "install"
-		// 	}
-		// } else if (canisterInfo.status === CanisterStatus.RUNNING) {
-		// 	mode = "upgrade"
-		// 	if (notInstalled) {
-		// 		mode = "install"
-		// 	}
-		// }
 		return mode
 	})
 }
@@ -1152,6 +1123,7 @@ export const makeInstallTask = <
 		// customInitIDL: undefined,
 	},
 ): InstallTask<_SERVICE, I, D, P> => {
+    // TODO: ??
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/install"),
@@ -1161,7 +1133,7 @@ export const makeInstallTask = <
 		namedParams: installParams,
 		positionalParams: [],
 		params: installParams,
-		effect: Effect.gen(function* () {
+		effect: Effect.fn("task_effect")(function* () {
 			yield* Effect.logDebug("Starting custom canister installation")
 			const taskCtx = yield* TaskCtx
 			const path = yield* Path.Path
@@ -1177,6 +1149,7 @@ export const makeInstallTask = <
 			const {
 				canisterId,
 				wasm: wasmPath,
+                // TODO: js or candid?
 				candid,
 				// TODO: support raw args
 				args: rawInstallArgs,
@@ -1188,8 +1161,7 @@ export const makeInstallTask = <
 			let initArgs = [] as unknown as I
 			yield* Effect.logDebug("Executing install args function")
 
-			// TODO:
-			// const didJSPath =
+			// TODO: use params
 			const didJSPath = path.join(
 				appDir,
 				iceDir,
@@ -1299,7 +1271,7 @@ export const makeInstallTask = <
 				mode,
 				actor: proxyActor(canisterName, actor),
 			}
-		}),
+		})(),
 		description: "Install canister code",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.INSTALL],
 		// TODO: add network?
@@ -1316,7 +1288,7 @@ export const makeInstallTask = <
 			return cacheKey
 		},
 		input: () =>
-			Effect.gen(function* () {
+			Effect.fn("task_input")(function* () {
 				const { args } = yield* TaskCtx
 				const { taskPath, depResults } = yield* TaskCtx
 				const taskArgs = args as {
@@ -1365,9 +1337,9 @@ export const makeInstallTask = <
 					installArgsFn,
 				}
 				return input
-			}),
+			})(),
 		revalidate: ({ input }) =>
-			Effect.gen(function* () {
+			Effect.fn("task_revalidate")(function* () {
 				const {
 					replica,
 					roles: { deployer },
@@ -1383,11 +1355,11 @@ export const makeInstallTask = <
 					return false
 				}
 				return true
-			}),
+			})(),
 		encodingFormat: "string",
 
 		encode: (result, input) =>
-			Effect.gen(function* () {
+			Effect.fn("task_encode")(function* () {
 				yield* Effect.logDebug("encoding:", result)
 				if (customEncode) {
 					return yield* encodeWithBigInt({
@@ -1405,9 +1377,9 @@ export const makeInstallTask = <
 					encodedArgs: uint8ArrayToJsonString(result.encodedArgs),
 					args: result.args,
 				})
-			}),
+			})(),
 		decode: (value, input) =>
-			Effect.gen(function* () {
+			Effect.fn("task_decode")(function* () {
 				const {
 					canisterId,
 					canisterName,
@@ -1461,8 +1433,29 @@ export const makeInstallTask = <
 					args: initArgs,
 				}
 				return decoded
-			}),
-	}
+			})(),
+	} satisfies InstallTask<_SERVICE, I, D, P>
+}
+
+export const makeInstallTaskParams = <T extends CustomCanisterConfig>(canisterConfig: T) => {
+    return {
+        ...installParams,
+        wasm: {
+            ...installParams.wasm,
+            isOptional: true as const,
+            default: canisterConfig.wasm,
+        },
+        canisterId: {
+            ...installParams.canisterId,
+            isOptional: true as const,
+            default: canisterConfig.canisterId,
+        },
+        candid: {
+            ...installParams.candid,
+            isOptional: true as const,
+            default: canisterConfig.candid,
+        },
+    }
 }
 
 export const upgradeParams = {
@@ -1552,7 +1545,7 @@ export const makeUpgradeTask = <
 		namedParams: upgradeParams,
 		positionalParams: [],
 		params: upgradeParams,
-		effect: Effect.gen(function* () {
+		effect: Effect.fn("task_effect")(function* () {
 			yield* Effect.logDebug("Starting canister upgrade")
 			const taskCtx = yield* TaskCtx
 			const path = yield* Path.Path
@@ -1687,10 +1680,10 @@ export const makeUpgradeTask = <
 				encodedArgs,
 				canisterId,
 				canisterName,
-				mode: "upgrade",
+				mode: "upgrade" as const,
 				actor: proxyActor(canisterName, actor),
 			}
-		}),
+		})(),
 		description: "Upgrade canister code",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.UPGRADE],
 		// TODO: add network?
@@ -1706,7 +1699,7 @@ export const makeUpgradeTask = <
 			return cacheKey
 		},
 		input: () =>
-			Effect.gen(function* () {
+			Effect.fn("task_input")(function* () {
 				const { args } = yield* TaskCtx
 				const { taskPath, depResults } = yield* TaskCtx
 				const taskArgs = args as {
@@ -1752,9 +1745,9 @@ export const makeUpgradeTask = <
 					upgradeArgsFn,
 				}
 				return input
-			}),
+			})(),
 		revalidate: ({ input }) =>
-			Effect.gen(function* () {
+			Effect.fn("task_revalidate")(function* () {
 				const {
 					replica,
 					roles: { deployer },
@@ -1770,11 +1763,11 @@ export const makeUpgradeTask = <
 					return false
 				}
 				return true
-			}),
+			})(),
 		encodingFormat: "string",
 
 		encode: (result, input) =>
-			Effect.gen(function* () {
+			Effect.fn("task_encode")(function* () {
 				yield* Effect.logDebug("encoding:", result)
 				if (customEncode) {
 					return yield* encodeWithBigInt({
@@ -1790,9 +1783,9 @@ export const makeUpgradeTask = <
 					encodedArgs: uint8ArrayToJsonString(result.encodedArgs),
 					args: result.args,
 				})
-			}),
+			})(),
 		decode: (value, input) =>
-			Effect.gen(function* () {
+			Effect.fn("task_decode")(function* () {
 				const {
 					canisterId,
 					canisterName,
@@ -1844,7 +1837,7 @@ export const makeUpgradeTask = <
 					args: upgradeArgs,
 				}
 				return decoded
-			}),
+			})(),
 	}
 }
 

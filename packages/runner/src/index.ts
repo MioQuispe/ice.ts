@@ -17,6 +17,9 @@ import { TaskArgsService } from "./services/taskArgs.js"
 import { TaskRegistry } from "./services/taskRegistry.js"
 import type { ICEConfig, ICECtx } from "./types/types.js"
 import { TaskCtxService } from "./services/taskCtx.js"
+import { NodeSdk as OpenTelemetryNodeSdk } from "@effect/opentelemetry"
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
 
 export * from "./builders/index.js"
 export type { CanisterScope } from "./builders/lib.js"
@@ -122,6 +125,13 @@ type MakeRuntimeArgs = {
 	>
 }
 
+const telemetryLayer = OpenTelemetryNodeSdk.layer(() => ({
+	resource: { serviceName: "ice" },
+	spanProcessor: new BatchSpanProcessor(
+		new OTLPTraceExporter(),
+	),
+}))
+
 export const makeRuntime = ({
 	globalArgs: rawGlobalArgs,
 	cliTaskArgs = { positionalArgs: [], namedArgs: {} },
@@ -160,6 +170,7 @@ export const makeRuntime = ({
 
 	return ManagedRuntime.make(
 		Layer.mergeAll(
+			telemetryLayer,
 			DefaultsLayer,
 			CLIFlagsLayer,
 			TaskArgsLayer,

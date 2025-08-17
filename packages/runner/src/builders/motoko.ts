@@ -167,10 +167,16 @@ export type MotokoDeployTask<
 
 export type MotokoDeployTaskArgs = ParamsToArgs<typeof motokoDeployParams>
 
-export const makeMotokoDeployTask = <_SERVICE, P extends Record<string, unknown>>(
+export const makeMotokoDeployTask = <
+	_SERVICE,
+	P extends Record<string, unknown>,
+>(
 	canisterConfigOrFn:
-		| ((args: { ctx: TaskCtxShape, deps: P }) => Promise<MotokoCanisterConfig>)
-		| ((args: { ctx: TaskCtxShape, deps: P }) => MotokoCanisterConfig)
+		| ((args: {
+				ctx: TaskCtxShape
+				deps: P
+		  }) => Promise<MotokoCanisterConfig>)
+		| ((args: { ctx: TaskCtxShape; deps: P }) => MotokoCanisterConfig)
 		| MotokoCanisterConfig,
 ): MotokoDeployTask<_SERVICE> => {
 	return {
@@ -184,7 +190,7 @@ export const makeMotokoDeployTask = <_SERVICE, P extends Record<string, unknown>
 		namedParams: motokoDeployParams,
 		params: motokoDeployParams,
 		positionalParams: [],
-		effect: Effect.gen(function* () {
+		effect: Effect.fn("task_effect")(function* () {
 			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			const parentScope = (yield* getNodeByPath(
@@ -257,7 +263,7 @@ export const makeMotokoDeployTask = <_SERVICE, P extends Record<string, unknown>
 
 			yield* Effect.logDebug("Canister deployed successfully")
 			return taskResult
-		}),
+		})(),
 		description: "Deploy canister code",
 		tags: [Tags.CANISTER, Tags.DEPLOY, Tags.MOTOKO],
 	}
@@ -297,7 +303,7 @@ export const makeMotokoBindingsTask = (): MotokoBindingsTask => {
 		positionalParams: [],
 		params: {},
 		// TODO: do we allow a fn as args here?
-		effect: Effect.gen(function* () {
+		effect: Effect.fn("task_effect")(function* () {
 			const path = yield* Path.Path
 			const fs = yield* FileSystem.FileSystem
 			const { taskPath, appDir, iceDir } = yield* TaskCtx
@@ -341,7 +347,7 @@ export const makeMotokoBindingsTask = (): MotokoBindingsTask => {
 				didJSPath,
 				didTSPath,
 			}
-		}),
+		})(),
 		computeCacheKey: (input) => {
 			return hashJson({
 				depsHash: hashJson(input.depCacheKeys),
@@ -349,7 +355,7 @@ export const makeMotokoBindingsTask = (): MotokoBindingsTask => {
 			})
 		},
 		input: () =>
-			Effect.gen(function* () {
+			Effect.fn("task_input")(function* () {
 				const { taskPath, depResults } = yield* TaskCtx
 				const depCacheKeys = Record.map(
 					depResults,
@@ -360,9 +366,15 @@ export const makeMotokoBindingsTask = (): MotokoBindingsTask => {
 					depCacheKeys,
 				}
 				return input
-			}),
-		encode: (value) => Effect.succeed(JSON.stringify(value)),
-		decode: (value) => Effect.succeed(JSON.parse(value as string)),
+			})(),
+		encode: (value) =>
+			Effect.fn("task_encode")(function* () {
+				return JSON.stringify(value)
+			})(),
+		decode: (value) =>
+			Effect.fn("task_decode")(function* () {
+				return JSON.parse(value as string)
+			})(),
 		encodingFormat: "string",
 		description: "Generate bindings for Motoko canister",
 		tags: [Tags.CANISTER, Tags.MOTOKO, Tags.BINDINGS],
@@ -397,7 +409,7 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 		id: Symbol("motokoCanister/build"),
 		dependsOn: {},
 		dependencies: {},
-		effect: Effect.gen(function* () {
+		effect: Effect.fn("task_effect")(function* () {
 			yield* Effect.logDebug("Building Motoko canister")
 			const path = yield* Path.Path
 			const fs = yield* FileSystem.FileSystem
@@ -445,7 +457,7 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 				wasmPath: wasmOutputFilePath,
 				candidPath: outCandidPath,
 			}
-		}),
+		})(),
 		computeCacheKey: (input) => {
 			// TODO: pocket-ic could be restarted?
 			const installInput = {
@@ -458,7 +470,7 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 			return cacheKey
 		},
 		input: () =>
-			Effect.gen(function* () {
+			Effect.fn("task_input")(function* () {
 				const { taskPath, depResults } = yield* TaskCtx
 				const dependencies = depResults
 				const depCacheKeys = Record.map(
@@ -498,9 +510,15 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 					depCacheKeys,
 				}
 				return input
-			}),
-		encode: (value) => Effect.succeed(JSON.stringify(value)),
-		decode: (value) => Effect.succeed(JSON.parse(value as string)),
+			})(),
+		encode: (value) =>
+			Effect.fn("task_encode")(function* () {
+				return JSON.stringify(value)
+			})(),
+		decode: (value) =>
+			Effect.fn("task_decode")(function* () {
+				return JSON.parse(value as string)
+			})(),
 		encodingFormat: "string",
 		description: "Build Motoko canister",
 		tags: [Tags.CANISTER, Tags.MOTOKO, Tags.BUILD],
@@ -587,8 +605,8 @@ export class MotokoCanisterBuilder<
 		},
 	): MotokoCanisterBuilder<
 		I,
-		U,
-		MotokoCanisterScope<_SERVICE, I, U, D, P>,
+		I,
+		MotokoCanisterScope<_SERVICE, I, I, D, P>,
 		D,
 		P,
 		Config,
@@ -620,8 +638,18 @@ export class MotokoCanisterBuilder<
 			children: {
 				...this.#scope.children,
 				install: installTask,
+
+				// TODO: check in make instead?
+				upgrade: {
+					...makeUpgradeTask<I, D, P, _SERVICE>(installArgsFn, {
+						customEncode,
+					}),
+					// TODO: ...?
+					dependsOn: this.#scope.children.install.dependsOn,
+					dependencies: this.#scope.children.install.dependencies,
+				} as UpgradeTask<_SERVICE, I, D, P>,
 			},
-		} satisfies MotokoCanisterScope<_SERVICE, I, U, D, P>
+		} satisfies MotokoCanisterScope<_SERVICE, I, I, D, P>
 
 		return new MotokoCanisterBuilder(updatedScope)
 	}
