@@ -1,7 +1,7 @@
 import type { ActorSubclass, SignIdentity } from "@dfinity/agent"
 import { NodeContext } from "@effect/platform-node"
 import type { StandardSchemaV1 } from "@standard-schema/spec"
-import type { ConfigError, Effect } from "effect"
+import type { ConfigError } from "effect"
 import { CanisterIdsService } from "../services/canisterIds.js"
 import { CLIFlags } from "../services/cliFlags.js"
 import { DefaultConfig } from "../services/defaultConfig.js"
@@ -20,15 +20,18 @@ import { DefaultReplica } from "../services/replica.js"
 import { TaskArgsService } from "../services/taskArgs.js"
 import { TaskRegistry } from "../services/taskRegistry.js"
 import { TaskCtxService } from "../services/taskCtx.js"
-import type {
-	TaskArgsParseError,
-	TaskCtx,
-	TaskNotFoundError,
-	TaskRuntimeError,
+import {
+	isCachedTask,
+	type TaskArgsParseError,
+	type TaskCtx,
+	type TaskCtxShape,
+	type TaskNotFoundError,
+	type TaskRuntimeError,
 } from "../tasks/lib.js"
 import { TaskError } from "../builders/lib.js"
 import { PlatformError } from "@effect/platform/Error"
 import { DeploymentError } from "../canister.js"
+import { Schema as S } from "effect"
 
 export type CanisterActor = {
 	actor: ActorSubclass<unknown>
@@ -121,71 +124,12 @@ export interface NamedParam<T = unknown> extends TaskParam<T> {
 	name: string
 	aliases?: Array<string>
 	isFlag: true
-	// TODO: means it shouldnt appear in the help. not sure if we need this
-	// hidden: boolean;
 }
 
 export interface PositionalParam<T = unknown> extends TaskParam<T> {
 	name: string
 	isFlag: false
 }
-
-// export const TaskParam = type("<t>", {
-// 	schema: "object",
-// 	"description?": "string",
-// 	"default?": "t",
-// 	"isOptional?": "boolean",
-// 	"isVariadic?": "boolean",
-// })
-
-// export const NamedParam = type({
-// 	"...": TaskParam("unknown"),
-// })
-// export type NamedParam = typeof NamedParam.infer
-// export const PositionalParam = type({
-// 	"...": TaskParam("unknown"),
-// 	"isFlag?": "boolean",
-// 	"aliases?": "string[]",
-// })
-// export type PositionalParam = typeof PositionalParam.infer
-
-// type NamedParamSchema = typeof namedParamSchema.infer
-
-// export const namedParamSchema = type.and(taskParamSchema, {
-//   "isFlag?": "boolean",
-//   "aliases?": "string[]",
-// })
-// export const positionalParamSchema = type.and(taskParamSchema)
-
-// export const makeTask = <A, D extends Record<string, Task>, P extends Record<string, Task>, E, R, I>({
-// 	effect: Effect.Effect<A, E, R>,
-// 	description: string,
-// 	tags: Array<string | symbol>,
-// 	dependsOn: D,
-// 	dependencies: P,
-// 	namedParams: Record<string, NamedParam>,
-// 	positionalParams: Array<PositionalParam>,
-// 	params: Record<string, NamedParam | PositionalParam>,
-// 	encode: (value: A, input: I) => Effect.Effect<string | Uint8Array<ArrayBufferLike>>,
-// 	decode: (value: string | Uint8Array<ArrayBufferLike>, input: I) => Effect.Effect<A, E, R>,
-// 	encodingFormat: "string" | "uint8array",
-// }) => {
-// 	return {
-// 		_tag: "task",
-// 		id: Symbol("task"),
-// 		effect,
-// 		description,
-// 		tags,
-// 		dependsOn,
-// 		dependencies,
-// 		namedParams,
-// 		positionalParams,
-// 		params,
-// 		encode,
-// 		decode,
-// 		encodingFormat,
-// 	} satisfies Task<A, D, P, E, R>
-// }
 
 type TaskRequirements =
 	| TaskCtx
@@ -222,22 +166,38 @@ export interface Task<
 	out A = unknown,
 	D extends Record<string, Task> = {},
 	P extends Record<string, Task> = {},
-	// TODO:
-	out E = unknown,
-	out R = unknown,
 > {
 	_tag: "task"
 	readonly id: symbol // assigned by the builder
-	effect: Effect.Effect<A, E, R>
+	effect: (ctx: TaskCtxShape) => Promise<A>
 	description: string
 	tags: Array<string | symbol>
-	// TODO: we only want the shape of the task here
 	dependsOn: D
 	dependencies: P
 	namedParams: Record<string, NamedParam>
 	positionalParams: Array<PositionalParam>
 	params: Record<string, NamedParam | PositionalParam>
 }
+	// TODO: we only want the shape of the task here
+
+export type Opt<T> = [T] | []
+export const Opt = <T>(value?: T): Opt<T> => {
+  return (value || value === 0) ? ([value]) : []
+}
+const Fn = S.instanceOf(Function)
+const CachedTaskSchema = S.Struct({
+  computeCacheKey: Fn,
+  input: Fn,
+  encode: Fn,
+  decode: Fn,
+  encodingFormat: S.Union(S.Literal("string"), S.Literal("uint8array")),
+})
+
+// export const effectifyTaskFn = <T extends Task | CachedTask>(task: T) => {
+//     return Effect.tryPromise({
+//         try: () => fn,
+//     })
+// }
 
 export type CachedTask<
 	A = unknown,
@@ -247,18 +207,20 @@ export type CachedTask<
 	// TODO:
 	E = unknown,
 	R = unknown,
-> = Task<A, D, P, E, R> & {
-	input: () => Effect.Effect<Input, E, R> // optional input
-	revalidate?: (args: { input: Input }) => Effect.Effect<boolean, E, R>
+> = Task<A, D, P> & {
+	input: (taskCtx: TaskCtxShape) => Promise<Input> // optional input
+	revalidate?: (taskCtx: TaskCtxShape, args: { input: Input }) => Promise<boolean>
 	encode: (
+		taskCtx: TaskCtxShape,
 		value: A,
 		input: Input,
-	) => Effect.Effect<string | Uint8Array<ArrayBufferLike>, E, R>
+	) => Promise<string | Uint8Array<ArrayBufferLike>>
 	encodingFormat: "string" | "uint8array"
 	decode: (
+		taskCtx: TaskCtxShape,
 		value: string | Uint8Array<ArrayBufferLike>,
 		input: Input,
-	) => Effect.Effect<A, E, R>
+	) => Promise<A>
 	computeCacheKey: (input: Input) => string
 }
 

@@ -21,6 +21,7 @@ import {
 	TaskCtxShape,
 	UpgradeTask,
 	ValidProvidedDeps,
+    makeTaskRuntime,
     runTaskEffect,
 } from "./lib.js"
 import { getNodeByPath } from "../tasks/lib.js"
@@ -190,7 +191,7 @@ export const makeMotokoDeployTask = <
 		namedParams: motokoDeployParams,
 		params: motokoDeployParams,
 		positionalParams: [],
-		effect: Effect.fn("task_effect")(function* () {
+		effect: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(Effect.fn("task_effect")(function* () {
 			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			const parentScope = (yield* getNodeByPath(
@@ -264,7 +265,7 @@ export const makeMotokoDeployTask = <
 
 			yield* Effect.logDebug("Canister deployed successfully")
 			return taskResult
-		})(),
+		})()),
 		description: "Deploy canister code",
 		tags: [Tags.CANISTER, Tags.DEPLOY, Tags.MOTOKO],
 	}
@@ -304,7 +305,7 @@ export const makeMotokoBindingsTask = (): MotokoBindingsTask => {
 		positionalParams: [],
 		params: {},
 		// TODO: do we allow a fn as args here?
-		effect: Effect.fn("task_effect")(function* () {
+		effect: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(Effect.fn("task_effect")(function* () {
 			const path = yield* Path.Path
 			const fs = yield* FileSystem.FileSystem
 			const { taskPath, appDir, iceDir } = yield* TaskCtx
@@ -348,14 +349,14 @@ export const makeMotokoBindingsTask = (): MotokoBindingsTask => {
 				didJSPath,
 				didTSPath,
 			}
-		})(),
+		})()),
 		computeCacheKey: (input) => {
 			return hashJson({
 				depsHash: hashJson(input.depCacheKeys),
 				taskPath: input.taskPath,
 			})
 		},
-		input: () =>
+		input: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(
 			Effect.fn("task_input")(function* () {
 				const { taskPath, depResults } = yield* TaskCtx
 				const depCacheKeys = Record.map(
@@ -367,15 +368,15 @@ export const makeMotokoBindingsTask = (): MotokoBindingsTask => {
 					depCacheKeys,
 				}
 				return input
-			})(),
-		encode: (value) =>
+			})()),
+		encode: (taskCtx, value) => makeTaskRuntime(taskCtx).runPromise(
 			Effect.fn("task_encode")(function* () {
 				return JSON.stringify(value)
-			})(),
-		decode: (value) =>
+			})()),
+		decode: (taskCtx, value) => makeTaskRuntime(taskCtx).runPromise(
 			Effect.fn("task_decode")(function* () {
 				return JSON.parse(value as string)
-			})(),
+			})()),
 		encodingFormat: "string",
 		description: "Generate bindings for Motoko canister",
 		tags: [Tags.CANISTER, Tags.MOTOKO, Tags.BINDINGS],
@@ -410,7 +411,7 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 		id: Symbol("motokoCanister/build"),
 		dependsOn: {},
 		dependencies: {},
-		effect: Effect.fn("task_effect")(function* () {
+		effect: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(Effect.fn("task_effect")(function* () {
 			yield* Effect.logDebug("Building Motoko canister")
 			const path = yield* Path.Path
 			const fs = yield* FileSystem.FileSystem
@@ -458,7 +459,7 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 				wasmPath: wasmOutputFilePath,
 				candidPath: outCandidPath,
 			}
-		})(),
+		})()),
 		computeCacheKey: (input) => {
 			// TODO: pocket-ic could be restarted?
 			const installInput = {
@@ -470,7 +471,7 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 			const cacheKey = hashJson(installInput)
 			return cacheKey
 		},
-		input: () =>
+		input: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(
 			Effect.fn("task_input")(function* () {
 				const { taskPath, depResults } = yield* TaskCtx
 				const dependencies = depResults
@@ -511,15 +512,15 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 					depCacheKeys,
 				}
 				return input
-			})(),
-		encode: (value) =>
+			})()),
+		encode: (taskCtx, value) => makeTaskRuntime(taskCtx).runPromise(
 			Effect.fn("task_encode")(function* () {
 				return JSON.stringify(value)
-			})(),
-		decode: (value) =>
+			})()),
+		decode: (taskCtx, value) => makeTaskRuntime(taskCtx).runPromise(
 			Effect.fn("task_decode")(function* () {
 				return JSON.parse(value as string)
-			})(),
+			})()),
 		encodingFormat: "string",
 		description: "Build Motoko canister",
 		tags: [Tags.CANISTER, Tags.MOTOKO, Tags.BUILD],
@@ -844,161 +845,3 @@ export const motokoCanister = <
 		_SERVICE
 	>(initialScope)
 }
-
-const testTask = {
-	_tag: "task",
-	id: Symbol("test"),
-	dependsOn: {},
-	dependencies: {},
-	effect: Effect.gen(function* () {}),
-	description: "",
-	tags: [],
-	namedParams: {},
-	positionalParams: [],
-	params: {},
-} satisfies Task
-
-const testTask2 = {
-	_tag: "task",
-	id: Symbol("test"),
-	dependsOn: {},
-	dependencies: {},
-	effect: Effect.gen(function* () {}),
-	description: "",
-	tags: [],
-	namedParams: {},
-	positionalParams: [],
-	params: {},
-} satisfies Task
-
-const providedTask = {
-	_tag: "task",
-	id: Symbol("test"),
-	effect: Effect.gen(function* () {
-		return "some value"
-	}),
-	description: "",
-	tags: [],
-	dependsOn: {
-		test: testTask,
-	},
-	dependencies: {
-		test: testTask,
-	},
-	namedParams: {},
-	positionalParams: [],
-	params: {},
-} satisfies Task
-
-const unProvidedTask = {
-	_tag: "task",
-	id: Symbol("test"),
-	effect: Effect.gen(function* () {}),
-	description: "",
-	tags: [],
-	dependsOn: {
-		test: testTask,
-		test2: testTask,
-	},
-	dependencies: {
-		test: testTask,
-		// TODO: does not raise a warning?
-		// test2: testTask2,
-		// test2: testTask,
-		// test3: testTask,
-	},
-	namedParams: {},
-	positionalParams: [],
-	params: {},
-} satisfies Task
-
-const unProvidedTask2 = {
-	_tag: "task",
-	id: Symbol("test"),
-	effect: Effect.gen(function* () {}),
-	description: "",
-	tags: [],
-	dependsOn: {
-		test: testTask,
-		// test2: testTask,
-	},
-	dependencies: {
-		// test: testTask,
-		// TODO: does not raise a warning?
-		// test2: testTask2,
-		// test2: testTask,
-		// test3: testTask,
-	},
-	namedParams: {},
-	positionalParams: [],
-	params: {},
-} satisfies Task
-
-const testScope = {
-	_tag: "scope",
-	tags: [Tags.CANISTER],
-	id: Symbol("scope"),
-	description: "",
-	children: {
-		providedTask,
-		unProvidedTask,
-	},
-}
-
-const testScope2 = {
-	_tag: "scope",
-	id: Symbol("scope"),
-	tags: [Tags.CANISTER],
-	description: "",
-	children: {
-		unProvidedTask2,
-	},
-}
-
-const providedTestScope = {
-	_tag: "scope",
-	id: Symbol("scope"),
-	tags: [Tags.CANISTER],
-	description: "",
-	children: {
-		providedTask,
-	},
-}
-
-// Type checks
-// const pt = providedTask satisfies DepBuilder<typeof providedTask>
-// const upt = unProvidedTask satisfies DepBuilder<typeof unProvidedTask>
-// const uts = testScope satisfies UniformScopeCheck<typeof testScope>
-// const pts = providedTestScope satisfies UniformScopeCheck<
-//   typeof providedTestScope
-// >
-// const uts2 = testScope2 satisfies UniformScopeCheck<typeof testScope2>
-
-// const test = customCanister(async () => ({
-//   wasm: "",
-//   candid: "",
-// }))
-
-// // test._scope.children.install.computeCacheKey = (task) => {
-// //   return task.id.toString()
-// // }
-
-// const t = test.deps({ asd: test._scope.children.create }).provide({
-//   asd: test._scope.children.create,
-//   // TODO: extras also cause errors? should it be allowed?
-//   // asd2: test._scope.children.create,
-// }).make()
-// t.children.install.computeCacheKey
-// // t.children.install.dependencies
-
-// const testMotokoCanister = motokoCanister(async () => ({ src: "src/motoko/canister.mo" }))
-// .dependsOn({
-//   providedTask: providedTask,
-// })
-// .deps({
-//   providedTask2: providedTask,
-// })
-// .installArgs(async ({ ctx, mode, deps }) => {
-//   deps.providedTask
-// })
-// .make()

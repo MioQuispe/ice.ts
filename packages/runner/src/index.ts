@@ -20,6 +20,7 @@ import { TaskCtxService } from "./services/taskCtx.js"
 import { NodeSdk as OpenTelemetryNodeSdk } from "@effect/opentelemetry"
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
+export { Opt } from "./types/types.js"
 
 export * from "./builders/index.js"
 export type { CanisterScope } from "./builders/lib.js"
@@ -182,6 +183,5 @@ export const makeRuntime = ({
 	)
 }
 
-export { Opt } from "./canister.js"
 export { runCli } from "./cli/index.js"
 export type { TaskCtxShape } from "./tasks/lib.js"

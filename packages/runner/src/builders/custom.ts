@@ -17,6 +17,7 @@ import {
 	UpgradeTask,
 	TaskError,
     runTaskEffect,
+    makeTaskRuntime,
 } from "./lib.js"
 import { getNodeByPath, ParamsToArgs, TaskParamsToArgs } from "../tasks/lib.js"
 import {
@@ -133,7 +134,7 @@ export const makeCustomDeployTask = <_SERVICE>(
 		namedParams: deployParams,
 		params: deployParams,
 		positionalParams: [],
-		effect: Effect.fn("task_effect")(function* () {
+		effect: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(Effect.fn("task_effect")(function* () {
 			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
@@ -211,7 +212,7 @@ export const makeCustomDeployTask = <_SERVICE>(
 			}
 			yield* Effect.logDebug("Canister deployed successfully")
 			return taskResult
-		})(),
+		})()),
 		description: "Deploy canister code",
 		tags: [Tags.CANISTER, Tags.DEPLOY, Tags.CUSTOM],
 	} satisfies DeployTask<_SERVICE>
@@ -229,7 +230,7 @@ export const makeBindingsTask = (
 		dependsOn: {},
 		dependencies: {},
 		// TODO: do we allow a fn as args here?
-		effect: Effect.fn("task_effect")(function* () {
+		effect: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(Effect.fn("task_effect")(function* () {
 			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
 			const { taskPath } = yield* TaskCtx
 			const canisterName = taskPath.split(":").slice(0, -1).join(":")
@@ -245,7 +246,7 @@ export const makeBindingsTask = (
 				didJSPath,
 				didTSPath,
 			}
-		})(),
+		})()),
 		computeCacheKey: (input) => {
 			return hashJson({
 				depsHash: hashJson(input.depCacheKeys),
@@ -253,7 +254,7 @@ export const makeBindingsTask = (
 				configHash: hashConfig(canisterConfigOrFn),
 			})
 		},
-		input: () =>
+		input: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(
 			Effect.fn("task_input")(function* () {
 				const { taskPath, depResults } = yield* TaskCtx
 				const depCacheKeys = Record.map(
@@ -265,15 +266,15 @@ export const makeBindingsTask = (
 					depCacheKeys,
 				}
 				return input
-			})(),
-		encode: (value) =>
+			})()),
+		encode: (taskCtx, value) => makeTaskRuntime(taskCtx).runPromise(
 			Effect.fn("task_encode")(function* () {
 				return JSON.stringify(value)
-			})(),
-		decode: (value) =>
+			})()),
+		decode: (taskCtx, value) => makeTaskRuntime(taskCtx).runPromise(
 			Effect.fn("task_decode")(function* () {
 				return JSON.parse(value as string)
-			})(),
+			})()),
 		encodingFormat: "string",
 		description: "Generate bindings for custom canister",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BINDINGS],
@@ -300,7 +301,7 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 		dependencies: {
 			// no deps
 		},
-		effect: Effect.fn("task_effect")(function* () {
+		effect: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(Effect.fn("task_effect")(function* () {
 			const fs = yield* FileSystem.FileSystem
 			const path = yield* Path.Path
 			// TODO: could be a promise
@@ -351,7 +352,7 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 				wasmPath: outWasmPath,
 				candidPath: outCandidPath,
 			}
-		})(),
+		})()),
 		computeCacheKey: (input) => {
 			// TODO: pocket-ic could be restarted?
 			const installInput = {
@@ -363,7 +364,7 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 			const cacheKey = hashJson(installInput)
 			return cacheKey
 		},
-		input: () =>
+		input: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(
 			Effect.fn("task_input")(function* () {
 				const { taskPath, depResults } = yield* TaskCtx
 				const canisterName = taskPath.split(":").slice(0, -1).join(":")
@@ -402,15 +403,15 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 					depCacheKeys,
 				}
 				return input
-			})(),
-		encode: (value) =>
+			})()),
+		encode: (taskCtx, value) => makeTaskRuntime(taskCtx).runPromise(
 			Effect.fn("task_encode")(function* () {
 				return JSON.stringify(value)
-			})(),
-		decode: (value) =>
+			})()),
+		decode: (taskCtx, value) => makeTaskRuntime(taskCtx).runPromise(
 			Effect.fn("task_decode")(function* () {
 				return JSON.parse(value as string)
-			})(),
+			})()),
 		encodingFormat: "string",
 		description: "Build custom canister",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BUILD],
@@ -724,173 +725,3 @@ export const customCanister = <_SERVICE = unknown, I = unknown, U = unknown>(
 		_SERVICE
 	>(initialScope)
 }
-
-// TODO: Do more here?
-const scope = <T extends TaskTree>(description: string, children: T) => {
-	return {
-		_tag: "scope",
-		id: Symbol("scope"),
-		tags: [],
-		description,
-		children,
-	} satisfies Scope
-}
-
-const testTask = {
-	_tag: "task",
-	id: Symbol("test"),
-	dependsOn: {},
-	dependencies: {},
-	effect: Effect.gen(function* () {}),
-	description: "",
-	tags: [],
-	namedParams: {},
-	positionalParams: [],
-	params: {},
-} satisfies Task
-
-const testTask2 = {
-	_tag: "task",
-	id: Symbol("test"),
-	dependsOn: {},
-	dependencies: {},
-	effect: Effect.gen(function* () {}),
-	description: "",
-	tags: [],
-	namedParams: {},
-	positionalParams: [],
-	params: {},
-} satisfies Task
-
-const providedTask = {
-	_tag: "task",
-	id: Symbol("test"),
-	effect: Effect.gen(function* () {}),
-	description: "",
-	tags: [],
-	dependsOn: {
-		test: testTask,
-	},
-	dependencies: {
-		test: testTask,
-	},
-	namedParams: {},
-	positionalParams: [],
-	params: {},
-} satisfies Task
-
-const unProvidedTask = {
-	_tag: "task",
-	id: Symbol("test"),
-	effect: Effect.gen(function* () {}),
-	description: "",
-	tags: [],
-	dependsOn: {
-		test: testTask,
-		test2: testTask,
-	},
-	dependencies: {
-		test: testTask,
-		// TODO: does not raise a warning?
-		// test2: testTask2,
-		// test2: testTask,
-		// test3: testTask,
-	},
-	namedParams: {},
-	positionalParams: [],
-	params: {},
-} satisfies Task
-
-const unProvidedTask2 = {
-	_tag: "task",
-	id: Symbol("test"),
-	effect: Effect.gen(function* () {}),
-	description: "",
-	tags: [],
-	dependsOn: {
-		test: testTask,
-		// test2: testTask,
-	},
-	dependencies: {
-		// test: testTask,
-		// TODO: does not raise a warning?
-		// test2: testTask2,
-		// test2: testTask,
-		// test3: testTask,
-	},
-	namedParams: {},
-	positionalParams: [],
-	params: {},
-} satisfies Task
-
-const testScope = {
-	_tag: "scope",
-	id: Symbol("scope"),
-	tags: [Tags.CANISTER],
-	description: "",
-	children: {
-		providedTask,
-		unProvidedTask,
-	},
-}
-
-const testScope2 = {
-	_tag: "scope",
-	id: Symbol("scope"),
-	tags: [Tags.CANISTER],
-	description: "",
-	children: {
-		unProvidedTask2,
-	},
-}
-
-const providedTestScope = {
-	_tag: "scope",
-	id: Symbol("scope"),
-	tags: [Tags.CANISTER],
-	description: "",
-	children: {
-		providedTask,
-	},
-}
-
-// Type checks
-// const pt = providedTask satisfies DepBuilder<typeof providedTask>
-// const upt = unProvidedTask satisfies DepBuilder<typeof unProvidedTask>
-// const uts = testScope satisfies UniformScopeCheck<typeof testScope>
-// const pts = providedTestScope satisfies UniformScopeCheck<
-//   typeof providedTestScope
-// >
-// const uts2 = testScope2 satisfies UniformScopeCheck<typeof testScope2>
-
-const test = customCanister(async () => ({
-	wasm: "",
-	candid: "",
-}))
-
-// // // test._scope.children.install.computeCacheKey = (task) => {
-// // //   return task.id.toString()
-// // // }
-
-const t = test
-	.dependsOn({
-		asd: test.make().children.install,
-	})
-	.deps({
-		asd: test.make().children.install,
-		// TODO: extras also cause errors? should it be allowed?
-		// asd2: test._scope.children.install,
-	})
-	// ._scope.children
-	.installArgs(async ({ ctx, deps }) => {
-		// TODO: allow chaining builders with ice.customCanister()
-		// to pass in context?
-		// ctx.users.default
-		// TODO: type the actors
-		// ctx.dependencies.asd.actor
-		deps.asd.actor
-		return []
-	})
-	.make()
-// t.children.install.computeCacheKey
-// // t.children.install.dependencies

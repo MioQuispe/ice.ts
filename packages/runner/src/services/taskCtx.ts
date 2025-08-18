@@ -4,7 +4,7 @@ import { makeRuntime } from "../index.js"
 import { type ReplicaService } from "../services/replica.js"
 import { ProgressUpdate, TaskParamsToArgs, TaskRuntimeError, TaskSuccess } from "../tasks/lib.js"
 import { runTask } from "../tasks/run.js"
-import type { ICEUser, Task } from "../types/types.js"
+import type { ICEUser, Task, TaskTree } from "../types/types.js"
 import { CLIFlags } from "./cliFlags.js"
 import { DefaultConfig, InitializedDefaultConfig } from "./defaultConfig.js"
 import { ICEConfigService } from "./iceConfig.js"
@@ -25,6 +25,7 @@ import { TaskArgsService } from "./taskArgs.js"
 // }
 
 export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
+    readonly taskTree: TaskTree
 	readonly users: {
 		[name: string]: {
 			identity: SignIdentity
@@ -202,6 +203,7 @@ export class TaskCtxService extends Context.Tag("TaskCtxService")<
 					>,
 					progressCb: (update: ProgressUpdate<unknown>) => void,
 				) {
+                    const { taskTree } = iceConfigService
 					return {
 						...defaultConfig,
 						taskPath,
@@ -246,6 +248,7 @@ export class TaskCtxService extends Context.Tag("TaskCtxService")<
 							}
 						},
 						replica: currentReplica,
+                        taskTree,
 						currentNetwork,
 						networks,
 						users: {

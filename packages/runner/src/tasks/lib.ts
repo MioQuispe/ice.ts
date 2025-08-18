@@ -36,6 +36,7 @@ import type {
 	TaskTree,
 	TaskTreeNode,
 } from "../types/types.js"
+import { CanisterIdsService } from "../services/canisterIds.js"
 
 export type ParamsToArgs<
 	P extends Record<string, NamedParam | PositionalParam>,
@@ -72,12 +73,14 @@ export type TaskParamsToArgs<T extends Task> = {
 }
 
 export type TaskSuccess<T extends Task> = [T] extends [
-	Task<infer _A, infer _D, infer _P, infer _E, infer _R>,
+	Task<infer _A, infer _D, infer _P>,
 ]
 	? _A
 	: never
 
+export type CanisterIds = Record<string, Record<string, string>>
 export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
+    readonly taskTree: TaskTree
 	readonly users: {
 		[name: string]: {
 			identity: SignIdentity
@@ -87,6 +90,32 @@ export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
 			// TODO: neurons?
 		}
 	}
+    // TODO: async / await
+    // convert later.
+	// readonly canisterIds: {
+	// 	// readonly canisterIds: CanisterIds
+	// 	/**
+	// 	 * Retrieves the current in-memory canister IDs.
+	// 	 */
+	// 	getCanisterIds: () => Effect.Effect<CanisterIds>
+	// 	/**
+	// 	 * Updates the canister ID for a specific canister and network.
+	// 	 */
+	// 	setCanisterId: (params: {
+	// 		canisterName: string
+	// 		network: string
+	// 		canisterId: string
+	// 	}) => Effect.Effect<void>
+	// 	/**
+	// 	 * Removes the canister ID for the given canister name.
+	// 	 */
+	// 	removeCanisterId: (canisterName: string) => Effect.Effect<void>
+	// 	/**
+	// 	 * Flushes the in-memory canister IDs to the canister_ids.json file.
+	// 	 */
+	// 	flush: () => Effect.Effect<void>
+	// }
+
 	readonly roles: {
 		deployer: ICEUser
 		minter: ICEUser
@@ -388,7 +417,7 @@ export class TaskRuntimeError extends Data.TaggedError("TaskRuntimeError")<{
 	error?: unknown
 }> {}
 
-const isCachedTask = match
+export const isCachedTask = match
 	.in<Task | CachedTask>()
 	.case(
 		{
@@ -632,7 +661,7 @@ export const executeTasks = Effect.fn("executeTasks")(function* (
 				dependencyResults,
 				progressCb,
 			)
-			const taskLayer = Layer.succeed(TaskCtx, taskCtx)
+			// const taskLayer = Layer.succeed(TaskCtx, taskCtx)
 			// TODO: simplify?
 			let result: Option.Option<unknown> = Option.none()
 			let cacheKey: Option.Option<string> = Option.none()
@@ -645,20 +674,45 @@ export const executeTasks = Effect.fn("executeTasks")(function* (
 			if (Option.isSome(maybeCachedTask)) {
 				yield* cachedTaskCount(Effect.succeed(1))
 				const cachedTask = maybeCachedTask.value
-				const input = yield* cachedTask.input().pipe(
-					Effect.provide(taskLayer),
-					// Effect.option,
-					Effect.catchAll((error) =>
-						logDetailedError(error, taskCtx, "cached task input()"),
-					),
-				)
+				const input = yield* Effect.tryPromise({
+					try: () => cachedTask.input(taskCtx),
+					catch: (error) => {
+						return new TaskRuntimeError({
+							message: "Error getting cached task input",
+							error,
+						})
+					},
+				})
+
+				// TODO: do this in userland
+				// .pipe(
+				// 	Effect.provide(taskLayer),
+				// 	// Effect.option,
+				// 	Effect.catchAll((error) =>
+				// 		logDetailedError(error, taskCtx, "cached task input()"),
+				// 	),
+				// )
+				// const input = yield* cachedTask.input().pipe(
+				// 	Effect.provide(taskLayer),
+				// 	// Effect.option,
+				// 	Effect.catchAll((error) =>
+				// 		logDetailedError(error, taskCtx, "cached task input()"),
+				// 	),
+				// )
 				cacheKey = Option.some(cachedTask.computeCacheKey(input))
 
 				const isCacheValid =
 					"revalidate" in cachedTask
-						? yield* cachedTask
-								.revalidate({ input })
-								.pipe(Effect.provide(taskLayer))
+						? yield* Effect.tryPromise({
+								try: () => cachedTask.revalidate!(taskCtx, { input }),
+								catch: (error) => {
+									return new TaskRuntimeError({
+										message:
+											"Error revalidating cached task",
+										error,
+									})
+								},
+							})
 						: true
 
 				const cacheHit =
@@ -693,18 +747,26 @@ export const executeTasks = Effect.fn("executeTasks")(function* (
 							"decoding result:",
 							encodedResult,
 						)
-						const decodedResult = yield* cachedTask
-							.decode(encodedResult, input)
-							.pipe(
-								Effect.provide(taskLayer),
-								Effect.catchAll((error) =>
-									logDetailedError(
-										error,
-										taskCtx,
-										"cached task decode()",
-									),
-								),
-							)
+						const decodedResult = yield* Effect.tryPromise({
+							try: () => cachedTask.decode(taskCtx, encodedResult, input),
+							// TODO: do this in userland
+							// .pipe(
+							// 	Effect.provide(taskLayer),
+							// 	Effect.catchAll((error) =>
+							// 		logDetailedError(
+							// 			error,
+							// 			taskCtx,
+							// 			"cached task decode()",
+							// 		),
+							// 	),
+							// )
+							catch: (error) => {
+								return new TaskRuntimeError({
+									message: "Error decoding cached task",
+									error,
+								})
+							},
+						})
 						result = Option.some(decodedResult)
 						yield* Effect.logDebug("decoded result:", decodedResult)
 					} else {
@@ -735,17 +797,27 @@ export const executeTasks = Effect.fn("executeTasks")(function* (
 						// )
 					}
 				} else {
-					result = yield* cachedTask.effect.pipe(
-						Effect.provide(taskLayer),
-						Effect.map((result) => Option.some(result)),
-						Effect.catchAll((error) =>
-							logDetailedError(
+					result = yield* Effect.tryPromise({
+						try: () => cachedTask.effect(taskCtx),
+						catch: (error) => {
+							return new TaskRuntimeError({
+								message: "Error executing cached task",
 								error,
-								taskCtx,
-								"cached task effect(), skipping cache",
-							),
-						),
-					)
+							})
+						},
+					}).pipe(Effect.option)
+					// TODO: do this in userland
+					//     .pipe(
+					// 	Effect.provide(taskLayer),
+					// 	Effect.map((result) => Option.some(result)),
+					// 	Effect.catchAll((error) =>
+					// 		logDetailedError(
+					// 			error,
+					// 			taskCtx,
+					// 			"cached task effect(), skipping cache",
+					// 		),
+					// 	),
+					// )
 					if (Option.isNone(result)) {
 						yield* Effect.logDebug("No result for task", taskPath)
 						return yield* Effect.fail(
@@ -758,20 +830,31 @@ export const executeTasks = Effect.fn("executeTasks")(function* (
 					yield* Effect.annotateCurrentSpan({
 						encoding: Option.isSome(result),
 					})
-					if (Option.isSome(cacheKey)) {
+					if (Option.isSome(cacheKey) && Option.isSome(result)) {
 						yield* Effect.logDebug("encoding result:", result.value)
-						const encodedResult = yield* cachedTask
-							.encode(result.value, input)
-							.pipe(
-								Effect.provide(taskLayer),
-								Effect.catchAll((error) =>
-									logDetailedError(
-										error,
-										taskCtx,
-										"cached task encode()",
-									),
-								),
-							)
+						// stupid typescript cant infer otherwise........
+						const value = result.value
+						const encodedResult = yield* Effect.tryPromise({
+							try: () => cachedTask.encode(taskCtx, value, input),
+							catch: (error) => {
+								return new TaskRuntimeError({
+									message: "Error encoding cached task",
+									error,
+								})
+							},
+						})
+						// TODO: do this in userland
+						// .pipe(
+						// 	Effect.provide(taskLayer),
+						// 	Effect.catchAll((error) =>
+						// 		logDetailedError(
+						// 			error,
+						// 			taskCtx,
+						// 			"cached task encode()",
+						// 		),
+						// 	),
+						// )
+
 						yield* Effect.logDebug(
 							"encoded result",
 							"with type:",
@@ -791,14 +874,22 @@ export const executeTasks = Effect.fn("executeTasks")(function* (
 				}
 			} else {
 				yield* uncachedTaskCount(Effect.succeed(1))
-				result = Option.some(
-					yield* task.effect.pipe(
-						Effect.provide(taskLayer),
-						Effect.catchAll((error) =>
-							logDetailedError(error, taskCtx, "task effect()"),
-						),
-					),
-				)
+				result = yield* Effect.tryPromise({
+					try: () => task.effect(taskCtx),
+					catch: (error) => {
+						return new TaskRuntimeError({
+							message: "Error executing task",
+							error,
+						})
+					},
+				}).pipe(Effect.option)
+				// TODO: do this in userland
+				// .pipe(
+				// 	Effect.provide(taskLayer),
+				// 	Effect.catchAll((error) =>
+				// 		logDetailedError(error, taskCtx, "task effect()"),
+				// 	),
+				// ),
 			}
 
 			if (Option.isNone(result)) {
@@ -891,18 +982,11 @@ export const filterNodes = (
 // TODO: more accurate type
 type TaskFullName = string
 // TODO: figure out if multiple tasks are needed
-export const getTaskByPath = (taskPathString: TaskFullName) =>
-	Effect.gen(function* () {
-		const taskPath: string[] = taskPathString.split(":")
-		const { taskTree, config } = yield* ICEConfigService
-		const task = yield* findTaskInTaskTree(taskTree, taskPath)
-		return { task, config }
-	})
 
 export const getNodeByPath = (taskPathString: TaskFullName) =>
 	Effect.gen(function* () {
 		const taskPath: string[] = taskPathString.split(":")
-		const { taskTree } = yield* ICEConfigService
+		const { taskTree } = yield* TaskCtx
 		const node = yield* findNodeInTree(taskTree, taskPath)
 		return node
 	})

@@ -1,11 +1,13 @@
 import { Effect } from "effect"
+import { ICEConfigService } from "../services/iceConfig.js"
 import type { Task } from "../types/types.js"
 import {
 	collectDependencies,
 	executeTasks,
-	getTaskByPath,
+	findTaskInTaskTree,
 	getTaskPathById,
 	type ProgressUpdate,
+	TaskCtx,
 	TaskParamsToArgs,
 	TaskRuntimeError,
 	TaskSuccess,
@@ -26,7 +28,9 @@ export const runTaskByPath = (
             taskPath,
         })
 		yield* Effect.logDebug("Running task by path", { taskPath })
-		const { task } = yield* getTaskByPath(taskPath)
+		const taskPathSegments: string[] = taskPath.split(":")
+		const { taskTree } = yield* ICEConfigService
+		const task = yield* findTaskInTaskTree(taskTree, taskPathSegments)
 		yield* Effect.logDebug("Task found", taskPath)
 		return yield* runTask(task, args, progressCb)
 	})()
