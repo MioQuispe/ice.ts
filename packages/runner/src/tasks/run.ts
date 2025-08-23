@@ -7,7 +7,6 @@ import {
 	findTaskInTaskTree,
 	getTaskPathById,
 	type ProgressUpdate,
-	TaskCtx,
 	TaskParamsToArgs,
 	TaskRuntimeError,
 	TaskSuccess,
@@ -73,7 +72,6 @@ export const runTask = Effect.fn("run_task")(function* <T extends Task>(
 			})
 		}),
 	)
-	// TODO: set requirements to never instead of unknown
 	yield* Effect.logDebug("Tasks executed")
 	const maybeResult = results.find((r) => r.taskId === task.id)
 	if (!maybeResult) {
@@ -84,9 +82,5 @@ export const runTask = Effect.fn("run_task")(function* <T extends Task>(
 			}),
 		)
 	}
-	return maybeResult as {
-		result: TaskSuccess<T>
-		taskId: symbol
-		taskPath: string
-	}
+	return maybeResult.result as TaskSuccess<T>
 })

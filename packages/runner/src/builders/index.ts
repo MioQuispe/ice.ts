@@ -22,7 +22,6 @@ export type {
     MergeScopeDependsOn,
     MergeTaskDependencies,
     MergeTaskDependsOn,
-    TaskCtxShape,
     TaskError,
     TaskReturnValue,
     StatusTask,
@@ -36,6 +35,7 @@ export type {
     DependenciesOf,
     DependencyReturnValues,
 } from "./lib.js"
+export { type TaskCtxShape } from "../services/taskCtx.js"
 export {
     installParams,
     Tags,

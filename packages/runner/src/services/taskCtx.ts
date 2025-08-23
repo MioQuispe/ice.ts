@@ -38,6 +38,64 @@ import { runTask } from "../tasks/run.js"
 // 		: never
 // }
 
+
+// previous one:
+// export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
+// 	readonly taskTree: TaskTree
+// 	readonly users: {
+// 		[name: string]: {
+// 			identity: SignIdentity
+// 			// agent: HttpAgent
+// 			principal: string
+// 			accountId: string
+// 			// TODO: neurons?
+// 		}
+// 	}
+// 	readonly roles: {
+// 		deployer: ICEUser
+// 		minter: ICEUser
+// 		controller: ICEUser
+// 		treasury: ICEUser
+// 		[name: string]: {
+// 			identity: SignIdentity
+// 			principal: string
+// 			accountId: string
+// 		}
+// 	}
+// 	readonly replica: ReplicaService
+
+// 	readonly runTask: {
+// 		<T extends Task>(
+// 			task: T,
+// 		): Promise<TaskSuccess<T>>
+// 		<T extends Task>(
+// 			task: T,
+// 			args: TaskParamsToArgs<T>,
+// 		): Promise<TaskSuccess<T>>
+// 	}
+
+// 	readonly currentNetwork: string
+// 	readonly networks: {
+// 		[key: string]: {
+// 			replica: ReplicaService
+// 			host: string
+// 			port: number
+// 			// subnet: Subnet?
+// 		}
+// 	}
+// 	readonly args: A
+// 	readonly taskPath: string
+// 	readonly appDir: string
+// 	readonly iceDir: string
+// 	readonly depResults: Record<
+// 		string,
+// 		{
+// 			cacheKey: string | undefined
+// 			result: unknown
+// 		}
+// 	>
+// }
+// export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {}
 export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
 	readonly taskTree: TaskTree
 	readonly users: {
@@ -65,19 +123,11 @@ export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
 	readonly runTask: {
 		<T extends Task>(
 			task: T,
-		): Promise<{
-			result: TaskSuccess<T>
-			taskId: symbol
-			taskPath: string
-		}>
+		): Promise<TaskSuccess<T>>
 		<T extends Task>(
 			task: T,
 			args: TaskParamsToArgs<T>,
-		): Promise<{
-			result: TaskSuccess<T>
-			taskId: symbol
-			taskPath: string
-		}>
+		): Promise<TaskSuccess<T>>
 	}
 
 	readonly currentNetwork: string
@@ -174,11 +224,7 @@ export const makeTaskCtx = Effect.fn("taskCtx_make")(function* (
 		runTask: async <T extends Task>(
 			task: T,
 			args?: TaskParamsToArgs<T>,
-		): Promise<{
-			result: TaskSuccess<T>
-			taskId: symbol
-			taskPath: string
-		}> => {
+		): Promise<TaskSuccess<T>> => {
 			const resolvedArgs = args ?? ({} as TaskParamsToArgs<T>)
 			const result = await runtime
 				.runPromise(

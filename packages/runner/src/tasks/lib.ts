@@ -34,7 +34,7 @@ import type {
 	TaskTree,
 	TaskTreeNode,
 } from "../types/types.js"
-import { makeTaskCtx } from "../services/taskCtx.js"
+import { makeTaskCtx, type TaskCtxShape } from "../services/taskCtx.js"
 
 export type ParamsToArgs<
 	P extends Record<string, NamedParam | PositionalParam>,
@@ -77,96 +77,6 @@ export type TaskSuccess<T extends Task> = [T] extends [
 	: never
 
 export type CanisterIds = Record<string, Record<string, string>>
-export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
-	readonly taskTree: TaskTree
-	readonly users: {
-		[name: string]: {
-			identity: SignIdentity
-			// agent: HttpAgent
-			principal: string
-			accountId: string
-			// TODO: neurons?
-		}
-	}
-	// TODO: async / await
-	// convert later.
-	// readonly canisterIds: {
-	// 	// readonly canisterIds: CanisterIds
-	// 	/**
-	// 	 * Retrieves the current in-memory canister IDs.
-	// 	 */
-	// 	getCanisterIds: () => Effect.Effect<CanisterIds>
-	// 	/**
-	// 	 * Updates the canister ID for a specific canister and network.
-	// 	 */
-	// 	setCanisterId: (params: {
-	// 		canisterName: string
-	// 		network: string
-	// 		canisterId: string
-	// 	}) => Effect.Effect<void>
-	// 	/**
-	// 	 * Removes the canister ID for the given canister name.
-	// 	 */
-	// 	removeCanisterId: (canisterName: string) => Effect.Effect<void>
-	// 	/**
-	// 	 * Flushes the in-memory canister IDs to the canister_ids.json file.
-	// 	 */
-	// 	flush: () => Effect.Effect<void>
-	// }
-
-	readonly roles: {
-		deployer: ICEUser
-		minter: ICEUser
-		controller: ICEUser
-		treasury: ICEUser
-		[name: string]: {
-			identity: SignIdentity
-			principal: string
-			accountId: string
-		}
-	}
-	readonly replica: ReplicaService
-
-	readonly runTask: {
-		<T extends Task>(
-			task: T,
-		): Promise<{
-			result: TaskSuccess<T>
-			taskId: symbol
-			taskPath: string
-		}>
-		<T extends Task>(
-			task: T,
-			args: TaskParamsToArgs<T>,
-		): Promise<{
-			result: TaskSuccess<T>
-			taskId: symbol
-			taskPath: string
-		}>
-	}
-
-	readonly currentNetwork: string
-	readonly networks: {
-		[key: string]: {
-			replica: ReplicaService
-			host: string
-			port: number
-			// subnet: Subnet?
-		}
-	}
-	readonly args: A
-	readonly taskPath: string
-	readonly appDir: string
-	readonly iceDir: string
-	readonly depResults: Record<
-		string,
-		{
-			cacheKey: string | undefined
-			result: unknown
-		}
-	>
-}
-export class TaskCtx extends Context.Tag("TaskCtx")<TaskCtx, TaskCtxShape>() {}
 
 export class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
 	message: string

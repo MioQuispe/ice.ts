@@ -11,7 +11,6 @@ import {
 	BuildTask,
 	CanisterScope,
 	CanisterScopeSimple,
-	configLayer,
 	CreateTask,
 	customCanister,
 	CustomCanisterConfig,
@@ -231,15 +230,11 @@ const makeTestCanister = () => {
 
 const initializeCanister = <T extends CanisterScope>(canister: T) =>
 	Effect.gen(function* () {
-		const { result: createResult } = yield* runTask(
+		const createResult = yield* runTask(
 			canister.children.create,
 		)
-		const {
-			result: { wasmPath, candidPath },
-		} = yield* runTask(canister.children.build)
-		const {
-			result: { didJSPath, didTSPath },
-		} = yield* runTask(canister.children.bindings)
+		const { wasmPath, candidPath } = yield* runTask(canister.children.build)
+		const { didJSPath, didTSPath } = yield* runTask(canister.children.bindings)
 		return {
 			canisterId: createResult,
 			wasmPath,
@@ -269,7 +264,7 @@ describe("custom builder", () => {
 				return result
 			}),
 		)
-		expect(result.result).toMatchObject({
+		expect(result).toMatchObject({
 			canisterId: expect.any(String),
 			canisterName: expect.any(String),
 		})
@@ -408,18 +403,18 @@ describe("custom builder", () => {
 		)
 
 		expect(results).toHaveLength(2)
-		expect(results[0]!.result).toMatchObject({
+		expect(results[0]!).toMatchObject({
 			canisterId: expect.any(String),
 			canisterName: expect.any(String),
 		})
-		expect(results[1]!.result).toMatchObject({
+		expect(results[1]!).toMatchObject({
 			canisterId: expect.any(String),
 			canisterName: expect.any(String),
 		})
 
 		// Should have different canister IDs
-		expect(results[0]!.result.canisterId).not.toBe(
-			results[1]!.result.canisterId,
+		expect(results[0]!.canisterId).not.toBe(
+			results[1]!.canisterId,
 		)
 	})
 
@@ -460,7 +455,7 @@ describe("custom builder", () => {
 			}),
 		)
 
-		expect(result.result).toMatchObject({
+		expect(result).toMatchObject({
 			canisterId: expect.any(String),
 			canisterName: expect.any(String),
 		})
@@ -645,7 +640,7 @@ describe("custom builder", () => {
 			}),
 		)
 
-		expect(firstResult.result).toMatchObject({
+		expect(firstResult).toMatchObject({
 			canisterId: expect.any(String),
 			canisterName: expect.any(String),
 		})
@@ -661,7 +656,7 @@ describe("custom builder", () => {
 			}),
 		)
 
-		expect(secondResult.result).toMatchObject({
+		expect(secondResult).toMatchObject({
 			canisterId: expect.any(String),
 			canisterName: expect.any(String),
 		})
@@ -695,7 +690,7 @@ describe("custom builder", () => {
 			}),
 		)
 
-		expect(result.result).toMatchObject({
+		expect(result).toMatchObject({
 			canisterId: expect.any(String),
 			canisterName: expect.any(String),
 			mode: "install",
@@ -770,7 +765,7 @@ describe("custom builder", () => {
 			}),
 		)
 
-		expect(statusResult.result).toMatchObject({
+		expect(statusResult).toMatchObject({
 			canisterName: expect.any(String),
 			canisterId: expect.any(String),
 			status: expect.any(String),
@@ -803,7 +798,7 @@ describe("custom builder", () => {
 				return result
 			}),
 		)
-		const canisterId = res.result
+		const canisterId = res
 
 		const canisterConfig = {
 			canisterId: canisterId,

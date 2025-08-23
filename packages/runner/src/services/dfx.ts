@@ -28,7 +28,6 @@ import {
 	AgentError,
 } from "./replica.js"
 import { Opt } from "../canister.js"
-import { TaskCtx } from "src/tasks/lib.js"
 import type * as ActorTypes from "../types/actor.js"
 
 export const dfxDefaults: DfxJson = {

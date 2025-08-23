@@ -13,7 +13,6 @@ import {
 	InstallTask,
 	InstallTaskArgs,
 	IsValid,
-	TaskCtxShape,
 	UpgradeTask,
 	TaskError,
 	builderRuntime,
@@ -40,7 +39,7 @@ import {
 } from "./lib.js"
 // TODO: move to lib.ts
 import { generateDIDJS } from "../canister.js"
-import { TaskCtx } from "../tasks/lib.js"
+import { type TaskCtxShape } from "../services/taskCtx.js"
 import { type } from "arktype"
 
 export type CustomCanisterConfig = {
@@ -163,90 +162,86 @@ export const makeCustomDeployTask = <_SERVICE>(
 								)
 							: taskArgs.mode
 					console.log("mode", mode, "taskArgs.mode", taskArgs.mode)
-					const [
-						canisterId,
-						[
-							{
-								result: { wasmPath, candidPath },
-							},
-						],
-					] = yield* Effect.all(
-						[
-							Effect.gen(function* () {
-								yield* Effect.logDebug(
-									"Now running create task",
-								)
-								const { result: canisterId } =
-									yield* Effect.tryPromise({
-										try: () =>
-											runTask(
-												parentScope.children.create,
-												{},
-											),
-										catch: (error) => {
-											return new TaskError({
-												message: String(error),
-											})
+					const [canisterId, [{ wasmPath, candidPath }]] =
+						yield* Effect.all(
+							[
+								Effect.gen(function* () {
+									yield* Effect.logDebug(
+										"Now running create task",
+									)
+									const canisterId = yield* Effect.tryPromise(
+										{
+											try: () =>
+												runTask(
+													parentScope.children.create,
+													{},
+												),
+											catch: (error) => {
+												return new TaskError({
+													message: String(error),
+												})
+											},
 										},
-									})
-								yield* Effect.logDebug(
-									"Finished running create task",
-								)
-								return canisterId
-							}),
-							Effect.gen(function* () {
-								return yield* Effect.all(
-									[
-										Effect.tryPromise({
-											try: () =>
-												runTask(
-													parentScope.children.build,
-													{},
-												),
-											catch: (error) => {
-												return new TaskError({
-													message: String(error),
-												})
-											},
-										}),
-										// runTaskEffect(
-										// 	parentScope.children.build,
-										// 	{},
-										// ),
-										Effect.tryPromise({
-											try: () =>
-												runTask(
-													parentScope.children
-														.bindings,
-													{},
-												),
-											catch: (error) => {
-												return new TaskError({
-													message: String(error),
-												})
-											},
-										}),
-										// runTaskEffect(
-										// 	parentScope.children.bindings,
-										// 	{},
-										// ),
-									],
-									{
-										concurrency: "unbounded",
-									},
-								)
-							}),
-						],
-						{
-							concurrency: "unbounded",
-						},
-					)
+									)
+									yield* Effect.logDebug(
+										"Finished running create task",
+									)
+									return canisterId
+								}),
+								Effect.gen(function* () {
+									return yield* Effect.all(
+										[
+											Effect.tryPromise({
+												try: () =>
+													runTask(
+														parentScope.children
+															.build,
+														{},
+													),
+												catch: (error) => {
+													return new TaskError({
+														message: String(error),
+													})
+												},
+											}),
+											// runTaskEffect(
+											// 	parentScope.children.build,
+											// 	{},
+											// ),
+											Effect.tryPromise({
+												try: () =>
+													runTask(
+														parentScope.children
+															.bindings,
+														{},
+													),
+												catch: (error) => {
+													return new TaskError({
+														message: String(error),
+													})
+												},
+											}),
+											// runTaskEffect(
+											// 	parentScope.children.bindings,
+											// 	{},
+											// ),
+										],
+										{
+											concurrency: "unbounded",
+										},
+									)
+								}),
+							],
+							{
+								concurrency: "unbounded",
+							},
+						)
 
 					yield* Effect.logDebug("Now running install task")
 					let taskResult
 					if (mode === "upgrade") {
 						// TODO: but if its the first time, unnecessary? how do we know to run it
-						const { result } = yield* Effect.tryPromise({
+						const result = yield* Effect.tryPromise({
 							try: () =>
 								runTask(parentScope.children.upgrade, {
 									canisterId,
@@ -260,7 +255,7 @@ export const makeCustomDeployTask = <_SERVICE>(
 						})
 						taskResult = result
 					} else {
-						const { result } = yield* Effect.tryPromise({
+						const result = yield* Effect.tryPromise({
 							try: () =>
 								runTask(parentScope.children.install, {
 									mode,
@@ -279,7 +274,7 @@ export const makeCustomDeployTask = <_SERVICE>(
 						taskResult = result
 					}
 					yield* Effect.logDebug("Canister deployed successfully")
-					return taskResult
+					return taskResult as any
 				})(),
 			),
 		description: "Deploy canister code",

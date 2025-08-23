@@ -27,4 +27,4 @@ export const scope = <T extends TaskTree>(description: string, children: T) => {
 
 
 export { runCli } from "./cli/index.js"
-export type { TaskCtxShape } from "./tasks/lib.js"
+export type { TaskCtxShape } from "./services/taskCtx.js"

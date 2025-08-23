@@ -4,7 +4,7 @@ import type { CachedTask, Task } from "../types/types.js"
 import { FileSystem, Path } from "@effect/platform"
 // TODO: move to ./lib.ts
 import { compileMotokoCanister, generateDIDJS } from "../canister.js"
-import { ParamsToArgs, TaskCtx } from "../tasks/lib.js"
+import { ParamsToArgs } from "../tasks/lib.js"
 import { InstallModes } from "../services/replica.js"
 import {
 	AllowedDep,
@@ -18,12 +18,11 @@ import {
 	RemoveTask,
 	StatusTask,
 	StopTask,
-	TaskCtxShape,
 	UpgradeTask,
 	ValidProvidedDeps,
 	builderRuntime,
-	runTaskEffect,
 } from "./lib.js"
+import { type TaskCtxShape } from "../services/taskCtx.js"
 import { getNodeByPath } from "../tasks/lib.js"
 import {
 	hashJson,
@@ -224,7 +223,7 @@ export const makeMotokoDeployTask = <
 									yield* Effect.logDebug(
 										"Now running create task",
 									)
-									const { result: canisterId } =
+									const canisterId =
 										yield* Effect.tryPromise({
 											try: () =>
 												runTask(
@@ -248,7 +247,8 @@ export const makeMotokoDeployTask = <
 										"Now running build task",
 									)
 									const {
-										result: { wasmPath, candidPath },
+										wasmPath,
+										candidPath,
 									} = yield* Effect.tryPromise({
 										try: () =>
 											runTask(
@@ -265,7 +265,8 @@ export const makeMotokoDeployTask = <
 										"Now running bindings task",
 									)
 									const {
-										result: { didJSPath, didTSPath },
+										didJSPath,
+										didTSPath,
 									} = yield* Effect.tryPromise({
 										try: () =>
 											runTask(
@@ -296,7 +297,7 @@ export const makeMotokoDeployTask = <
 					// TODO: no type error if params not provided at all
 					let taskResult
 					if (mode === "upgrade") {
-						const { result } = yield* Effect.tryPromise({
+						const result = yield* Effect.tryPromise({
 							try: () =>
 								runTask(parentScope.children.upgrade, {
 									canisterId,
@@ -311,7 +312,7 @@ export const makeMotokoDeployTask = <
 						})
 						taskResult = result
 					} else {
-						const { result } = yield* Effect.tryPromise({
+						const result = yield* Effect.tryPromise({
 							try: () =>
 								runTask(parentScope.children.install, {
 									mode,

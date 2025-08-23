@@ -1,7 +1,7 @@
 import { StandardSchemaV1 } from "@standard-schema/spec"
 import { match, type } from "arktype"
 import { Effect, Record } from "effect"
-import { TaskCtx } from "../tasks/lib.js"
+import { type TaskCtxShape } from "../services/taskCtx.js"
 import type { ActorSubclass } from "../types/actor.js"
 import type {
 	InputNamedParam,
@@ -21,9 +21,7 @@ import {
 	NormalizeDeps,
 	normalizeDepsMap,
 	ValidProvidedDeps,
-	type TaskCtxShape,
 	TaskError,
-    runTaskEffect,
 } from "./lib.js"
 
 type MergeTaskParams<
@@ -284,8 +282,7 @@ class TaskBuilder<
 	) {
 		const newTask = {
 			...this.#task,
-			effect: Effect.fn("task_effect")(function* () {
-				const taskCtx = yield* TaskCtx
+			effect: (taskCtx) => Effect.fn("task_effect")(function* () {
 				const deps = Record.map(taskCtx.depResults, (dep) => dep.result)
 				const maybePromise = fn({
 					args: taskCtx.args as ExtractArgsFromTaskParams<TP>,

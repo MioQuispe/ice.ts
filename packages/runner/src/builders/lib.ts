@@ -29,19 +29,18 @@ import {
 import { TaskRegistry } from "../services/taskRegistry.js"
 import type {
 	ParamsToArgs,
-	TaskCtxShape,
 	TaskParamsToArgs,
 	TaskSuccess,
 } from "../tasks/lib.js"
-import { getNodeByPath, TaskCtx } from "../tasks/lib.js"
+import { getNodeByPath } from "../tasks/lib.js"
 import type { ActorSubclass } from "../types/actor.js"
 import type { CachedTask, Task } from "../types/types.js"
 import { proxyActor } from "../utils/extension.js"
 import { ExtractArgsFromTaskParams } from "./task.js"
 import { CustomCanisterConfig, deployParams } from "./custom.js"
-export type { TaskCtxShape }
 // import { configLayer } from "../index.js"
 import { Moc } from "../services/moc.js"
+import { type TaskCtxShape } from "../services/taskCtx.js"
 
 // TODO: move to taskctx
 const configMap = new Map([
@@ -84,22 +83,6 @@ export const builderRuntime = ManagedRuntime.make(baseLayer)
 //     // return runtime.runPromise(effect)
 //     return runtime.runPromise
 // }
-
-export const runTaskEffect = <T extends Task>(
-	task: T,
-	args: TaskParamsToArgs<T>,
-) =>
-	Effect.gen(function* () {
-		const { runTask } = yield* TaskCtx
-		return yield* Effect.tryPromise({
-			try: () => runTask(task, args),
-			catch: (error) => {
-				return new TaskError({
-					message: String(error),
-				})
-			},
-		})
-	})
 
 export class TaskError extends Data.TaggedError("TaskError")<{
 	message?: string

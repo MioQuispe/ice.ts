@@ -14,7 +14,6 @@ import type {
 } from "../services/replica.js"
 import {
 	type TaskArgsParseError,
-	type TaskCtxShape,
 	type TaskNotFoundError,
 	type TaskRuntimeError,
 } from "../tasks/lib.js"
@@ -22,6 +21,7 @@ import { TaskError } from "../builders/lib.js"
 import { PlatformError } from "@effect/platform/Error"
 import { DeploymentError } from "../canister.js"
 import { Schema as S } from "effect"
+import { type TaskCtxShape } from "../services/taskCtx.js"
 
 export type CanisterActor = {
 	actor: ActorSubclass<unknown>

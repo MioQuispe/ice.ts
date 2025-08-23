@@ -12,7 +12,6 @@ import { ICEConfigService } from "../services/iceConfig.js"
 import { CanisterStatus, DefaultReplica } from "../services/replica.js"
 import {
 	filterNodes,
-	TaskCtx,
 	totalTaskCount,
 	cachedTaskCount,
 	uncachedTaskCount,
