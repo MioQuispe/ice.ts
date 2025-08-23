@@ -14,7 +14,6 @@ import {
 	Metric,
 	Option,
 } from "effect"
-import { makeRuntime } from "../index.js"
 import { CLIFlags } from "../services/cliFlags.js"
 import {
 	DefaultConfig,
@@ -23,7 +22,6 @@ import {
 import { ICEConfigService } from "../services/iceConfig.js"
 import { type ReplicaService } from "../services/replica.js"
 import { TaskArgsService } from "../services/taskArgs.js"
-import { TaskCtxService } from "../services/taskCtx.js"
 import { TaskRegistry } from "../services/taskRegistry.js"
 import type {
 	CachedTask,
@@ -36,7 +34,7 @@ import type {
 	TaskTree,
 	TaskTreeNode,
 } from "../types/types.js"
-import { CanisterIdsService } from "../services/canisterIds.js"
+import { makeTaskCtx } from "../services/taskCtx.js"
 
 export type ParamsToArgs<
 	P extends Record<string, NamedParam | PositionalParam>,
@@ -80,7 +78,7 @@ export type TaskSuccess<T extends Task> = [T] extends [
 
 export type CanisterIds = Record<string, Record<string, string>>
 export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
-    readonly taskTree: TaskTree
+	readonly taskTree: TaskTree
 	readonly users: {
 		[name: string]: {
 			identity: SignIdentity
@@ -90,8 +88,8 @@ export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
 			// TODO: neurons?
 		}
 	}
-    // TODO: async / await
-    // convert later.
+	// TODO: async / await
+	// convert later.
 	// readonly canisterIds: {
 	// 	// readonly canisterIds: CanisterIds
 	// 	/**
@@ -518,7 +516,7 @@ export const uncachedTaskCount = Metric.counter("uncached_task_count", {
 
 // TODO: 1 task per time. its used like that anyway
 // rename to executeTask
-export const executeTasks = Effect.fn("executeTasks")(function* (
+export const executeTasks = Effect.fn("execute_tasks")(function* (
 	tasks: (Task | (Task & { args: Record<string, unknown> }))[],
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) {
@@ -582,7 +580,7 @@ export const executeTasks = Effect.fn("executeTasks")(function* (
 		deferredMap.set(task.id, deferred)
 	}
 	const taskEffects = EffectArray.map(tasks, (task) =>
-		Effect.fn("task_execute")(function* () {
+		Effect.fn("task_execute_effect")(function* () {
 			const dependencyResults: Record<
 				string,
 				{
@@ -637,31 +635,13 @@ export const executeTasks = Effect.fn("executeTasks")(function* (
 			yield* Effect.annotateCurrentSpan({
 				argsMap,
 			})
-			const currentContext =
-				yield* Effect.context<
-					ManagedRuntime.ManagedRuntime.Context<
-						ReturnType<typeof makeRuntime>
-					>
-				>()
-			// We have to reuse the service or task references will be different
-			// as the task tree gets recreated each time
-			const iceConfigService = Context.get(
-				currentContext,
-				ICEConfigService,
-			)
-			const iceConfigServiceLayer = Layer.succeed(
-				ICEConfigService,
-				iceConfigService,
-			)
-			const taskCtxService = yield* TaskCtxService
-			const taskCtx = yield* taskCtxService.make(
+			const taskCtx = yield* makeTaskCtx(
 				taskPath,
 				task,
 				argsMap,
 				dependencyResults,
 				progressCb,
 			)
-			// const taskLayer = Layer.succeed(TaskCtx, taskCtx)
 			// TODO: simplify?
 			let result: Option.Option<unknown> = Option.none()
 			let cacheKey: Option.Option<string> = Option.none()
@@ -684,27 +664,13 @@ export const executeTasks = Effect.fn("executeTasks")(function* (
 					},
 				})
 
-				// TODO: do this in userland
-				// .pipe(
-				// 	Effect.provide(taskLayer),
-				// 	// Effect.option,
-				// 	Effect.catchAll((error) =>
-				// 		logDetailedError(error, taskCtx, "cached task input()"),
-				// 	),
-				// )
-				// const input = yield* cachedTask.input().pipe(
-				// 	Effect.provide(taskLayer),
-				// 	// Effect.option,
-				// 	Effect.catchAll((error) =>
-				// 		logDetailedError(error, taskCtx, "cached task input()"),
-				// 	),
-				// )
 				cacheKey = Option.some(cachedTask.computeCacheKey(input))
 
 				const isCacheValid =
 					"revalidate" in cachedTask
 						? yield* Effect.tryPromise({
-								try: () => cachedTask.revalidate!(taskCtx, { input }),
+								try: () =>
+									cachedTask.revalidate!(taskCtx, { input }),
 								catch: (error) => {
 									return new TaskRuntimeError({
 										message:
@@ -748,18 +714,12 @@ export const executeTasks = Effect.fn("executeTasks")(function* (
 							encodedResult,
 						)
 						const decodedResult = yield* Effect.tryPromise({
-							try: () => cachedTask.decode(taskCtx, encodedResult, input),
-							// TODO: do this in userland
-							// .pipe(
-							// 	Effect.provide(taskLayer),
-							// 	Effect.catchAll((error) =>
-							// 		logDetailedError(
-							// 			error,
-							// 			taskCtx,
-							// 			"cached task decode()",
-							// 		),
-							// 	),
-							// )
+							try: () =>
+								cachedTask.decode(
+									taskCtx,
+									encodedResult,
+									input,
+								),
 							catch: (error) => {
 								return new TaskRuntimeError({
 									message: "Error decoding cached task",
@@ -779,10 +739,6 @@ export const executeTasks = Effect.fn("executeTasks")(function* (
 						)
 						// TODO: this is a problem.
 						// we shouldnt be able to get here.
-						// we should throw an error.
-						// or we shouldnt be able to get here.
-						// or we should be able to get here.
-						// or we should be able to get here.
 						// result = Option.some(
 						// 	yield* cachedTask.effect.pipe(
 						// 		Effect.provide(taskLayer),
@@ -806,18 +762,6 @@ export const executeTasks = Effect.fn("executeTasks")(function* (
 							})
 						},
 					}).pipe(Effect.option)
-					// TODO: do this in userland
-					//     .pipe(
-					// 	Effect.provide(taskLayer),
-					// 	Effect.map((result) => Option.some(result)),
-					// 	Effect.catchAll((error) =>
-					// 		logDetailedError(
-					// 			error,
-					// 			taskCtx,
-					// 			"cached task effect(), skipping cache",
-					// 		),
-					// 	),
-					// )
 					if (Option.isNone(result)) {
 						yield* Effect.logDebug("No result for task", taskPath)
 						return yield* Effect.fail(
@@ -843,18 +787,6 @@ export const executeTasks = Effect.fn("executeTasks")(function* (
 								})
 							},
 						})
-						// TODO: do this in userland
-						// .pipe(
-						// 	Effect.provide(taskLayer),
-						// 	Effect.catchAll((error) =>
-						// 		logDetailedError(
-						// 			error,
-						// 			taskCtx,
-						// 			"cached task encode()",
-						// 		),
-						// 	),
-						// )
-
 						yield* Effect.logDebug(
 							"encoded result",
 							"with type:",
@@ -883,13 +815,6 @@ export const executeTasks = Effect.fn("executeTasks")(function* (
 						})
 					},
 				}).pipe(Effect.option)
-				// TODO: do this in userland
-				// .pipe(
-				// 	Effect.provide(taskLayer),
-				// 	Effect.catchAll((error) =>
-				// 		logDetailedError(error, taskCtx, "task effect()"),
-				// 	),
-				// ),
 			}
 
 			if (Option.isNone(result)) {
@@ -983,10 +908,13 @@ export const filterNodes = (
 type TaskFullName = string
 // TODO: figure out if multiple tasks are needed
 
-export const getNodeByPath = (taskPathString: TaskFullName) =>
+export const getNodeByPath = (
+	taskCtx: TaskCtxShape,
+	taskPathString: TaskFullName,
+) =>
 	Effect.gen(function* () {
 		const taskPath: string[] = taskPathString.split(":")
-		const { taskTree } = yield* TaskCtx
+		const { taskTree } = taskCtx
 		const node = yield* findNodeInTree(taskTree, taskPath)
 		return node
 	})

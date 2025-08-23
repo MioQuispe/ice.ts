@@ -21,8 +21,8 @@ import {
 	TaskCtxShape,
 	UpgradeTask,
 	ValidProvidedDeps,
-    makeTaskRuntime,
-    runTaskEffect,
+	builderRuntime,
+	runTaskEffect,
 } from "./lib.js"
 import { getNodeByPath } from "../tasks/lib.js"
 import {
@@ -191,81 +191,149 @@ export const makeMotokoDeployTask = <
 		namedParams: motokoDeployParams,
 		params: motokoDeployParams,
 		positionalParams: [],
-		effect: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(Effect.fn("task_effect")(function* () {
-			const { taskPath } = yield* TaskCtx
-			const canisterName = taskPath.split(":").slice(0, -1).join(":")
-			const parentScope = (yield* getNodeByPath(
-				canisterName,
-			)) as MotokoCanisterScope<_SERVICE>
-			const { args } = yield* TaskCtx
-			const taskArgs = args as MotokoDeployTaskArgs
-			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
-			const mode =
-				taskArgs.mode === "auto"
-					? yield* resolveMode(canisterConfig?.canisterId)
-					: taskArgs.mode
-			const [canisterId, { wasmPath, candidPath }] = yield* Effect.all(
-				[
-					Effect.gen(function* () {
-						const taskPath = `${canisterName}:create`
-						yield* Effect.logDebug("Now running create task")
-						const { result: canisterId } = yield* runTaskEffect(
-							parentScope.children.create,
-                            {}
+		effect: (taskCtx) =>
+			builderRuntime.runPromise(
+				Effect.fn("task_effect")(function* () {
+					const { taskPath } = taskCtx
+					const canisterName = taskPath
+						.split(":")
+						.slice(0, -1)
+						.join(":")
+					const parentScope = (yield* getNodeByPath(
+						taskCtx,
+						canisterName,
+					)) as MotokoCanisterScope<_SERVICE>
+					const { args, runTask } = taskCtx
+					const taskArgs = args as MotokoDeployTaskArgs
+					const canisterConfig = yield* resolveConfig(
+						taskCtx,
+						canisterConfigOrFn,
+					)
+					const mode =
+						taskArgs.mode === "auto"
+							? yield* resolveMode(
+									taskCtx,
+									canisterConfig?.canisterId,
+								)
+							: taskArgs.mode
+					const [canisterId, { wasmPath, candidPath }] =
+						yield* Effect.all(
+							[
+								Effect.gen(function* () {
+									const taskPath = `${canisterName}:create`
+									yield* Effect.logDebug(
+										"Now running create task",
+									)
+									const { result: canisterId } =
+										yield* Effect.tryPromise({
+											try: () =>
+												runTask(
+													parentScope.children.create,
+													{},
+												),
+											catch: (error) => {
+												return new TaskError({
+													message: String(error),
+												})
+											},
+										})
+									yield* Effect.logDebug(
+										"Finished running create task",
+									)
+									return canisterId
+								}),
+								Effect.gen(function* () {
+									// Moc generates candid and wasm files in the same phase
+									yield* Effect.logDebug(
+										"Now running build task",
+									)
+									const {
+										result: { wasmPath, candidPath },
+									} = yield* Effect.tryPromise({
+										try: () =>
+											runTask(
+												parentScope.children.build,
+												{},
+											),
+										catch: (error) => {
+											return new TaskError({
+												message: String(error),
+											})
+										},
+									})
+									yield* Effect.logDebug(
+										"Now running bindings task",
+									)
+									const {
+										result: { didJSPath, didTSPath },
+									} = yield* Effect.tryPromise({
+										try: () =>
+											runTask(
+												parentScope.children.bindings,
+												{},
+											),
+										catch: (error) => {
+											return new TaskError({
+												message: String(error),
+											})
+										},
+									})
+                                    // TODO:!!!!!
+									return {
+										wasmPath,
+										candidPath,
+										didJSPath,
+										didTSPath,
+									}
+								}),
+							],
+							{
+								concurrency: "unbounded",
+							},
 						)
-						yield* Effect.logDebug("Finished running create task")
-						return canisterId
-					}),
-					Effect.gen(function* () {
-						// Moc generates candid and wasm files in the same phase
-						yield* Effect.logDebug("Now running build task")
-						const {
-							result: { wasmPath, candidPath },
-						} = yield* runTaskEffect(parentScope.children.build, {})
-						yield* Effect.logDebug("Now running bindings task")
-						yield* runTaskEffect(parentScope.children.bindings, {})
-						return {
-							wasmPath,
-							candidPath,
-						}
-					}),
-				],
-				{
-					concurrency: "unbounded",
-				},
-			)
 
-			yield* Effect.logDebug("Now running install task")
-			// TODO: no type error if params not provided at all
-			let taskResult
-			if (mode === "upgrade") {
-				const { result } = yield* runTaskEffect(
-					parentScope.children.upgrade,
-					{
-						canisterId,
-						candid: candidPath,
-						wasm: wasmPath,
-					},
-				)
-				taskResult = result
-			} else {
-				const { result } = yield* runTaskEffect(
-					parentScope.children.install,
-					{
-						mode,
-						// TODO: currently does nothing. they are generated inside the installTask from the installArgsFn
-						// args: taskArgs.args,
-						canisterId,
-						candid: candidPath,
-						wasm: wasmPath,
-					},
-				)
-				taskResult = result
-			}
+					yield* Effect.logDebug("Now running install task")
+					// TODO: no type error if params not provided at all
+					let taskResult
+					if (mode === "upgrade") {
+						const { result } = yield* Effect.tryPromise({
+							try: () =>
+								runTask(parentScope.children.upgrade, {
+									canisterId,
+									candid: candidPath,
+									wasm: wasmPath,
+								}),
+							catch: (error) => {
+								return new TaskError({
+									message: String(error),
+								})
+							},
+						})
+						taskResult = result
+					} else {
+						const { result } = yield* Effect.tryPromise({
+							try: () =>
+								runTask(parentScope.children.install, {
+									mode,
+									// TODO: currently does nothing. they are generated inside the installTask from the installArgsFn
+									// args: taskArgs.args,
+									canisterId,
+									candid: candidPath,
+									wasm: wasmPath,
+								}),
+							catch: (error) => {
+								return new TaskError({
+									message: String(error),
+								})
+							},
+						})
+						taskResult = result
+					}
 
-			yield* Effect.logDebug("Canister deployed successfully")
-			return taskResult
-		})()),
+					yield* Effect.logDebug("Canister deployed successfully")
+					return taskResult
+				})(),
+			),
 		description: "Deploy canister code",
 		tags: [Tags.CANISTER, Tags.DEPLOY, Tags.MOTOKO],
 	}
@@ -305,78 +373,95 @@ export const makeMotokoBindingsTask = (): MotokoBindingsTask => {
 		positionalParams: [],
 		params: {},
 		// TODO: do we allow a fn as args here?
-		effect: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(Effect.fn("task_effect")(function* () {
-			const path = yield* Path.Path
-			const fs = yield* FileSystem.FileSystem
-			const { taskPath, appDir, iceDir } = yield* TaskCtx
-			const canisterName = taskPath.split(":").slice(0, -1).join(":")
+		effect: (taskCtx) =>
+			builderRuntime.runPromise(
+				Effect.fn("task_effect")(function* () {
+					const path = yield* Path.Path
+					const fs = yield* FileSystem.FileSystem
+					const { taskPath, appDir, iceDir } = taskCtx
+					const canisterName = taskPath
+						.split(":")
+						.slice(0, -1)
+						.join(":")
 
-			const isGzipped = yield* fs.exists(
-				path.join(
-					appDir,
-					iceDir,
-					"canisters",
-					canisterName,
-					`${canisterName}.wasm.gz`,
-				),
-			)
-			const wasmPath = path.join(
-				appDir,
-				iceDir,
-				"canisters",
-				canisterName,
-				isGzipped ? `${canisterName}.wasm.gz` : `${canisterName}.wasm`,
-			)
-			const didPath = path.join(
-				appDir,
-				iceDir,
-				"canisters",
-				canisterName,
-				`${canisterName}.did`,
-			)
-			// TODO: convert to task params instead. the above can be the defaults
-			// const wasmPath = taskArgs.wasm
-			// const candidPath = taskArgs.candid
+					const isGzipped = yield* fs.exists(
+						path.join(
+							appDir,
+							iceDir,
+							"canisters",
+							canisterName,
+							`${canisterName}.wasm.gz`,
+						),
+					)
+					const wasmPath = path.join(
+						appDir,
+						iceDir,
+						"canisters",
+						canisterName,
+						isGzipped
+							? `${canisterName}.wasm.gz`
+							: `${canisterName}.wasm`,
+					)
+					const didPath = path.join(
+						appDir,
+						iceDir,
+						"canisters",
+						canisterName,
+						`${canisterName}.did`,
+					)
+					// TODO: convert to task params instead. the above can be the defaults
+					// const wasmPath = taskArgs.wasm
+					// const candidPath = taskArgs.candid
 
-			yield* Effect.logDebug("Artifact paths", { wasmPath, didPath })
+					yield* Effect.logDebug("Artifact paths", {
+						wasmPath,
+						didPath,
+					})
 
-			const { didJS, didJSPath, didTSPath } = yield* generateDIDJS(
-				canisterName,
-				didPath,
-			)
-			yield* Effect.logDebug(`Generated DID JS for ${canisterName}`)
-			return {
-				didJSPath,
-				didTSPath,
-			}
-		})()),
+					const { didJS, didJSPath, didTSPath } =
+						yield* generateDIDJS(taskCtx, canisterName, didPath)
+					yield* Effect.logDebug(
+						`Generated DID JS for ${canisterName}`,
+					)
+					return {
+						didJSPath,
+						didTSPath,
+					}
+				})(),
+			),
 		computeCacheKey: (input) => {
 			return hashJson({
 				depsHash: hashJson(input.depCacheKeys),
 				taskPath: input.taskPath,
 			})
 		},
-		input: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(
-			Effect.fn("task_input")(function* () {
-				const { taskPath, depResults } = yield* TaskCtx
-				const depCacheKeys = Record.map(
-					depResults,
-					(dep) => dep.cacheKey,
-				)
-				const input = {
-					taskPath,
-					depCacheKeys,
-				}
-				return input
-			})()),
-		encode: (taskCtx, value) => makeTaskRuntime(taskCtx).runPromise(
-			Effect.fn("task_encode")(function* () {
-				return JSON.stringify(value)
-			})()),
-		decode: (taskCtx, value) => makeTaskRuntime(taskCtx).runPromise(
-			Effect.fn("task_decode")(function* () {
-				return JSON.parse(value as string)
-			})()),
+		input: (taskCtx) =>
+			builderRuntime.runPromise(
+				Effect.fn("task_input")(function* () {
+					const { taskPath, depResults } = taskCtx
+					const depCacheKeys = Record.map(
+						depResults,
+						(dep) => dep.cacheKey,
+					)
+					const input = {
+						taskPath,
+						depCacheKeys,
+					}
+					return input
+				})(),
+			),
+		encode: (taskCtx, value) =>
+			builderRuntime.runPromise(
+				Effect.fn("task_encode")(function* () {
+					return JSON.stringify(value)
+				})(),
+			),
+		decode: (taskCtx, value) =>
+			builderRuntime.runPromise(
+				Effect.fn("task_decode")(function* () {
+					return JSON.parse(value as string)
+				})(),
+			),
 		encodingFormat: "string",
 		description: "Generate bindings for Motoko canister",
 		tags: [Tags.CANISTER, Tags.MOTOKO, Tags.BINDINGS],
@@ -411,55 +496,67 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 		id: Symbol("motokoCanister/build"),
 		dependsOn: {},
 		dependencies: {},
-		effect: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(Effect.fn("task_effect")(function* () {
-			yield* Effect.logDebug("Building Motoko canister")
-			const path = yield* Path.Path
-			const fs = yield* FileSystem.FileSystem
-			const { appDir, iceDir, taskPath } = yield* TaskCtx
-			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
-			const canisterName = taskPath.split(":").slice(0, -1).join(":")
-			const isGzipped = yield* fs.exists(
-				path.join(
-					appDir,
-					iceDir,
-					"canisters",
-					canisterName,
-					`${canisterName}.wasm.gz`,
-				),
-			)
-			const wasmOutputFilePath = path.join(
-				appDir,
-				iceDir,
-				"canisters",
-				canisterName,
-				isGzipped ? `${canisterName}.wasm.gz` : `${canisterName}.wasm`,
-			)
-			const outCandidPath = path.join(
-				appDir,
-				iceDir,
-				"canisters",
-				canisterName,
-				`${canisterName}.did`,
-			)
-			// Ensure the directory exists
-			yield* fs.makeDirectory(path.dirname(wasmOutputFilePath), {
-				recursive: true,
-			})
-			yield* Effect.logDebug("Compiling Motoko canister")
-			yield* compileMotokoCanister(
-				path.resolve(appDir, canisterConfig.src),
-				canisterName,
-				wasmOutputFilePath,
-			)
-			yield* Effect.logDebug("Motoko canister built successfully", {
-				wasmPath: wasmOutputFilePath,
-				candidPath: outCandidPath,
-			})
-			return {
-				wasmPath: wasmOutputFilePath,
-				candidPath: outCandidPath,
-			}
-		})()),
+		effect: (taskCtx) =>
+			builderRuntime.runPromise(
+				Effect.fn("task_effect")(function* () {
+					yield* Effect.logDebug("Building Motoko canister")
+					const path = yield* Path.Path
+					const fs = yield* FileSystem.FileSystem
+					const { appDir, iceDir, taskPath } = taskCtx
+					const canisterConfig =
+						yield* resolveConfig(taskCtx, canisterConfigOrFn)
+					const canisterName = taskPath
+						.split(":")
+						.slice(0, -1)
+						.join(":")
+					const isGzipped = yield* fs.exists(
+						path.join(
+							appDir,
+							iceDir,
+							"canisters",
+							canisterName,
+							`${canisterName}.wasm.gz`,
+						),
+					)
+					const wasmOutputFilePath = path.join(
+						appDir,
+						iceDir,
+						"canisters",
+						canisterName,
+						isGzipped
+							? `${canisterName}.wasm.gz`
+							: `${canisterName}.wasm`,
+					)
+					const outCandidPath = path.join(
+						appDir,
+						iceDir,
+						"canisters",
+						canisterName,
+						`${canisterName}.did`,
+					)
+					// Ensure the directory exists
+					yield* fs.makeDirectory(path.dirname(wasmOutputFilePath), {
+						recursive: true,
+					})
+					yield* Effect.logDebug("Compiling Motoko canister")
+					yield* compileMotokoCanister(
+						path.resolve(appDir, canisterConfig.src),
+						canisterName,
+						wasmOutputFilePath,
+					)
+					yield* Effect.logDebug(
+						"Motoko canister built successfully",
+						{
+							wasmPath: wasmOutputFilePath,
+							candidPath: outCandidPath,
+						},
+					)
+					return {
+						wasmPath: wasmOutputFilePath,
+						candidPath: outCandidPath,
+					}
+				})(),
+			),
 		computeCacheKey: (input) => {
 			// TODO: pocket-ic could be restarted?
 			const installInput = {
@@ -471,56 +568,63 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 			const cacheKey = hashJson(installInput)
 			return cacheKey
 		},
-		input: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(
-			Effect.fn("task_input")(function* () {
-				const { taskPath, depResults } = yield* TaskCtx
-				const dependencies = depResults
-				const depCacheKeys = Record.map(
-					dependencies,
-					(dep) => dep.cacheKey,
-				)
-				const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
-				const path = yield* Path.Path
-				const fs = yield* FileSystem.FileSystem
-				const srcDir = path.dirname(canisterConfig.src)
-				const entries = yield* fs.readDirectory(srcDir, {
-					recursive: true,
-				})
-				const srcFiles = entries.filter((entry) =>
-					entry.endsWith(".mo"),
-				)
-				const prevSrcDigests: Array<FileDigest> = []
-				const srcDigests: Array<FileDigest> = []
-				for (const [index, file] of srcFiles.entries()) {
-					const prevSrcDigest = prevSrcDigests?.[index]
-					const filePath = path.join(srcDir, file)
-					const { fresh: srcFresh, digest: srcDigest } =
-						yield* Effect.tryPromise({
-							try: () =>
-								isArtifactCached(filePath, prevSrcDigest),
-							catch: (e) =>
-								new TaskError({
-									message:
-										"Failed to check if artifact is cached",
-								}),
-						})
-					srcDigests.push(srcDigest)
-				}
-				const input = {
-					taskPath,
-					src: srcDigests,
-					depCacheKeys,
-				}
-				return input
-			})()),
-		encode: (taskCtx, value) => makeTaskRuntime(taskCtx).runPromise(
-			Effect.fn("task_encode")(function* () {
-				return JSON.stringify(value)
-			})()),
-		decode: (taskCtx, value) => makeTaskRuntime(taskCtx).runPromise(
-			Effect.fn("task_decode")(function* () {
-				return JSON.parse(value as string)
-			})()),
+		input: (taskCtx) =>
+			builderRuntime.runPromise(
+				Effect.fn("task_input")(function* () {
+					const { taskPath, depResults } = taskCtx
+					const dependencies = depResults
+					const depCacheKeys = Record.map(
+						dependencies,
+						(dep) => dep.cacheKey,
+					)
+					const canisterConfig =
+						yield* resolveConfig(taskCtx, canisterConfigOrFn)
+					const path = yield* Path.Path
+					const fs = yield* FileSystem.FileSystem
+					const srcDir = path.dirname(canisterConfig.src)
+					const entries = yield* fs.readDirectory(srcDir, {
+						recursive: true,
+					})
+					const srcFiles = entries.filter((entry) =>
+						entry.endsWith(".mo"),
+					)
+					const prevSrcDigests: Array<FileDigest> = []
+					const srcDigests: Array<FileDigest> = []
+					for (const [index, file] of srcFiles.entries()) {
+						const prevSrcDigest = prevSrcDigests?.[index]
+						const filePath = path.join(srcDir, file)
+						const { fresh: srcFresh, digest: srcDigest } =
+							yield* Effect.tryPromise({
+								try: () =>
+									isArtifactCached(filePath, prevSrcDigest),
+								catch: (e) =>
+									new TaskError({
+										message:
+											"Failed to check if artifact is cached",
+									}),
+							})
+						srcDigests.push(srcDigest)
+					}
+					const input = {
+						taskPath,
+						src: srcDigests,
+						depCacheKeys,
+					}
+					return input
+				})(),
+			),
+		encode: (taskCtx, value) =>
+			builderRuntime.runPromise(
+				Effect.fn("task_encode")(function* () {
+					return JSON.stringify(value)
+				})(),
+			),
+		decode: (taskCtx, value) =>
+			builderRuntime.runPromise(
+				Effect.fn("task_decode")(function* () {
+					return JSON.parse(value as string)
+				})(),
+			),
 		encodingFormat: "string",
 		description: "Build Motoko canister",
 		tags: [Tags.CANISTER, Tags.MOTOKO, Tags.BUILD],

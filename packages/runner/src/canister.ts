@@ -6,7 +6,7 @@ import * as didc from "@ice.ts/didc_js"
 // import d from "@ice.ts/didc_js"
 import { Data, Effect } from "effect"
 import { Moc } from "./services/moc.js"
-import { TaskCtx } from "./tasks/lib.js"
+import { TaskCtx, TaskCtxShape } from "./tasks/lib.js"
 import type * as ActorTypes from "./types/actor.js"
 
 export class DeploymentError extends Data.TaggedError("DeploymentError")<{
@@ -61,11 +61,11 @@ export const createCanister = (canisterId?: string) =>
 	})
 
 // TODO: types for DIDJS
-export const generateDIDJS = (canisterName: string, didPath: string) =>
+export const generateDIDJS = (taskCtx: TaskCtxShape, canisterName: string, didPath: string) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem
 		const path = yield* Path.Path
-		const { appDir, iceDir } = yield* TaskCtx
+		const { appDir, iceDir } = taskCtx
 		const didString = yield* fs.readFileString(didPath)
 		const didJSString = didc.did_to_js(didString)
 		const didTSString = didc.did_to_ts(didString)

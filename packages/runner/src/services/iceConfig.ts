@@ -126,8 +126,5 @@ export class ICEConfigService extends Context.Tag("ICEConfigService")<
 		readonly taskTree: TaskTree
 	}
 >() {
-	static readonly Live = Layer.effect(
-		ICEConfigService,
-		createService,
-	)
+	static readonly Live = Layer.effect(ICEConfigService, createService)
 }

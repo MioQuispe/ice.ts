@@ -1,12 +1,8 @@
 import type { ActorSubclass, SignIdentity } from "@dfinity/agent"
-import { NodeContext } from "@effect/platform-node"
 import type { StandardSchemaV1 } from "@standard-schema/spec"
 import type { ConfigError } from "effect"
-import { CanisterIdsService } from "../services/canisterIds.js"
-import { CLIFlags } from "../services/cliFlags.js"
-import { DefaultConfig } from "../services/defaultConfig.js"
-import { ICEConfigError, ICEConfigService } from "../services/iceConfig.js"
-import { Moc, MocError } from "../services/moc.js"
+import { ICEConfigError } from "../services/iceConfig.js"
+import { MocError } from "../services/moc.js"
 import type {
 	AgentError,
 	CanisterCreateError,
@@ -16,14 +12,8 @@ import type {
 	CanisterStopError,
 	ReplicaService,
 } from "../services/replica.js"
-import { DefaultReplica } from "../services/replica.js"
-import { TaskArgsService } from "../services/taskArgs.js"
-import { TaskRegistry } from "../services/taskRegistry.js"
-import { TaskCtxService } from "../services/taskCtx.js"
 import {
-	isCachedTask,
 	type TaskArgsParseError,
-	type TaskCtx,
 	type TaskCtxShape,
 	type TaskNotFoundError,
 	type TaskRuntimeError,
@@ -131,19 +121,6 @@ export interface PositionalParam<T = unknown> extends TaskParam<T> {
 	isFlag: false
 }
 
-type TaskRequirements =
-	| TaskCtx
-	| TaskCtxService
-	| TaskRegistry
-	| CanisterIdsService
-	| NodeContext.NodeContext
-	| ICEConfigService
-	| Moc
-	| DefaultConfig
-	| DefaultReplica
-	| CLIFlags
-	| TaskArgsService
-
 // TODO: separate per task...
 export type TaskErrors =
 	| TaskError
@@ -178,19 +155,19 @@ export interface Task<
 	positionalParams: Array<PositionalParam>
 	params: Record<string, NamedParam | PositionalParam>
 }
-	// TODO: we only want the shape of the task here
+// TODO: we only want the shape of the task here
 
 export type Opt<T> = [T] | []
 export const Opt = <T>(value?: T): Opt<T> => {
-  return (value || value === 0) ? ([value]) : []
+	return value || value === 0 ? [value] : []
 }
 const Fn = S.instanceOf(Function)
 const CachedTaskSchema = S.Struct({
-  computeCacheKey: Fn,
-  input: Fn,
-  encode: Fn,
-  decode: Fn,
-  encodingFormat: S.Union(S.Literal("string"), S.Literal("uint8array")),
+	computeCacheKey: Fn,
+	input: Fn,
+	encode: Fn,
+	decode: Fn,
+	encodingFormat: S.Union(S.Literal("string"), S.Literal("uint8array")),
 })
 
 // export const effectifyTaskFn = <T extends Task | CachedTask>(task: T) => {
@@ -209,7 +186,10 @@ export type CachedTask<
 	R = unknown,
 > = Task<A, D, P> & {
 	input: (taskCtx: TaskCtxShape) => Promise<Input> // optional input
-	revalidate?: (taskCtx: TaskCtxShape, args: { input: Input }) => Promise<boolean>
+	revalidate?: (
+		taskCtx: TaskCtxShape,
+		args: { input: Input },
+	) => Promise<boolean>
 	encode: (
 		taskCtx: TaskCtxShape,
 		value: A,
@@ -224,6 +204,7 @@ export type CachedTask<
 	computeCacheKey: (input: Input) => string
 }
 
+// TODO: just use namespaces instead
 export type Scope = {
 	_tag: "scope"
 	readonly id: symbol
@@ -231,6 +212,7 @@ export type Scope = {
 	tags: Array<string | symbol>
 	description: string
 	children: Record<string, TaskTreeNode>
+	// this is just the modules default export
 	defaultTask?: string
 }
 

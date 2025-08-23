@@ -16,8 +16,7 @@ import {
 	TaskCtxShape,
 	UpgradeTask,
 	TaskError,
-    runTaskEffect,
-    makeTaskRuntime,
+	builderRuntime,
 } from "./lib.js"
 import { getNodeByPath, ParamsToArgs, TaskParamsToArgs } from "../tasks/lib.js"
 import {
@@ -134,85 +133,155 @@ export const makeCustomDeployTask = <_SERVICE>(
 		namedParams: deployParams,
 		params: deployParams,
 		positionalParams: [],
-		effect: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(Effect.fn("task_effect")(function* () {
-			const { taskPath } = yield* TaskCtx
-			const canisterName = taskPath.split(":").slice(0, -1).join(":")
-			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
-			// TODO: include this in taskCtx instead? as { scope }
-			const parentScope = (yield* getNodeByPath(
-				canisterName,
-			)) as CanisterScope<_SERVICE>
-			const { args } = yield* TaskCtx
-			const taskArgs = args as DeployTaskArgs
-			// const mode = yield* resolveMode()
+		effect: (taskCtx) =>
+			builderRuntime.runPromise(
+				Effect.fn("task_effect")(function* () {
+					const { taskPath, runTask } = taskCtx
+					const canisterName = taskPath
+						.split(":")
+						.slice(0, -1)
+						.join(":")
+					const canisterConfig = yield* resolveConfig(
+						taskCtx,
+						canisterConfigOrFn,
+					)
+					// TODO: include this in taskCtx instead? as { scope }
+					const parentScope = (yield* getNodeByPath(
+						taskCtx,
+						canisterName,
+					)) as CanisterScope<_SERVICE>
+					const { args } = taskCtx
+					const taskArgs = args as DeployTaskArgs
+					// const mode = yield* resolveMode()
 
-			// TODO: this requires create, because some have canisterId hardcoded?
-			const mode =
-				taskArgs.mode === "auto"
-					? yield* resolveMode(canisterConfig?.canisterId)
-					: taskArgs.mode
-			console.log("mode", mode, "taskArgs.mode", taskArgs.mode)
-			const [
-				canisterId,
-				[
-					{
-						result: { wasmPath, candidPath },
-					},
-				],
-			] = yield* Effect.all(
-				[
-					Effect.gen(function* () {
-						yield* Effect.logDebug("Now running create task")
-						const { result: canisterId } = yield* runTaskEffect(parentScope.children.create, {})
-						yield* Effect.logDebug("Finished running create task")
-						return canisterId
-					}),
-					Effect.gen(function* () {
-						return yield* Effect.all(
-							[
-								runTaskEffect(parentScope.children.build, {}),
-								runTaskEffect(parentScope.children.bindings, {}),
-							],
+					// TODO: this requires create, because some have canisterId hardcoded?
+					const mode =
+						taskArgs.mode === "auto"
+							? yield* resolveMode(
+									taskCtx,
+									canisterConfig?.canisterId,
+								)
+							: taskArgs.mode
+					console.log("mode", mode, "taskArgs.mode", taskArgs.mode)
+					const [
+						canisterId,
+						[
 							{
-								concurrency: "unbounded",
+								result: { wasmPath, candidPath },
 							},
-						)
-					}),
-				],
-				{
-					concurrency: "unbounded",
-				},
-			)
+						],
+					] = yield* Effect.all(
+						[
+							Effect.gen(function* () {
+								yield* Effect.logDebug(
+									"Now running create task",
+								)
+								const { result: canisterId } =
+									yield* Effect.tryPromise({
+										try: () =>
+											runTask(
+												parentScope.children.create,
+												{},
+											),
+										catch: (error) => {
+											return new TaskError({
+												message: String(error),
+											})
+										},
+									})
+								yield* Effect.logDebug(
+									"Finished running create task",
+								)
+								return canisterId
+							}),
+							Effect.gen(function* () {
+								return yield* Effect.all(
+									[
+										Effect.tryPromise({
+											try: () =>
+												runTask(
+													parentScope.children.build,
+													{},
+												),
+											catch: (error) => {
+												return new TaskError({
+													message: String(error),
+												})
+											},
+										}),
+										// runTaskEffect(
+										// 	parentScope.children.build,
+										// 	{},
+										// ),
+										Effect.tryPromise({
+											try: () =>
+												runTask(
+													parentScope.children
+														.bindings,
+													{},
+												),
+											catch: (error) => {
+												return new TaskError({
+													message: String(error),
+												})
+											},
+										}),
+										// runTaskEffect(
+										// 	parentScope.children.bindings,
+										// 	{},
+										// ),
+									],
+									{
+										concurrency: "unbounded",
+									},
+								)
+							}),
+						],
+						{
+							concurrency: "unbounded",
+						},
+					)
 
-			yield* Effect.logDebug("Now running install task")
-			let taskResult
-			if (mode === "upgrade") {
-				// TODO: but if its the first time, unnecessary? how do we know to run it
-				const { result } = yield* runTaskEffect(
-					parentScope.children.upgrade,
-					{
-						canisterId,
-						wasm: wasmPath,
-					},
-				)
-				taskResult = result
-			} else {
-				const { result } = yield* runTaskEffect(
-					parentScope.children.install,
-					{
-						mode,
-						// TODO: currently does nothing. they are generated inside the installTask from the installArgsFn
-						// do we run the installArgsFn here instead? separate the task again?
-						// args: taskArgs.args,
-						canisterId,
-						wasm: wasmPath,
-					},
-				)
-				taskResult = result
-			}
-			yield* Effect.logDebug("Canister deployed successfully")
-			return taskResult
-		})()),
+					yield* Effect.logDebug("Now running install task")
+					let taskResult
+					if (mode === "upgrade") {
+						// TODO: but if its the first time, unnecessary? how do we know to run it
+						const { result } = yield* Effect.tryPromise({
+							try: () =>
+								runTask(parentScope.children.upgrade, {
+									canisterId,
+									wasm: wasmPath,
+								}),
+							catch: (error) => {
+								return new TaskError({
+									message: String(error),
+								})
+							},
+						})
+						taskResult = result
+					} else {
+						const { result } = yield* Effect.tryPromise({
+							try: () =>
+								runTask(parentScope.children.install, {
+									mode,
+									// TODO: currently does nothing. they are generated inside the installTask from the installArgsFn
+									// do we run the installArgsFn here instead? separate the task again?
+									// args: taskArgs.args,
+									canisterId,
+									wasm: wasmPath,
+								}),
+							catch: (error) => {
+								return new TaskError({
+									message: String(error),
+								})
+							},
+						})
+						taskResult = result
+					}
+					yield* Effect.logDebug("Canister deployed successfully")
+					return taskResult
+				})(),
+			),
 		description: "Deploy canister code",
 		tags: [Tags.CANISTER, Tags.DEPLOY, Tags.CUSTOM],
 	} satisfies DeployTask<_SERVICE>
@@ -230,23 +299,34 @@ export const makeBindingsTask = (
 		dependsOn: {},
 		dependencies: {},
 		// TODO: do we allow a fn as args here?
-		effect: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(Effect.fn("task_effect")(function* () {
-			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
-			const { taskPath } = yield* TaskCtx
-			const canisterName = taskPath.split(":").slice(0, -1).join(":")
-			const didPath = canisterConfig.candid
-			yield* Effect.logDebug("Bindings task", canisterName, { didPath })
+		effect: (taskCtx) =>
+			builderRuntime.runPromise(
+				Effect.fn("task_effect")(function* () {
+					const canisterConfig = yield* resolveConfig(
+						taskCtx,
+						canisterConfigOrFn,
+					)
+					const { taskPath } = taskCtx
+					const canisterName = taskPath
+						.split(":")
+						.slice(0, -1)
+						.join(":")
+					const didPath = canisterConfig.candid
+					yield* Effect.logDebug("Bindings task", canisterName, {
+						didPath,
+					})
 
-			const { didJS, didJSPath, didTSPath } = yield* generateDIDJS(
-				canisterName,
-				didPath,
-			)
-			yield* Effect.logDebug(`Generated DID JS for ${canisterName}`)
-			return {
-				didJSPath,
-				didTSPath,
-			}
-		})()),
+					const { didJS, didJSPath, didTSPath } =
+						yield* generateDIDJS(taskCtx, canisterName, didPath)
+					yield* Effect.logDebug(
+						`Generated DID JS for ${canisterName}`,
+					)
+					return {
+						didJSPath,
+						didTSPath,
+					}
+				})(),
+			),
 		computeCacheKey: (input) => {
 			return hashJson({
 				depsHash: hashJson(input.depCacheKeys),
@@ -254,27 +334,33 @@ export const makeBindingsTask = (
 				configHash: hashConfig(canisterConfigOrFn),
 			})
 		},
-		input: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(
-			Effect.fn("task_input")(function* () {
-				const { taskPath, depResults } = yield* TaskCtx
-				const depCacheKeys = Record.map(
-					depResults,
-					(dep) => dep.cacheKey,
-				)
-				const input = {
-					taskPath,
-					depCacheKeys,
-				}
-				return input
-			})()),
-		encode: (taskCtx, value) => makeTaskRuntime(taskCtx).runPromise(
-			Effect.fn("task_encode")(function* () {
-				return JSON.stringify(value)
-			})()),
-		decode: (taskCtx, value) => makeTaskRuntime(taskCtx).runPromise(
-			Effect.fn("task_decode")(function* () {
-				return JSON.parse(value as string)
-			})()),
+		input: (taskCtx) =>
+			builderRuntime.runPromise(
+				Effect.fn("task_input")(function* () {
+					const { taskPath, depResults } = taskCtx
+					const depCacheKeys = Record.map(
+						depResults,
+						(dep) => dep.cacheKey,
+					)
+					const input = {
+						taskPath,
+						depCacheKeys,
+					}
+					return input
+				})(),
+			),
+		encode: (taskCtx, value) =>
+			builderRuntime.runPromise(
+				Effect.fn("task_encode")(function* () {
+					return JSON.stringify(value)
+				})(),
+			),
+		decode: (taskCtx, value) =>
+			builderRuntime.runPromise(
+				Effect.fn("task_decode")(function* () {
+					return JSON.parse(value as string)
+				})(),
+			),
 		encodingFormat: "string",
 		description: "Generate bindings for custom canister",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BINDINGS],
@@ -301,58 +387,72 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 		dependencies: {
 			// no deps
 		},
-		effect: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(Effect.fn("task_effect")(function* () {
-			const fs = yield* FileSystem.FileSystem
-			const path = yield* Path.Path
-			// TODO: could be a promise
-			const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
-			const { taskPath, appDir, iceDir } = yield* TaskCtx
-			// TODO: pass in as arg instead?
-			const canisterName = taskPath.split(":").slice(0, -1).join(":")
-			// TODO: look at the canisterConfig.wasm directly instead
-			const isGzipped = canisterConfig.wasm.endsWith(".gz")
-			// const isGzipped = yield* fs.exists(
-			// 	path.join(
-			// 		appDir,
-			// 		iceDir,
-			// 		"canisters",
-			// 		canisterName,
-			// 		`${canisterName}.wasm.gz`,
-			// 	),
-			// )
-			const outWasmPath = path.join(
-				appDir,
-				iceDir,
-				"canisters",
-				canisterName,
-				isGzipped ? `${canisterName}.wasm.gz` : `${canisterName}.wasm`,
-			)
-			yield* Effect.logDebug("Reading wasm file", canisterConfig.wasm)
-			const wasm = yield* fs.readFile(canisterConfig.wasm)
-			// Ensure the directory exists
-			yield* fs.makeDirectory(path.dirname(outWasmPath), {
-				recursive: true,
-			})
-			yield* fs.writeFile(outWasmPath, wasm)
+		effect: (taskCtx) =>
+			builderRuntime.runPromise(
+				Effect.fn("task_effect")(function* () {
+					const fs = yield* FileSystem.FileSystem
+					const path = yield* Path.Path
+					// TODO: could be a promise
+					const canisterConfig = yield* resolveConfig(
+						taskCtx,
+						canisterConfigOrFn,
+					)
+					const { taskPath, appDir, iceDir } = taskCtx
+					// TODO: pass in as arg instead?
+					const canisterName = taskPath
+						.split(":")
+						.slice(0, -1)
+						.join(":")
+					// TODO: look at the canisterConfig.wasm directly instead
+					const isGzipped = canisterConfig.wasm.endsWith(".gz")
+					// const isGzipped = yield* fs.exists(
+					// 	path.join(
+					// 		appDir,
+					// 		iceDir,
+					// 		"canisters",
+					// 		canisterName,
+					// 		`${canisterName}.wasm.gz`,
+					// 	),
+					// )
+					const outWasmPath = path.join(
+						appDir,
+						iceDir,
+						"canisters",
+						canisterName,
+						isGzipped
+							? `${canisterName}.wasm.gz`
+							: `${canisterName}.wasm`,
+					)
+					yield* Effect.logDebug(
+						"Reading wasm file",
+						canisterConfig.wasm,
+					)
+					const wasm = yield* fs.readFile(canisterConfig.wasm)
+					// Ensure the directory exists
+					yield* fs.makeDirectory(path.dirname(outWasmPath), {
+						recursive: true,
+					})
+					yield* fs.writeFile(outWasmPath, wasm)
 
-			const outCandidPath = path.join(
-				appDir,
-				iceDir,
-				"canisters",
-				canisterName,
-				`${canisterName}.did`,
-			)
-			const candid = yield* fs.readFile(canisterConfig.candid)
-			yield* fs.writeFile(outCandidPath, candid)
-			yield* Effect.logDebug("Built custom canister", {
-				wasmPath: outWasmPath,
-				candidPath: outCandidPath,
-			})
-			return {
-				wasmPath: outWasmPath,
-				candidPath: outCandidPath,
-			}
-		})()),
+					const outCandidPath = path.join(
+						appDir,
+						iceDir,
+						"canisters",
+						canisterName,
+						`${canisterName}.did`,
+					)
+					const candid = yield* fs.readFile(canisterConfig.candid)
+					yield* fs.writeFile(outCandidPath, candid)
+					yield* Effect.logDebug("Built custom canister", {
+						wasmPath: outWasmPath,
+						candidPath: outCandidPath,
+					})
+					return {
+						wasmPath: outWasmPath,
+						candidPath: outCandidPath,
+					}
+				})(),
+			),
 		computeCacheKey: (input) => {
 			// TODO: pocket-ic could be restarted?
 			const installInput = {
@@ -364,54 +464,69 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 			const cacheKey = hashJson(installInput)
 			return cacheKey
 		},
-		input: (taskCtx) => makeTaskRuntime(taskCtx).runPromise(
-			Effect.fn("task_input")(function* () {
-				const { taskPath, depResults } = yield* TaskCtx
-				const canisterName = taskPath.split(":").slice(0, -1).join(":")
-				const depCacheKeys = Record.map(
-					depResults,
-					(dep) => dep.cacheKey,
-				)
-				const path = yield* Path.Path
-				const { appDir, iceDir } = yield* TaskCtx
-				// TODO...? might be problematic if user does lots of async
-				const canisterConfig = yield* resolveConfig(canisterConfigOrFn)
-				const wasmPath = canisterConfig.wasm
-				const candidPath = canisterConfig.candid
-				// TODO: we need a separate cache for this?
-				const prevWasmDigest = undefined
-				const { fresh, digest: wasmDigest } =
-					yield* isArtifactCachedEffect(wasmPath, prevWasmDigest)
-				// yield* Effect.tryPromise({
-				// 	//
-				// 	try: () => isArtifactCached(wasmPath, prevWasmDigest),
-				// 	// TODO:
-				// 	catch: Effect.fail,
-				// })
-				const prevCandidDigest = undefined
-				const { fresh: candidFresh, digest: candidDigest } =
-					yield* isArtifactCachedEffect(candidPath, prevCandidDigest)
-				// yield* Effect.tryPromise({
-				// 	try: () => isArtifactCached(candidPath, prevCandidDigest),
-				// 	catch: Effect.fail,
-				// })
-				const input = {
-					canisterName,
-					taskPath,
-					wasm: wasmDigest,
-					candid: candidDigest,
-					depCacheKeys,
-				}
-				return input
-			})()),
-		encode: (taskCtx, value) => makeTaskRuntime(taskCtx).runPromise(
-			Effect.fn("task_encode")(function* () {
-				return JSON.stringify(value)
-			})()),
-		decode: (taskCtx, value) => makeTaskRuntime(taskCtx).runPromise(
-			Effect.fn("task_decode")(function* () {
-				return JSON.parse(value as string)
-			})()),
+		input: (taskCtx) =>
+			builderRuntime.runPromise(
+				Effect.fn("task_input")(function* () {
+					const { taskPath, depResults } = taskCtx
+					const canisterName = taskPath
+						.split(":")
+						.slice(0, -1)
+						.join(":")
+					const depCacheKeys = Record.map(
+						depResults,
+						(dep) => dep.cacheKey,
+					)
+					const path = yield* Path.Path
+					const { appDir, iceDir } = taskCtx
+					// TODO...? might be problematic if user does lots of async
+					const canisterConfig = yield* resolveConfig(
+						taskCtx,
+						canisterConfigOrFn,
+					)
+					const wasmPath = canisterConfig.wasm
+					const candidPath = canisterConfig.candid
+					// TODO: we need a separate cache for this?
+					const prevWasmDigest = undefined
+					const { fresh, digest: wasmDigest } =
+						yield* isArtifactCachedEffect(wasmPath, prevWasmDigest)
+					// yield* Effect.tryPromise({
+					// 	//
+					// 	try: () => isArtifactCached(wasmPath, prevWasmDigest),
+					// 	// TODO:
+					// 	catch: Effect.fail,
+					// })
+					const prevCandidDigest = undefined
+					const { fresh: candidFresh, digest: candidDigest } =
+						yield* isArtifactCachedEffect(
+							candidPath,
+							prevCandidDigest,
+						)
+					// yield* Effect.tryPromise({
+					// 	try: () => isArtifactCached(candidPath, prevCandidDigest),
+					// 	catch: Effect.fail,
+					// })
+					const input = {
+						canisterName,
+						taskPath,
+						wasm: wasmDigest,
+						candid: candidDigest,
+						depCacheKeys,
+					}
+					return input
+				})(),
+			),
+		encode: (taskCtx, value) =>
+			builderRuntime.runPromise(
+				Effect.fn("task_encode")(function* () {
+					return JSON.stringify(value)
+				})(),
+			),
+		decode: (taskCtx, value) =>
+			builderRuntime.runPromise(
+				Effect.fn("task_decode")(function* () {
+					return JSON.parse(value as string)
+				})(),
+			),
 		encodingFormat: "string",
 		description: "Build custom canister",
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BUILD],

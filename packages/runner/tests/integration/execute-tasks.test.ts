@@ -84,17 +84,24 @@ describe("executeTasks", () => {
 					concurrency: "unbounded",
 				})
 
-				expect(first.find((r) => r.taskId === cached.id)?.result).toBe("first")
+				expect(first.find((r) => r.taskId === cached.id)?.result).toBe(
+					"first",
+				)
 
 				// change the effect to prove it is *not* evaluated the 2nd time
-				cached.effect = Effect.dieMessage("should not evaluate")
+				// cached.effect = Effect.dieMessage("should not evaluate")
+				cached.effect = async () => {
+					throw new Error("should not evaluate")
+				}
 
 				// 2nd run ⇒ hit, same value
 				const taskEffects2 = yield* executeTasks(tasks)
 				const second = yield* Effect.all(taskEffects2, {
 					concurrency: "unbounded",
 				})
-				expect(second.find((r) => r.taskId === cached.id)?.result).toBe("first")
+				expect(second.find((r) => r.taskId === cached.id)?.result).toBe(
+					"first",
+				)
 			}),
 		)
 	})
@@ -104,12 +111,15 @@ describe("executeTasks", () => {
 		const maxSeen = Ref.unsafeMake(0)
 		const slow = (name: string) => ({
 			...task().make(),
-			effect: Effect.gen(function* (_) {
-				const cur = yield* _(Ref.updateAndGet(counter, (n) => n + 1))
-				yield* _(Ref.update(maxSeen, (m) => Math.max(m, cur)))
-				yield* _(Effect.sleep("20 millis"))
-				yield* _(Ref.update(counter, (n) => n - 1))
-			}),
+			effect: () =>
+				Effect.gen(function* (_) {
+					const cur = yield* _(
+						Ref.updateAndGet(counter, (n) => n + 1),
+					)
+					yield* _(Ref.update(maxSeen, (m) => Math.max(m, cur)))
+					yield* _(Effect.sleep("20 millis"))
+					yield* _(Ref.update(counter, (n) => n - 1))
+				}).pipe(Effect.runPromise),
 		})
 		const tasks = ["t1", "t2", "t3", "t4", "t5"].map(slow)
 		// // (no replica needed)
@@ -126,7 +136,9 @@ describe("executeTasks", () => {
 			Effect.gen(function* () {
 				const tasks = yield* getTasks()
 				const taskEffects = yield* executeTasks(tasks)
-				const results = yield* Effect.all(taskEffects, { concurrency: 2 })
+				const results = yield* Effect.all(taskEffects, {
+					concurrency: 2,
+				})
 				// 		return results
 				// 	}),
 				// )
@@ -145,10 +157,18 @@ describe("executeTasks", () => {
 		// const level1 = makeTask("level1", "L1")
 		// const root = makeTask("root", "ROOT")
 
-		const level3 = task("level3").run(() => "L3").make()
-		const level2 = task("level2").run(() => "L2").make()
-		const level1 = task("level1").run(() => "L1").make()
-		const root = task("root").run(() => "ROOT").make()
+		const level3 = task("level3")
+			.run(() => "L3")
+			.make()
+		const level2 = task("level2")
+			.run(() => "L2")
+			.make()
+		const level1 = task("level1")
+			.run(() => "L1")
+			.make()
+		const root = task("root")
+			.run(() => "ROOT")
+			.make()
 
 		// TODO: use builder instead
 		level2.dependencies = { prev: level3 }
@@ -156,14 +176,19 @@ describe("executeTasks", () => {
 		root.dependencies = { prev: level1 }
 
 		// Track execution order
-		const trackingTasks = [level3, level2, level1, root].map((task) => ({
-			...task,
-			effect: Effect.gen(function* () {
-				executionOrder.push(task.description)
-				const result = yield* task.effect
-				return result
+		const trackingTasks = [level3, level2, level1, root].map<Task>(
+			(task) => ({
+				...task,
+				effect: (taskCtx) =>
+					Effect.gen(function* () {
+						executionOrder.push(task.description)
+						const result = yield* Effect.tryPromise(() =>
+							task.effect(taskCtx),
+						)
+						return result
+					}).pipe(Effect.runPromise),
 			}),
-		}))
+		)
 
 		const tasks = topologicalSortTasks(
 			new Map([
@@ -201,10 +226,18 @@ describe("executeTasks", () => {
 		const executionOrder: Array<string> = []
 
 		// Create diamond: top -> left/right -> bottom
-		const top = task("top").run(() => "TOP").make()
-		const left = task("left").run(() => "LEFT").make()
-		const right = task("right").run(() => "RIGHT").make()
-		const bottom = task("bottom").run(() => "BOTTOM").make()
+		const top = task("top")
+			.run(() => "TOP")
+			.make()
+		const left = task("left")
+			.run(() => "LEFT")
+			.make()
+		const right = task("right")
+			.run(() => "RIGHT")
+			.make()
+		const bottom = task("bottom")
+			.run(() => "BOTTOM")
+			.make()
 
 		// Set up dependencies
 		left.dependencies = { parent: top }
@@ -212,13 +245,16 @@ describe("executeTasks", () => {
 		bottom.dependencies = { leftParent: left, rightParent: right }
 
 		// Track execution order
-		const trackingTasks = [top, left, right, bottom].map((task) => ({
+		const trackingTasks = [top, left, right, bottom].map<Task>((task) => ({
 			...task,
-			effect: Effect.gen(function* () {
-				executionOrder.push(task.description)
-				const result = yield* task.effect
-				return result
-			}),
+			effect: (taskCtx) =>
+				Effect.gen(function* () {
+					executionOrder.push(task.description)
+					const result = yield* Effect.tryPromise(() =>
+						task.effect(taskCtx),
+					)
+					return result
+				}).pipe(Effect.runPromise),
 		}))
 
 		const tasks = topologicalSortTasks(
@@ -258,11 +294,18 @@ describe("executeTasks", () => {
 	})
 
 	it("handles task failure propagation", async () => {
-		const failingTask = task("failing").run(() => "FAIL").make() as Task
-		const dependentTask = task("dependent").run(() => "DEPENDENT").make()
+		const failingTask = task("failing")
+			.run(() => "FAIL")
+			.make() as Task
+		const dependentTask = task("dependent")
+			.run(() => "DEPENDENT")
+			.make()
 
 		// Make the first task fail
-		failingTask.effect = Effect.fail("Task failed")
+		failingTask.effect = (taskCtx) =>
+			Effect.gen(function* () {
+				yield* Effect.fail("Task failed")
+			}).pipe(Effect.runPromise)
 		dependentTask.dependencies = { prerequisite: failingTask }
 
 		const tasks = topologicalSortTasks(
@@ -299,7 +342,9 @@ describe("executeTasks", () => {
 
 		// Create mixed scenario: cached -> non-cached -> cached
 		const cachedRoot = makeCachedTask("cached-root", "CACHED_ROOT")
-		const nonCachedMiddle = task("non-cached-middle").run(() => "NON_CACHED").make()
+		const nonCachedMiddle = task("non-cached-middle")
+			.run(() => "NON_CACHED")
+			.make()
 		const cachedLeaf = makeCachedTask("cached-leaf", "CACHED_LEAF")
 
 		// Set up dependencies
@@ -307,13 +352,16 @@ describe("executeTasks", () => {
 		cachedLeaf.dependencies = { middle: nonCachedMiddle }
 
 		// Track execution order for the non-cached task
-		const trackingNonCached = {
+		const trackingNonCached: Task = {
 			...nonCachedMiddle,
-			effect: Effect.gen(function* () {
-				executionOrder.push(nonCachedMiddle.description)
-				const result = yield* nonCachedMiddle.effect
-				return result
-			}),
+			effect: (taskCtx) =>
+				Effect.gen(function* () {
+					executionOrder.push(nonCachedMiddle.description)
+					const result = yield* Effect.tryPromise(() =>
+						nonCachedMiddle.effect(taskCtx),
+					)
+					return result
+				}).pipe(Effect.runPromise),
 		}
 
 		const tasks = topologicalSortTasks(
@@ -370,13 +418,18 @@ describe("executeTasks", () => {
 
 		const dynamicCachedTask = {
 			...task()
-				.run(() => `result-${cacheKeyCounter}`)
+				.run(async () => {
+					return `result-${cacheKeyCounter}`
+				})
 				.make(),
+			effect: async (taskCtx) => {
+				return `result-${cacheKeyCounter}`
+			},
 			computeCacheKey: () => `dynamic-key-${cacheKeyCounter}`,
-			input: () => Effect.succeed(undefined),
-			encode: (v: string) => Effect.succeed(v),
-			decode: (v: string | Uint8Array<ArrayBufferLike>) =>
-				Effect.succeed(v as string),
+			input: () => Effect.succeed(undefined).pipe(Effect.runPromise),
+			encode: (taskCtx, v) => Effect.succeed(v).pipe(Effect.runPromise),
+			decode: (taskCtx, v) =>
+				Effect.succeed(v as string).pipe(Effect.runPromise),
 			encodingFormat: "string",
 		} satisfies CachedTask<string>
 
@@ -424,17 +477,23 @@ describe("executeTasks", () => {
 		const createTimedTask = (
 			name: string,
 			dependencies: Record<string, Task> = {},
-		) => ({
+		): Task => ({
 			...task().make(),
 			description: name,
 			dependencies,
-			effect: Effect.gen(function* () {
-				const current = yield* Ref.updateAndGet(concurrentCounter, (n) => n + 1)
-				yield* Ref.update(maxConcurrent, (max) => Math.max(max, current))
-				yield* Effect.sleep("30 millis")
-				yield* Ref.update(concurrentCounter, (n) => n - 1)
-				return name
-			}),
+			effect: (taskCtx) =>
+				Effect.gen(function* () {
+					const current = yield* Ref.updateAndGet(
+						concurrentCounter,
+						(n) => n + 1,
+					)
+					yield* Ref.update(maxConcurrent, (max) =>
+						Math.max(max, current),
+					)
+					yield* Effect.sleep("30 millis")
+					yield* Ref.update(concurrentCounter, (n) => n - 1)
+					return name
+				}).pipe(Effect.runPromise),
 		})
 
 		// Create tree: root -> [branch1, branch2] -> leaf
@@ -465,7 +524,9 @@ describe("executeTasks", () => {
 		await runtime.runPromise(
 			Effect.gen(function* () {
 				const taskEffects = yield* executeTasks(tasks)
-				const results = yield* Effect.all(taskEffects, { concurrency: 2 })
+				const results = yield* Effect.all(taskEffects, {
+					concurrency: 2,
+				})
 				return results
 			}),
 		)
@@ -475,19 +536,23 @@ describe("executeTasks", () => {
 	})
 
 	it("handles independent task groups with concurrency", async () => {
-		const executionTimes: Array<{ task: string; start: number; end: number }> =
-			[]
+		const executionTimes: Array<{
+			task: string
+			start: number
+			end: number
+		}> = []
 
-		const createTrackingTask = (name: string) => ({
+		const createTrackingTask = (name: string): Task => ({
 			...task().make(),
 			description: name,
-			effect: Effect.gen(function* () {
-				const start = Date.now()
-				yield* Effect.sleep("25 millis")
-				const end = Date.now()
-				executionTimes.push({ task: name, start, end })
-				return name
-			}),
+			effect: (taskCtx) =>
+				Effect.gen(function* () {
+					const start = Date.now()
+					yield* Effect.sleep("25 millis")
+					const end = Date.now()
+					executionTimes.push({ task: name, start, end })
+					return name
+				}).pipe(Effect.runPromise),
 		})
 
 		// Create two independent groups
@@ -509,7 +574,9 @@ describe("executeTasks", () => {
 		await runtime.runPromise(
 			Effect.gen(function* () {
 				const taskEffects = yield* executeTasks(tasks)
-				const results = yield* Effect.all(taskEffects, { concurrency: 3 })
+				const results = yield* Effect.all(taskEffects, {
+					concurrency: 3,
+				})
 				return results
 			}),
 		)
@@ -530,11 +597,21 @@ describe("executeTasks", () => {
 		const executionOrder: Array<string> = []
 
 		// Simulate canister dependency chain: create -> build -> bindings -> install_args -> install -> deploy
-		const create = task("create").run(() => "CREATED").make()
-		const build = task("build").run(() => "BUILT").make()
-		const bindings = task("bindings").run(() => "BINDINGS").make()
-		const install = task("install").run(() => "INSTALLED").make()
-		const deploy = task("deploy").run(() => "DEPLOYED").make()
+		const create = task("create")
+			.run(() => "CREATED")
+			.make()
+		const build = task("build")
+			.run(() => "BUILT")
+			.make()
+		const bindings = task("bindings")
+			.run(() => "BINDINGS")
+			.make()
+		const install = task("install")
+			.run(() => "INSTALLED")
+			.make()
+		const deploy = task("deploy")
+			.run(() => "DEPLOYED")
+			.make()
 
 		// Set up chain dependencies
 		build.dependencies = { create }
@@ -549,13 +626,16 @@ describe("executeTasks", () => {
 			bindings,
 			install,
 			deploy,
-		].map((task) => ({
+		].map<Task>((task) => ({
 			...task,
-			effect: Effect.gen(function* () {
-				executionOrder.push(task.description)
-				const result = yield* task.effect
-				return result
-			}),
+			effect: (taskCtx) =>
+				Effect.gen(function* () {
+					executionOrder.push(task.description)
+					const result = yield* Effect.tryPromise(() =>
+						task.effect(taskCtx),
+					)
+					return result
+				}).pipe(Effect.runPromise),
 		}))
 
 		const tasks = topologicalSortTasks(
@@ -594,21 +674,26 @@ describe("executeTasks", () => {
 	it("handles parameterized tasks with dynamic values", async () => {
 		const executionResults: Array<{ task: string; params: any }> = []
 
-		const createParameterizedTask = (name: string) => {
-			const baseTask = task(name).run(() => "PARAM_RESULT").make()
+		const createParameterizedTask = (name: string): Task => {
+			const baseTask = task(name)
+				.run(() => "PARAM_RESULT")
+				.make()
 			return {
 				...baseTask,
-				effect: Effect.gen(function* () {
-					const params = { amount: 50, mode: "reinstall" } // Simulate runtime params
-					executionResults.push({ task: name, params })
-					return `${name}_executed_with_params`
-				}),
+				effect: (taskCtx) =>
+					Effect.gen(function* () {
+						const params = { amount: 50, mode: "reinstall" } // Simulate runtime params
+						executionResults.push({ task: name, params })
+						return `${name}_executed_with_params`
+					}).pipe(Effect.runPromise),
 			}
 		}
 
 		const paramTask1 = createParameterizedTask("param_task_1")
 		const paramTask2 = createParameterizedTask("param_task_2")
-		const dependentTask = task("dependent_task").run(() => "DEPENDENT").make()
+		const dependentTask = task("dependent_task")
+			.run(() => "DEPENDENT")
+			.make()
 
 		dependentTask.dependencies = { task1: paramTask1, task2: paramTask2 }
 
@@ -649,27 +734,35 @@ describe("executeTasks", () => {
 		const executionOrder: Array<string> = []
 
 		// Create a task that dynamically calls other tasks
-		const baseTask = task("base_task").run(() => "BASE").make()
-		const dynamicTask = {
+		const baseTask = task("base_task")
+			.run(() => "BASE")
+			.make()
+		const dynamicTask: Task = {
 			...task().make(),
 			description: "dynamic_caller",
-			effect: Effect.gen(function* () {
-				executionOrder.push("dynamic_caller_start")
-				// Simulate calling another task
-				const baseResult = yield* baseTask.effect
-				executionOrder.push("dynamic_caller_end")
-				return `called_${baseResult}`
-			}),
+			effect: (taskCtx) =>
+				Effect.gen(function* () {
+					executionOrder.push("dynamic_caller_start")
+					// Simulate calling another task
+					const baseResult = yield* Effect.tryPromise(() =>
+						baseTask.effect(taskCtx),
+					)
+					executionOrder.push("dynamic_caller_end")
+					return `called_${baseResult}`
+				}).pipe(Effect.runPromise),
 		}
 
 		// Track base task execution
-		const trackingBaseTask = {
+		const trackingBaseTask: Task = {
 			...baseTask,
-			effect: Effect.gen(function* () {
-				executionOrder.push("base_task")
-				const result = yield* baseTask.effect
-				return result
-			}),
+			effect: (taskCtx) =>
+				Effect.gen(function* () {
+					executionOrder.push("base_task")
+					const result = yield* Effect.tryPromise(() =>
+						baseTask.effect(taskCtx),
+					)
+					return result
+				}).pipe(Effect.runPromise),
 		}
 
 		const tasks = topologicalSortTasks(
@@ -713,10 +806,15 @@ describe("executeTasks", () => {
 				.run(() => "string_result")
 				.make(),
 			computeCacheKey: () => "string_task_key",
-			input: () => Effect.succeed(undefined),
-			encode: (v: string) => Effect.succeed(v),
-			decode: (v: string | Uint8Array<ArrayBufferLike>) =>
-				Effect.succeed(v as string),
+			effect: (taskCtx) =>
+				Effect.gen(function* () {
+					return "string_result"
+				}).pipe(Effect.runPromise),
+			input: () => Effect.succeed(undefined).pipe(Effect.runPromise),
+			encode: (taskCtx, v) =>
+				Effect.succeed(v as string).pipe(Effect.runPromise),
+			decode: (taskCtx, v) =>
+				Effect.succeed(v as string).pipe(Effect.runPromise),
 			encodingFormat: "string",
 		} satisfies CachedTask<string>
 
@@ -724,11 +822,12 @@ describe("executeTasks", () => {
 			...task()
 				.run(() => new Uint8Array([1, 2, 3, 4]))
 				.make(),
+			effect: async (taskCtx) => new Uint8Array([1, 2, 3, 4]),
 			computeCacheKey: () => "binary_task_key",
-			input: () => Effect.succeed(undefined),
-			encode: (v: Uint8Array) => Effect.succeed(v),
-			decode: (v: string | Uint8Array<ArrayBufferLike>) =>
-				Effect.succeed(v as Uint8Array),
+			input: () => Effect.succeed(undefined).pipe(Effect.runPromise),
+			encode: (taskCtx, v) => Effect.succeed(v).pipe(Effect.runPromise),
+			decode: (taskCtx, v) =>
+				Effect.succeed(v as Uint8Array).pipe(Effect.runPromise),
 			encodingFormat: "uint8array",
 		} satisfies CachedTask<Uint8Array>
 
@@ -758,8 +857,12 @@ describe("executeTasks", () => {
 		expect(firstResults[1]?.result).toEqual(new Uint8Array([1, 2, 3, 4]))
 
 		// Modify effects to verify cache is used
-		stringCachedTask.effect = Effect.succeed("modified_string")
-		binaryCachedTask.effect = Effect.succeed(new Uint8Array([5, 6, 7, 8]))
+		stringCachedTask.effect = (taskCtx) => Effect.gen(function* () {
+			return "modified_string"
+		}).pipe(Effect.runPromise)
+		binaryCachedTask.effect = (taskCtx) => Effect.gen(function* () {
+			return new Uint8Array([5, 6, 7, 8])
+		}).pipe(Effect.runPromise)
 
 		// Second run - should use cache
 		const secondResults = await runtime.runPromise(
@@ -781,12 +884,24 @@ describe("executeTasks", () => {
 
 	it("handles error propagation in very deep chains", async () => {
 		// Create a 6-level deep chain where the 4th level fails
-		const level1 = task("level1").run(() => "L1").make()
-		const level2 = task("level2").run(() => "L2").make()
-		const level3 = task("level3").run(() => "L3").make()
-		const level4 = task("level4").run(() => "L4").make() as Task // This will fail
-		const level5 = task("level5").run(() => "L5").make()
-		const level6 = task("level6").run(() => "L6").make()
+		const level1 = task("level1")
+			.run(() => "L1")
+			.make()
+		const level2 = task("level2")
+			.run(() => "L2")
+			.make()
+		const level3 = task("level3")
+			.run(() => "L3")
+			.make()
+		const level4 = task("level4")
+			.run(() => "L4")
+			.make() as Task // This will fail
+		const level5 = task("level5")
+			.run(() => "L5")
+			.make()
+		const level6 = task("level6")
+			.run(() => "L6")
+			.make()
 
 		// Set up dependencies
 		level2.dependencies = { prev: level1 }
@@ -796,7 +911,9 @@ describe("executeTasks", () => {
 		level6.dependencies = { prev: level5 }
 
 		// Make level4 fail
-		level4.effect = Effect.fail("Deep chain failure")
+		level4.effect = (taskCtx) => Effect.gen(function* () {
+			yield* Effect.fail("Deep chain failure")
+		}).pipe(Effect.runPromise)
 
 		const tasks = topologicalSortTasks(
 			new Map([
@@ -884,7 +1001,9 @@ describe("executeTasks", () => {
 
 		// Modify all effects to verify caching
 		allTasks.forEach((task) => {
-			task.effect = Effect.dieMessage("Should not execute")
+			task.effect = async (taskCtx) => {
+				throw new Error("Should not execute")
+			}
 		})
 
 		// Second run - should use cache for all
@@ -918,18 +1037,30 @@ describe("executeTasks", () => {
 
 		// Check that within each chain, tasks completed in dependency order
 		// (We can't check exact timing, but we can verify the results are all present)
-		chain1Tasks.forEach((task) => expect(resultsByTask.has(task)).toBe(true))
-		chain2Tasks.forEach((task) => expect(resultsByTask.has(task)).toBe(true))
+		chain1Tasks.forEach((task) =>
+			expect(resultsByTask.has(task)).toBe(true),
+		)
+		chain2Tasks.forEach((task) =>
+			expect(resultsByTask.has(task)).toBe(true),
+		)
 	})
 
 	it("handles complex branching with mixed execution times", async () => {
 		const executionOrder: Array<string> = []
 
 		// Create complex branching: root -> [fast, slow] -> convergence
-		const root = task("root").run(() => "ROOT").make()
-		const fastBranch = task("fast").run(() => "FAST").make()
-		const slowBranch = task("slow").run(() => "SLOW").make()
-		const convergence = task("convergence").run(() => "CONVERGENCE").make()
+		const root = task("root")
+			.run(() => "ROOT")
+			.make()
+		const fastBranch = task("fast")
+			.run(() => "FAST")
+			.make()
+		const slowBranch = task("slow")
+			.run(() => "SLOW")
+			.make()
+		const convergence = task("convergence")
+			.run(() => "CONVERGENCE")
+			.make()
 
 		// Set up dependencies
 		fastBranch.dependencies = { parent: root }
@@ -937,36 +1068,36 @@ describe("executeTasks", () => {
 		convergence.dependencies = { fast: fastBranch, slow: slowBranch }
 
 		// Create tracking tasks with different execution times
-		const trackingTasks = [
+		const trackingTasks: Task[] = [
 			{
 				...root,
-				effect: Effect.gen(function* () {
+				effect: (taskCtx) => Effect.gen(function* () {
 					executionOrder.push("root")
-					yield* root.effect
-				}),
+					yield* Effect.tryPromise(() => root.effect(taskCtx))
+				}).pipe(Effect.runPromise),
 			},
 			{
 				...fastBranch,
-				effect: Effect.gen(function* () {
+				effect: (taskCtx) => Effect.gen(function* () {
 					yield* Effect.sleep("10 millis")
 					executionOrder.push("fast")
-					yield* fastBranch.effect
-				}),
+					yield* Effect.tryPromise(() => fastBranch.effect(taskCtx))
+				}).pipe(Effect.runPromise),
 			},
 			{
 				...slowBranch,
-				effect: Effect.gen(function* () {
+				effect: (taskCtx) => Effect.gen(function* () {
 					yield* Effect.sleep("50 millis")
 					executionOrder.push("slow")
-					yield* slowBranch.effect
-				}),
+					yield* Effect.tryPromise(() => slowBranch.effect(taskCtx))
+				}).pipe(Effect.runPromise),
 			},
 			{
 				...convergence,
-				effect: Effect.gen(function* () {
+				effect: (taskCtx) => Effect.gen(function* () {
 					executionOrder.push("convergence")
-					yield* convergence.effect
-				}),
+					yield* Effect.tryPromise(() => convergence.effect(taskCtx))
+				}).pipe(Effect.runPromise),
 			},
 		]
 

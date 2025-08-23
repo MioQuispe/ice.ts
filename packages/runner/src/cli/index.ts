@@ -7,11 +7,9 @@ import mri from "mri"
 import color from "picocolors"
 import { Tags } from "../builders/lib.js"
 import { DeploymentError } from "../canister.js"
-import { makeRuntime } from "../index.js"
 import { CanisterIdsService } from "../services/canisterIds.js"
 import { ICEConfigService } from "../services/iceConfig.js"
 import { CanisterStatus, DefaultReplica } from "../services/replica.js"
-import { runTask, runTaskByPath } from "../tasks/index.js"
 import {
 	filterNodes,
 	TaskCtx,
@@ -19,10 +17,177 @@ import {
 	cachedTaskCount,
 	uncachedTaskCount,
 	cacheHitCount,
+	ProgressUpdate,
+	TaskParamsToArgs,
+	findTaskInTaskTree,
+	TaskRuntimeError,
 } from "../tasks/lib.js"
 import type { Task } from "../types/types.js"
 import { task } from "../builders/task.js"
+import { NodeContext, NodeSocket } from "@effect/platform-node"
+import { layerFileSystem } from "@effect/platform/KeyValueStore"
+import { StandardSchemaV1 } from "@standard-schema/spec"
+import { type } from "arktype"
+import { ConfigProvider, Layer, Logger, LogLevel, ManagedRuntime } from "effect"
+import fs from "node:fs"
+import { CLIFlags } from "../services/cliFlags.js"
+import { DefaultConfig } from "../services/defaultConfig.js"
+import { DfxReplica } from "../services/dfx.js"
+import { Moc } from "../services/moc.js"
+import { picReplicaImpl } from "../services/pic/pic.js"
+import { TaskArgsService } from "../services/taskArgs.js"
+import { TaskRegistry } from "../services/taskRegistry.js"
+import type { ICEConfig, ICECtx } from "../types/types.js"
+import { NodeSdk as OpenTelemetryNodeSdk } from "@effect/opentelemetry"
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
+import type { Scope, TaskTree } from "../types/types.js"
+export { Opt } from "../types/types.js"
+import { TaskRunnerLive, TaskRunner } from "../services/taskRunner.js"
+import { runTask } from "../tasks/run.js"
 // import { uiTask } from "./ui/index.js"
+
+export const runTaskByPath = Effect.fn("runTaskByPath")(function* (
+	taskPath: string,
+	args: TaskParamsToArgs<Task> = {},
+	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
+) {
+	yield* Effect.annotateCurrentSpan({
+		taskPath,
+	})
+	// TODO: wrong, pass in TaskRunner as a layer
+	const { runtime } = yield* TaskRunner
+	yield* Effect.logDebug("Running task by path", { taskPath })
+	const taskPathSegments: string[] = taskPath.split(":")
+	const { taskTree } = yield* ICEConfigService
+	const task = yield* findTaskInTaskTree(taskTree, taskPathSegments)
+	yield* Effect.logDebug("Task found", taskPath)
+	return yield* Effect.tryPromise({
+		try: () => runtime.runPromise(runTask(task, args, progressCb)),
+		catch: (e) => {
+			return new TaskRuntimeError({
+				message: "Error running task",
+				error: e,
+			})
+		},
+	})
+})
+
+export const configMap = new Map([
+	["APP_DIR", fs.realpathSync(process.cwd())],
+	["ICE_DIR_NAME", ".ice"],
+])
+
+const GlobalArgs = type({
+	network: "string" as const,
+	logLevel: "'debug' | 'info' | 'error'",
+}) satisfies StandardSchemaV1<Record<string, unknown>>
+
+const logLevelMap = {
+	debug: LogLevel.Debug,
+	info: LogLevel.Info,
+	error: LogLevel.Error,
+}
+
+type MakeRuntimeArgs = {
+	globalArgs: { network: string; logLevel: string }
+	// TODO: either this or taskArgs
+	// fix type
+	cliTaskArgs?: {
+		positionalArgs: string[]
+		namedArgs: Record<string, string>
+	}
+	taskArgs?: Record<string, unknown>
+}
+
+// const telemetryLayer = OpenTelemetryNodeSdk.layer(() => ({
+// 	resource: { serviceName: "ice" },
+// 	spanProcessor: new BatchSpanProcessor(new OTLPTraceExporter()),
+// }))
+
+export const makeCliRuntime = ({
+	globalArgs: rawGlobalArgs,
+	cliTaskArgs = { positionalArgs: [], namedArgs: {} },
+	taskArgs = {},
+}: MakeRuntimeArgs) => {
+	// TODO: pass this in from outside instead
+	const globalArgs = GlobalArgs(rawGlobalArgs)
+	if (globalArgs instanceof type.errors) {
+		throw new Error(globalArgs.summary)
+	}
+
+	const configLayer = Layer.setConfigProvider(
+		ConfigProvider.fromMap(configMap),
+	)
+
+	const DfxReplicaService = DfxReplica.pipe(Layer.provide(NodeContext.layer))
+
+	// const DefaultReplicaService = DfxDefaultReplica.pipe(
+	// 	Layer.provide(NodeContext.layer),
+	// 	Layer.provide(configLayer),
+	// )
+
+	const DefaultReplicaService = Layer.effect(
+		DefaultReplica,
+		picReplicaImpl,
+	).pipe(Layer.provide(NodeContext.layer))
+
+	// const DefaultsLayer = Layer
+	// 	.mergeAll
+	// 	// DevTools.layerWebSocket().pipe(
+	// 	// 	Layer.provide(NodeSocket.layerWebSocketConstructor),
+	// 	// ),
+	// 	()
+
+	const ICEConfigLayer = ICEConfigService.Live.pipe(
+		Layer.provide(NodeContext.layer),
+		Layer.provide(
+			Layer.succeed(CLIFlags, {
+				globalArgs,
+				taskArgs: cliTaskArgs,
+			}),
+		),
+	)
+	const CLIFlagsLayer = Layer.succeed(CLIFlags, {
+		globalArgs,
+		taskArgs: cliTaskArgs,
+	})
+	const TaskRunnerLayer = TaskRunnerLive(globalArgs, cliTaskArgs, taskArgs)
+	const TaskArgsLayer = Layer.succeed(TaskArgsService, { taskArgs })
+	// TODO: need an init phase???
+	// make the taskRunner or parentTaskCtx in this phase?
+	// const ParentTaskCtxLayer = makeParentTaskCtx({ runTask: runTaskAsync })
+	return ManagedRuntime.make(
+		Layer.provideMerge(
+			Layer.mergeAll(
+				TaskRunnerLayer,
+				// telemetryLayer,
+				NodeContext.layer,
+				TaskRegistry.Live.pipe(
+					Layer.provide(layerFileSystem(".ice/cache")),
+					Layer.provide(NodeContext.layer),
+				),
+				DefaultReplicaService,
+				DefaultConfig.Live.pipe(Layer.provide(DefaultReplicaService)),
+				Moc.Live.pipe(Layer.provide(NodeContext.layer)),
+				CanisterIdsService.Live.pipe(
+					Layer.provide(NodeContext.layer),
+					Layer.provide(configLayer),
+				),
+				// CLIFlagsLayer,
+				TaskArgsLayer,
+				// ICEConfigLayer,
+				Logger.pretty,
+				Logger.minimumLogLevel(logLevelMap[globalArgs.logLevel]),
+			),
+			Layer.mergeAll(
+				ICEConfigLayer,
+				CLIFlagsLayer,
+				// ParentTaskCtxLayer
+			),
+		),
+	)
+}
 
 function moduleHashToHexString(moduleHash: [] | [number[]]): string {
 	if (moduleHash.length === 0) {
@@ -109,7 +274,7 @@ const runCommand = defineCommand({
 		s.start(
 			`Running task... ${color.green(color.underline(args.taskPath))}`,
 		)
-		await makeRuntime({
+		await makeCliRuntime({
 			globalArgs,
 			cliTaskArgs: {
 				positionalArgs,
@@ -176,8 +341,10 @@ const deployRun = async ({
 		network,
 		logLevel,
 	}
+	// TODO: convert to task
 	const program = Effect.fn("deploy")(function* () {
 		const { taskTree } = yield* ICEConfigService
+		const { runtime } = yield* TaskRunner
 		const tasksWithPath = (yield* filterNodes(
 			taskTree,
 			(node) =>
@@ -187,7 +354,7 @@ const deployRun = async ({
 		)) as Array<{ node: Task; path: string[] }>
 		const tasks = tasksWithPath.map(({ node }) => node)
 		const args = mode ? { mode } : {}
-        // TODO: wrong. deps not deduplicated
+
 		yield* Effect.all(
 			tasks.map((task) =>
 				runTask(task, args, (update) => {
@@ -207,6 +374,19 @@ const deployRun = async ({
 				}),
 			),
 		)
+		// yield* Effect.tryPromise({
+		// 	try: () =>
+		// 		runtime.runPromise(
+		// 			// TODO: wrong. deps not deduplicated
+		// 			// need a runTasks
+		// 		),
+		// 	catch: (e) => {
+		// 		return new TaskRuntimeError({
+		// 			message: "Error running task",
+		// 			error: e,
+		// 		})
+		// 	},
+		// })
 		const count = yield* Metric.value(totalTaskCount)
 		const cachedCount = yield* Metric.value(cachedTaskCount)
 		const uncachedCount = yield* Metric.value(uncachedTaskCount)
@@ -228,7 +408,7 @@ const deployRun = async ({
 	// 	// TODO: Task has any as error type
 	// 	Effect.tapError(e => Effect.logError(e satisfies never)),
 	// )
-	await makeRuntime({
+	await makeCliRuntime({
 		globalArgs,
 	}).runPromise(program)
 	s.stop("Deployed all canisters")
@@ -246,7 +426,7 @@ const canistersCreateCommand = defineCommand({
 		const globalArgs = getGlobalArgs("create")
 		const { network, logLevel } = globalArgs
 		// TODO: mode
-		await makeRuntime({
+		await makeCliRuntime({
 			globalArgs: {
 				network,
 				logLevel,
@@ -258,6 +438,7 @@ const canistersCreateCommand = defineCommand({
 
 				yield* Effect.logDebug("Running canisters:create")
 				const { taskTree } = yield* ICEConfigService
+				const { runtime } = yield* TaskRunner
 				const tasksWithPath = (yield* filterNodes(
 					taskTree,
 					(node) =>
@@ -266,16 +447,20 @@ const canistersCreateCommand = defineCommand({
 						node.tags.includes(Tags.CREATE),
 				)) as Array<{ node: Task; path: string[] }>
 				const tasks = tasksWithPath.map(({ node }) => node)
-				yield* Effect.all(
-					tasks.map((task) =>
-						runTask(task, {}, (update) => {
-							if (update.status === "starting") {
-								s.message(`Running ${update.taskPath}`)
-							}
-							if (update.status === "completed") {
-								s.message(`Completed ${update.taskPath}`)
-							}
-						}),
+				runtime.runPromise(
+					// TODO: wrong. deps not deduplicated
+					// need a runTasks
+					Effect.all(
+						tasks.map((task) =>
+							runTask(task, {}, (update) => {
+								if (update.status === "starting") {
+									s.message(`Running ${update.taskPath}`)
+								}
+								if (update.status === "completed") {
+									s.message(`Completed ${update.taskPath}`)
+								}
+							}),
+						),
 					),
 				)
 				s.stop("Finished creating all canisters")
@@ -295,7 +480,7 @@ const canistersBuildCommand = defineCommand({
 	run: async ({ args }) => {
 		const globalArgs = getGlobalArgs("build")
 		const { network, logLevel } = globalArgs
-		await makeRuntime({
+		await makeCliRuntime({
 			globalArgs: {
 				network,
 				logLevel,
@@ -307,6 +492,7 @@ const canistersBuildCommand = defineCommand({
 
 				yield* Effect.logDebug("Running canisters:create")
 				const { taskTree } = yield* ICEConfigService
+				const { runtime } = yield* TaskRunner
 				const tasksWithPath = (yield* filterNodes(
 					taskTree,
 					(node) =>
@@ -315,16 +501,20 @@ const canistersBuildCommand = defineCommand({
 						node.tags.includes(Tags.CREATE),
 				)) as Array<{ node: Task; path: string[] }>
 				const tasks = tasksWithPath.map(({ node }) => node)
-				yield* Effect.all(
-					tasks.map((task) =>
-						runTask(task, {}, (update) => {
-							if (update.status === "starting") {
-								s.message(`Running ${update.taskPath}`)
-							}
-							if (update.status === "completed") {
-								s.message(`Completed ${update.taskPath}`)
-							}
-						}),
+				runtime.runPromise(
+					// TODO: wrong. deps not deduplicated
+					// need a runTasks
+					Effect.all(
+						tasks.map((task) =>
+							runTask(task, {}, (update) => {
+								if (update.status === "starting") {
+									s.message(`Running ${update.taskPath}`)
+								}
+								if (update.status === "completed") {
+									s.message(`Completed ${update.taskPath}`)
+								}
+							}),
+						),
 					),
 				)
 
@@ -345,7 +535,7 @@ const canistersBindingsCommand = defineCommand({
 	run: async ({ args }) => {
 		const globalArgs = getGlobalArgs("bindings")
 		const { network, logLevel } = globalArgs
-		await makeRuntime({
+		await makeCliRuntime({
 			globalArgs: {
 				network,
 				logLevel,
@@ -357,6 +547,7 @@ const canistersBindingsCommand = defineCommand({
 
 				yield* Effect.logDebug("Running canisters:bindings")
 				const { taskTree } = yield* ICEConfigService
+				const { runtime } = yield* TaskRunner
 				const tasksWithPath = (yield* filterNodes(
 					taskTree,
 					(node) =>
@@ -365,16 +556,20 @@ const canistersBindingsCommand = defineCommand({
 						node.tags.includes(Tags.BINDINGS),
 				)) as Array<{ node: Task; path: string[] }>
 				const tasks = tasksWithPath.map(({ node }) => node)
-				yield* Effect.all(
-					tasks.map((task) =>
-						runTask(task, {}, (update) => {
-							if (update.status === "starting") {
-								s.message(`Running ${update.taskPath}`)
-							}
-							if (update.status === "completed") {
-								s.message(`Completed ${update.taskPath}`)
-							}
-						}),
+				runtime.runPromise(
+					// TODO: wrong. deps not deduplicated
+					// need a runTasks
+					Effect.all(
+						tasks.map((task) =>
+							runTask(task, {}, (update) => {
+								if (update.status === "starting") {
+									s.message(`Running ${update.taskPath}`)
+								}
+								if (update.status === "completed") {
+									s.message(`Completed ${update.taskPath}`)
+								}
+							}),
+						),
 					),
 				)
 
@@ -396,7 +591,7 @@ const canistersInstallCommand = defineCommand({
 		const globalArgs = getGlobalArgs("install")
 		const { network, logLevel } = globalArgs
 		// TODO: mode
-		await makeRuntime({
+		await makeCliRuntime({
 			globalArgs: {
 				network,
 				logLevel,
@@ -408,6 +603,7 @@ const canistersInstallCommand = defineCommand({
 
 				yield* Effect.logDebug("Running canisters:create")
 				const { taskTree } = yield* ICEConfigService
+				const { runtime } = yield* TaskRunner
 				const tasksWithPath = (yield* filterNodes(
 					taskTree,
 					(node) =>
@@ -416,16 +612,20 @@ const canistersInstallCommand = defineCommand({
 						node.tags.includes(Tags.CREATE),
 				)) as Array<{ node: Task; path: string[] }>
 				const tasks = tasksWithPath.map(({ node }) => node)
-				yield* Effect.all(
-					tasks.map((task) =>
-						runTask(task, {}, (update) => {
-							if (update.status === "starting") {
-								s.message(`Running ${update.taskPath}`)
-							}
-							if (update.status === "completed") {
-								s.message(`Completed ${update.taskPath}`)
-							}
-						}),
+				runtime.runPromise(
+					// TODO: wrong. deps not deduplicated
+					// need a runTasks
+					Effect.all(
+						tasks.map((task) =>
+							runTask(task, {}, (update) => {
+								if (update.status === "starting") {
+									s.message(`Running ${update.taskPath}`)
+								}
+								if (update.status === "completed") {
+									s.message(`Completed ${update.taskPath}`)
+								}
+							}),
+						),
 					),
 				)
 
@@ -446,7 +646,7 @@ const canistersStopCommand = defineCommand({
 	run: async ({ args }) => {
 		const globalArgs = getGlobalArgs("stop")
 		const { network, logLevel } = globalArgs
-		await makeRuntime({
+		await makeCliRuntime({
 			globalArgs: {
 				network,
 				logLevel,
@@ -458,6 +658,7 @@ const canistersStopCommand = defineCommand({
 
 				yield* Effect.logDebug("Running canisters:stop")
 				const { taskTree } = yield* ICEConfigService
+				const { runtime } = yield* TaskRunner
 				const tasksWithPath = (yield* filterNodes(
 					taskTree,
 					(node) =>
@@ -466,16 +667,18 @@ const canistersStopCommand = defineCommand({
 						node.tags.includes(Tags.STOP),
 				)) as Array<{ node: Task; path: string[] }>
 				const tasks = tasksWithPath.map(({ node }) => node)
-				yield* Effect.all(
-					tasks.map((task) =>
-						runTask(task, {}, (update) => {
-							if (update.status === "starting") {
-								s.message(`Running ${update.taskPath}`)
-							}
-							if (update.status === "completed") {
-								s.message(`Completed ${update.taskPath}`)
-							}
-						}),
+				runtime.runPromise(
+					Effect.all(
+						tasks.map((task) =>
+							runTask(task, {}, (update) => {
+								if (update.status === "starting") {
+									s.message(`Running ${update.taskPath}`)
+								}
+								if (update.status === "completed") {
+									s.message(`Completed ${update.taskPath}`)
+								}
+							}),
+						),
 					),
 				)
 
@@ -531,7 +734,7 @@ const canistersStatusCommand = defineCommand({
 		if (args._.length === 0) {
 			const globalArgs = getGlobalArgs("status")
 			const { network, logLevel } = globalArgs
-			await makeRuntime({
+			await makeCliRuntime({
 				globalArgs: {
 					network,
 					logLevel,
@@ -629,7 +832,7 @@ const canistersRemoveCommand = defineCommand({
 	run: async ({ args }) => {
 		const globalArgs = getGlobalArgs("remove")
 		const { network, logLevel } = globalArgs
-		await makeRuntime({
+		await makeCliRuntime({
 			globalArgs: {
 				network,
 				logLevel,
@@ -721,7 +924,7 @@ const canisterCommand = defineCommand({
 		if (args._.length === 0) {
 			const globalArgs = getGlobalArgs("canister")
 			const { network, logLevel } = globalArgs
-			await makeRuntime({
+			await makeCliRuntime({
 				globalArgs: {
 					network,
 					logLevel,
@@ -824,7 +1027,7 @@ const taskCommand = defineCommand({
 		if (args._.length === 0) {
 			const globalArgs = getGlobalArgs("task")
 			const { network, logLevel } = globalArgs
-			await makeRuntime({
+			await makeCliRuntime({
 				globalArgs: {
 					network,
 					logLevel,

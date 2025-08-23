@@ -23,12 +23,39 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react"
-import { TUILayer } from "../../index.js"
+// import { TUILayer } from "../../index.js"
 import { filterNodes } from "../../tasks/lib.js"
 import { runTaskByPath } from "../../tasks/run.js"
 import type { ICEConfig, Scope, Task, TaskTree } from "../../types/types.js"
 import { TaskList, TaskListItem, type StateOthers } from "./components/Task.js"
 import { FlatScrollableTaskTreeList } from "./components/scrollable-task-tree-list.js"
+// export const TUILayer = Layer.mergeAll(
+// 	DefaultsLayer,
+// 	ICEConfigService.Live.pipe(
+// 		Layer.provide(NodeContext.layer),
+// 		Layer.provide(
+// 			Layer.succeed(CLIFlags, {
+// 				globalArgs: { network: "local", logLevel: "debug" },
+// 				taskArgs: {
+// 					positionalArgs: [],
+// 					namedArgs: {},
+// 				},
+// 			}),
+// 		),
+// 	),
+// 	Layer.succeed(CLIFlags, {
+// 		globalArgs: { network: "local", logLevel: "debug" },
+// 		taskArgs: {
+// 			positionalArgs: [],
+// 			namedArgs: {},
+// 		},
+// 	}),
+// 	Layer.succeed(TaskArgsService, {
+// 		taskArgs: {},
+// 	}),
+// 	Logger.minimumLogLevel(LogLevel.Debug),
+// )
+
 
 export function useSynchronizedState<T>(defaultState: T) {
 	const [subscriptionRef] = useState(() =>

@@ -1,6 +1,15 @@
 import { NodeContext } from "@effect/platform-node"
 import { layerMemory } from "@effect/platform/KeyValueStore"
-import { Effect, Layer, Logger, LogLevel, ManagedRuntime, Ref, Metric } from "effect"
+import {
+	Effect,
+	Layer,
+	Logger,
+	LogLevel,
+	ManagedRuntime,
+	Ref,
+	Metric,
+	Tracer,
+} from "effect"
 import { task } from "../../src/builders/task.js"
 import { configLayer } from "../../src/index.js"
 import { CanisterIdsService } from "../../src/services/canisterIds.js"
@@ -12,15 +21,26 @@ import { picReplicaImpl } from "../../src/services/pic/pic.js"
 import { DefaultReplica } from "../../src/services/replica.js"
 import { TaskArgsService } from "../../src/services/taskArgs.js"
 import { TaskRegistry } from "../../src/services/taskRegistry.js"
-import { TaskCtxService } from "../../src/services/taskCtx.js"
 import { executeTasks, topologicalSortTasks } from "../../src/tasks/lib.js"
 import { CachedTask, ICEConfig, Task, TaskTree } from "../../src/types/types.js"
+import { NodeSdk as OpenTelemetryNodeSdk } from "@effect/opentelemetry"
+import {
+	InMemorySpanExporter,
+	BatchSpanProcessor,
+	SimpleSpanProcessor,
+} from "@opentelemetry/sdk-trace-base"
+
+export const telemetryExporter = new InMemorySpanExporter()
+export const telemetryLayer = OpenTelemetryNodeSdk.layer(() => ({
+	// traceExporter: telemetryExporter,
+	resource: { serviceName: "ice" },
+	spanProcessor: new SimpleSpanProcessor(telemetryExporter),
+}))
 
 const DefaultReplicaService = Layer.effect(DefaultReplica, picReplicaImpl).pipe(
 	Layer.provide(NodeContext.layer),
 	Layer.provide(configLayer),
 )
-
 
 export const makeTestLayer = (
 	{ cliTaskArgs = { positionalArgs: [], namedArgs: {} }, taskArgs = {} } = {
@@ -52,6 +72,7 @@ export const makeTestLayer = (
 	// }),
 	// Layer.succeed(TaskArgsService, { taskArgs }),
 	const testLayer = Layer.mergeAll(
+		telemetryLayer,
 		NodeContext.layer,
 		CLIFlagsLayer,
 		TaskArgsLayer,
@@ -67,13 +88,7 @@ export const makeTestLayer = (
 		Moc.Live.pipe(Layer.provide(NodeContext.layer)),
 		configLayer,
 		CanisterIdsService.Test,
-		TaskCtxService.Live.pipe(
-			Layer.provide(DefaultConfigLayer),
-			Layer.provide(ICEConfigLayer),
-			Layer.provide(CLIFlagsLayer),
-			Layer.provide(TaskArgsLayer),
-		),
-		Logger.pretty,
+		// Logger.pretty,
 		Logger.minimumLogLevel(LogLevel.Debug),
 	)
 	return testLayer
@@ -82,20 +97,24 @@ export const makeTestLayer = (
 export const getTasks = () =>
 	Effect.gen(function* () {
 		const { taskTree } = yield* ICEConfigService
-		const tasks = Object.values(taskTree).filter((node) => node._tag === "task")
+		const tasks = Object.values(taskTree).filter(
+			(node) => node._tag === "task",
+		)
 		return tasks
 	})
 
-export const makeCachedTask = (name: string, value: string): CachedTask<string> => {
+export const makeCachedTask = (
+	name: string,
+	value: string,
+): CachedTask<string> => {
 	const cachedTask = {
-		...task()
-			.run(() => value)
-			.make(),
+		...task().make(),
+		effect: async () => value,
 		computeCacheKey: () => name, // ← always the same key
-		input: () => Effect.succeed(undefined),
-		encode: (v) => Effect.succeed(v), // identity
-		decode: (v: string | Uint8Array<ArrayBufferLike>) =>
-			Effect.succeed(v as string),
+		input: () => Effect.succeed(undefined).pipe(Effect.runPromise),
+		encode: (taskCtx, v) => Effect.succeed(v).pipe(Effect.runPromise), // identity
+		decode: (taskCtx, v) =>
+			Effect.succeed(v as string).pipe(Effect.runPromise),
 		encodingFormat: "string",
 	} satisfies CachedTask<string>
 	return cachedTask

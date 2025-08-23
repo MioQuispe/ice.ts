@@ -13,8 +13,9 @@ import {
 	Record,
 	Logger,
 	LogLevel,
+    ConfigProvider,
 } from "effect"
-import { readFileSync } from "node:fs"
+import { readFileSync, realpathSync } from "node:fs"
 import { stat } from "node:fs/promises"
 import { NodeContext } from "@effect/platform-node"
 import { encodeArgs, encodeUpgradeArgs } from "../canister.js"
@@ -39,34 +40,44 @@ import { proxyActor } from "../utils/extension.js"
 import { ExtractArgsFromTaskParams } from "./task.js"
 import { CustomCanisterConfig, deployParams } from "./custom.js"
 export type { TaskCtxShape }
-import { configLayer } from "../index.js"
+// import { configLayer } from "../index.js"
 import { Moc } from "../services/moc.js"
 
-export const makeTaskRuntime = (taskCtx: TaskCtxShape) => {
-	const taskLayer = Layer.succeed(TaskCtx, taskCtx)
-	const runtime = ManagedRuntime.make(
-		Layer.mergeAll(
-			NodeContext.layer,
-			Moc.Live.pipe(Layer.provide(NodeContext.layer)),
-			taskLayer,
-			// TODO: move to taskctx
-			CanisterIdsService.Live.pipe(
-				Layer.provide(NodeContext.layer),
-				Layer.provide(configLayer),
-			),
-			configLayer,
-			// telemetryLayer,
-			// DefaultsLayer,
-			// CLIFlagsLayer,
-			// TaskArgsLayer,
-			// ICEConfigLayer,
-			// TaskCtxLayer,
-			Logger.pretty,
-			Logger.minimumLogLevel(LogLevel.Debug),
-		),
-	)
-	return runtime
-}
+// TODO: move to taskctx
+const configMap = new Map([
+	["APP_DIR", realpathSync(process.cwd())],
+	["ICE_DIR_NAME", ".ice"],
+])
+
+const configLayer = Layer.setConfigProvider(
+	ConfigProvider.fromMap(configMap),
+)
+const baseLayer = Layer.mergeAll(
+	NodeContext.layer,
+	Moc.Live.pipe(Layer.provide(NodeContext.layer)),
+	// taskLayer,
+	// TODO: move to taskctx
+	CanisterIdsService.Live.pipe(
+		Layer.provide(NodeContext.layer),
+		Layer.provide(configLayer),
+	),
+	configLayer,
+	// telemetryLayer,
+	// DefaultsLayer,
+	// CLIFlagsLayer,
+	// TaskArgsLayer,
+	// ICEConfigLayer,
+	// TaskCtxLayer,
+	Logger.pretty,
+	Logger.minimumLogLevel(LogLevel.Debug),
+)
+export const builderRuntime = ManagedRuntime.make(baseLayer)
+
+// export const makeTaskRuntime = (taskCtx: TaskCtxShape) => {
+// 	const taskLayer = Layer.succeed(TaskCtx, taskCtx)
+// 	const runtime = ManagedRuntime.make(Layer.mergeAll(baseLayer, taskLayer))
+// 	return runtime
+// }
 
 // export const runEffect = async (taskCtx: TaskCtxShape) => {
 //     const runtime = makeTaskRuntime(taskCtx)
@@ -95,9 +106,9 @@ export class TaskError extends Data.TaggedError("TaskError")<{
 	op?: string
 }> {}
 
-export const loadCanisterId = (taskPath: string) =>
+export const loadCanisterId = (taskCtx: TaskCtxShape, taskPath: string) =>
 	Effect.gen(function* () {
-		const { currentNetwork } = yield* TaskCtx
+		const { currentNetwork } = taskCtx
 		const canisterName = taskPath.split(":").slice(0, -1).join(":")
 		const canisterIdsService = yield* CanisterIdsService
 		const canisterIds = yield* canisterIdsService.getCanisterIds()
@@ -109,13 +120,13 @@ export const loadCanisterId = (taskPath: string) =>
 	})
 
 export const resolveConfig = <T, P extends Record<string, unknown>>(
+	taskCtx: TaskCtxShape,
 	configOrFn:
 		| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<T>)
 		| ((args: { ctx: TaskCtxShape; deps: P }) => T)
 		| T,
 ) =>
 	Effect.gen(function* () {
-		const taskCtx = yield* TaskCtx
 		if (typeof configOrFn === "function") {
 			const configFn = configOrFn as (args: {
 				ctx: TaskCtxShape
@@ -151,14 +162,13 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 		dependsOn: {},
 		dependencies: {},
 		effect: (taskCtx) =>
-			makeTaskRuntime(taskCtx).runPromise(
+			builderRuntime.runPromise(
 				Effect.fn("task_effect")(function* () {
 					const path = yield* Path.Path
 					const fs = yield* FileSystem.FileSystem
 					const canisterIdsService = yield* CanisterIdsService
-					const taskCtx = yield* TaskCtx
 					const currentNetwork = taskCtx.currentNetwork
-					const { taskPath } = yield* TaskCtx
+					const { taskPath } = taskCtx
 					const canisterName = taskPath
 						.split(":")
 						.slice(0, -1)
@@ -170,8 +180,10 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 					yield* Effect.logDebug("makeCreateTask", {
 						storedCanisterId,
 					})
-					const canisterConfig =
-						yield* resolveConfig(canisterConfigOrFn)
+					const canisterConfig = yield* resolveConfig(
+						taskCtx,
+						canisterConfigOrFn,
+					)
 					const configCanisterId = canisterConfig?.canisterId
 					// TODO: handle all edge cases related to this. what happens
 					// if the user provides a new canisterId in the config? and so on
@@ -183,7 +195,7 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 							deployer: { identity },
 						},
 						replica,
-					} = yield* TaskCtx
+					} = taskCtx
 					yield* Effect.logDebug("resolvedCanisterId", {
 						resolvedCanisterId,
 					})
@@ -221,7 +233,7 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 								canisterId: resolvedCanisterId,
 								identity,
 							})
-					const { appDir, iceDir } = yield* TaskCtx
+					const { appDir, iceDir } = taskCtx
 					yield* Effect.logDebug(
 						"create Task: setting canisterId",
 						canisterId,
@@ -802,15 +814,15 @@ export const makeStopTask = (): StopTask => {
 		dependencies: {},
 		// TODO: do we allow a fn as args here?
 		effect: (taskCtx) =>
-			makeTaskRuntime(taskCtx).runPromise(
+			builderRuntime.runPromise(
 				Effect.fn("task_effect")(function* () {
-					const { taskPath } = yield* TaskCtx
+					const { taskPath } = taskCtx
 					const canisterName = taskPath
 						.split(":")
 						.slice(0, -1)
 						.join(":")
 					// TODO: handle error
-					const maybeCanisterId = yield* loadCanisterId(taskPath)
+					const maybeCanisterId = yield* loadCanisterId(taskCtx, taskPath)
 					if (Option.isNone(maybeCanisterId)) {
 						yield* Effect.logDebug(
 							`Canister ${canisterName} is not installed`,
@@ -824,7 +836,7 @@ export const makeStopTask = (): StopTask => {
 							deployer: { identity },
 						},
 						replica,
-					} = yield* TaskCtx
+					} = taskCtx
 					// TODO: check if canister is running / stopped
 					// get status first
 					const status = yield* replica.getCanisterStatus({
@@ -862,15 +874,15 @@ export const makeRemoveTask = (): RemoveTask => {
 		dependencies: {},
 		// TODO: do we allow a fn as args here?
 		effect: (taskCtx) =>
-			makeTaskRuntime(taskCtx).runPromise(
+			builderRuntime.runPromise(
 				Effect.fn("task_effect")(function* () {
-					const { taskPath } = yield* TaskCtx
+					const { taskPath } = taskCtx
 					const canisterName = taskPath
 						.split(":")
 						.slice(0, -1)
 						.join(":")
 					// TODO: handle error
-					const maybeCanisterId = yield* loadCanisterId(taskPath)
+					const maybeCanisterId = yield* loadCanisterId(taskCtx, taskPath)
 					if (Option.isNone(maybeCanisterId)) {
 						yield* Effect.logDebug(
 							`Canister ${canisterName} is not installed`,
@@ -884,7 +896,7 @@ export const makeRemoveTask = (): RemoveTask => {
 							deployer: { identity },
 						},
 						replica,
-					} = yield* TaskCtx
+					} = taskCtx
 					yield* replica.removeCanister({
 						canisterId,
 						identity,
@@ -913,11 +925,11 @@ export const makeCanisterStatusTask = (tags: string[]): StatusTask => {
 		// TODO: type Task
 		dependencies: {},
 		effect: (taskCtx) =>
-			makeTaskRuntime(taskCtx).runPromise(
+			builderRuntime.runPromise(
 				Effect.fn("task_effect")(function* () {
 					// TODO:
-					const { replica, currentNetwork } = yield* TaskCtx
-					const { taskPath } = yield* TaskCtx
+					const { replica, currentNetwork } = taskCtx
+					const { taskPath } = taskCtx
 					const canisterName = taskPath
 						.split(":")
 						.slice(0, -1)
@@ -979,7 +991,7 @@ export const makeCanisterStatusTask = (tags: string[]): StatusTask => {
 						roles: {
 							deployer: { identity },
 						},
-					} = yield* TaskCtx
+					} = taskCtx
 					const canisterInfo = yield* replica.getCanisterInfo({
 						canisterId,
 						identity,
@@ -1001,7 +1013,10 @@ export const makeCanisterStatusTask = (tags: string[]): StatusTask => {
 	} satisfies StatusTask
 }
 
-export const resolveMode = (configCanisterId: string | undefined) => {
+export const resolveMode = (
+	taskCtx: TaskCtxShape,
+	configCanisterId: string | undefined,
+) => {
 	return Effect.gen(function* () {
 		const {
 			replica,
@@ -1010,8 +1025,8 @@ export const resolveMode = (configCanisterId: string | undefined) => {
 			roles: {
 				deployer: { identity },
 			},
-		} = yield* TaskCtx
-		const { taskPath } = yield* TaskCtx
+		} = taskCtx
+		const { taskPath } = taskCtx
 		// const taskArgs = args as {
 		// 	mode: InstallModes
 		// }
@@ -1238,20 +1253,19 @@ export const makeInstallTask = <
 		positionalParams: [],
 		params: installParams,
 		effect: (taskCtx) =>
-			makeTaskRuntime(taskCtx).runPromise(
+			builderRuntime.runPromise(
 				Effect.fn("task_effect")(function* () {
 					yield* Effect.logDebug(
 						"Starting custom canister installation",
 					)
-					const taskCtx = yield* TaskCtx
 					const path = yield* Path.Path
 					// TODO: can I pass in the task itself as a type parameter to get automatic type inference?
 					// To avoid having to use "as"
-					const { appDir, iceDir } = yield* TaskCtx
+					const { appDir, iceDir } = taskCtx
 					const identity = taskCtx.roles.deployer.identity
 					const { replica, args, depResults } = taskCtx
 					const taskArgs = args as InstallTaskArgs
-					const { taskPath } = yield* TaskCtx
+					const { taskPath } = taskCtx
 					const canisterName = taskPath
 						.split(":")
 						.slice(0, -1)
@@ -1405,10 +1419,10 @@ export const makeInstallTask = <
 			return cacheKey
 		},
 		input: (taskCtx) =>
-			makeTaskRuntime(taskCtx).runPromise(
+			builderRuntime.runPromise(
 				Effect.fn("task_input")(function* () {
-					const { args } = yield* TaskCtx
-					const { taskPath, depResults } = yield* TaskCtx
+					const { args } = taskCtx
+					const { taskPath, depResults } = taskCtx
 					const taskArgs = args as {
 						mode: "install" | "reinstall"
 						args: string
@@ -1427,7 +1441,10 @@ export const makeInstallTask = <
 						dependencies,
 						(dep) => dep.cacheKey,
 					)
-					const maybeCanisterId = yield* loadCanisterId(taskPath)
+					const maybeCanisterId = yield* loadCanisterId(
+						taskCtx,
+						taskPath,
+					)
 					if (Option.isNone(maybeCanisterId)) {
 						yield* Effect.logDebug(
 							`Canister ${canisterName} is not installed`,
@@ -1441,7 +1458,7 @@ export const makeInstallTask = <
 					}
 					const canisterId = maybeCanisterId.value
 
-					const { currentNetwork } = yield* TaskCtx
+					const { currentNetwork } = taskCtx
 					const mode = taskArgs.mode
 
 					// const taskRegistry = yield* TaskRegistry
@@ -1461,12 +1478,12 @@ export const makeInstallTask = <
 				})(),
 			),
 		revalidate: (taskCtx, { input }) =>
-			makeTaskRuntime(taskCtx).runPromise(
+			builderRuntime.runPromise(
 				Effect.fn("task_revalidate")(function* () {
 					const {
 						replica,
 						roles: { deployer },
-					} = yield* TaskCtx
+					} = taskCtx
 					const info = yield* replica.getCanisterInfo({
 						canisterId: input.canisterId,
 						identity: deployer.identity,
@@ -1483,7 +1500,7 @@ export const makeInstallTask = <
 		encodingFormat: "string",
 
 		encode: (taskCtx, result, input) =>
-			makeTaskRuntime(taskCtx).runPromise(
+			builderRuntime.runPromise(
 				Effect.fn("task_encode")(function* () {
 					yield* Effect.logDebug("encoding:", result)
 					if (customEncode) {
@@ -1507,7 +1524,7 @@ export const makeInstallTask = <
 				})(),
 			),
 		decode: (taskCtx, value, input) =>
-			makeTaskRuntime(taskCtx).runPromise(
+			builderRuntime.runPromise(
 				Effect.fn("task_decode")(function* () {
 					const {
 						canisterId,
@@ -1529,8 +1546,8 @@ export const makeInstallTask = <
 						roles: {
 							deployer: { identity },
 						},
-					} = yield* TaskCtx
-					const { appDir, iceDir, args } = yield* TaskCtx
+					} = taskCtx
+					const { appDir, iceDir, args } = taskCtx
 					const taskArgs = args as InstallTaskArgs
 					const path = yield* Path.Path
 					const didJSPath = path.join(
@@ -1680,18 +1697,17 @@ export const makeUpgradeTask = <
 		positionalParams: [],
 		params: upgradeParams,
 		effect: (taskCtx) =>
-			makeTaskRuntime(taskCtx).runPromise(
+			builderRuntime.runPromise(
 				Effect.fn("task_effect")(function* () {
 					yield* Effect.logDebug("Starting canister upgrade")
-					const taskCtx = yield* TaskCtx
 					const path = yield* Path.Path
 					// TODO: can I pass in the task itself as a type parameter to get automatic type inference?
 					// To avoid having to use "as"
-					const { appDir, iceDir } = yield* TaskCtx
+					const { appDir, iceDir } = taskCtx
 					const identity = taskCtx.roles.deployer.identity
 					const { replica, args, depResults } = taskCtx
 					const taskArgs = args as UpgradeTaskArgs
-					const { taskPath } = yield* TaskCtx
+					const { taskPath } = taskCtx
 					const canisterName = taskPath
 						.split(":")
 						.slice(0, -1)
@@ -1847,10 +1863,10 @@ export const makeUpgradeTask = <
 			return cacheKey
 		},
 		input: (taskCtx) =>
-			makeTaskRuntime(taskCtx).runPromise(
+			builderRuntime.runPromise(
 				Effect.fn("task_input")(function* () {
-					const { args } = yield* TaskCtx
-					const { taskPath, depResults } = yield* TaskCtx
+					const { args } = taskCtx
+					const { taskPath, depResults } = taskCtx
 					const taskArgs = args as {
 						args: string
 					}
@@ -1868,7 +1884,10 @@ export const makeUpgradeTask = <
 						dependencies,
 						(dep) => dep.cacheKey,
 					)
-					const maybeCanisterId = yield* loadCanisterId(taskPath)
+					const maybeCanisterId = yield* loadCanisterId(
+						taskCtx,
+						taskPath,
+					)
 					if (Option.isNone(maybeCanisterId)) {
 						yield* Effect.logDebug(
 							`Canister ${canisterName} is not installed`,
@@ -1882,7 +1901,7 @@ export const makeUpgradeTask = <
 					}
 					const canisterId = maybeCanisterId.value
 
-					const { currentNetwork } = yield* TaskCtx
+					const { currentNetwork } = taskCtx
 
 					// const taskRegistry = yield* TaskRegistry
 					// TODO: we need a separate cache for this?
@@ -1900,12 +1919,12 @@ export const makeUpgradeTask = <
 				})(),
 			),
 		revalidate: (taskCtx, { input }) =>
-			makeTaskRuntime(taskCtx).runPromise(
+			builderRuntime.runPromise(
 				Effect.fn("task_revalidate")(function* () {
 					const {
 						replica,
 						roles: { deployer },
-					} = yield* TaskCtx
+					} = taskCtx
 					const info = yield* replica.getCanisterInfo({
 						canisterId: input.canisterId,
 						identity: deployer.identity,
@@ -1922,7 +1941,7 @@ export const makeUpgradeTask = <
 		encodingFormat: "string",
 
 		encode: (taskCtx, result, input) =>
-			makeTaskRuntime(taskCtx).runPromise(
+			builderRuntime.runPromise(
 				Effect.fn("task_encode")(function* () {
 					yield* Effect.logDebug("encoding:", result)
 					if (customEncode) {
@@ -1944,7 +1963,7 @@ export const makeUpgradeTask = <
 				})(),
 			),
 		decode: (taskCtx, value, input) =>
-			makeTaskRuntime(taskCtx).runPromise(
+			builderRuntime.runPromise(
 				Effect.fn("task_decode")(function* () {
 					const {
 						canisterId,
@@ -1964,8 +1983,8 @@ export const makeUpgradeTask = <
 						roles: {
 							deployer: { identity },
 						},
-					} = yield* TaskCtx
-					const { appDir, iceDir, args } = yield* TaskCtx
+					} = taskCtx
+					const { appDir, iceDir, args } = taskCtx
 					const taskArgs = args as UpgradeTaskArgs
 					const path = yield* Path.Path
 					const didJSPath = path.join(
@@ -2003,34 +2022,6 @@ export const makeUpgradeTask = <
 			),
 	}
 }
-
-// export const makeUpgradeTask = <
-// 	U,
-// 	D extends Record<string, Task>,
-// 	P extends Record<string, Task>,
-// 	_SERVICE,
-// >(
-// 	upgradeArgsFn: (args: {
-// 		ctx: TaskCtxShape
-// 		deps: ExtractScopeSuccesses<D> & ExtractScopeSuccesses<P>
-// 	}) => Promise<U> | U = () => [] as unknown as U,
-// 	{
-// 		customEncode,
-// 	}: {
-// 		customEncode:
-// 			| undefined
-// 			| ((args: U) => Promise<Uint8Array<ArrayBufferLike>>)
-// 	} = {
-// 		customEncode: undefined,
-// 	},
-// ): InstallTask<_SERVICE, U, D, P> => {
-// 	return {
-// 		...makeInstallTask<U, D, P, _SERVICE>(upgradeArgsFn, {
-// 			customEncode,
-// 		}),
-// 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.UPGRADE],
-// 	}
-// }
 
 export const linkChildren = <A extends Record<string, Task>>(
 	children: A,
