@@ -21,7 +21,6 @@ import {
 } from "../services/defaultConfig.js"
 import { ICEConfigService } from "../services/iceConfig.js"
 import { type ReplicaService } from "../services/replica.js"
-import { TaskArgsService } from "../services/taskArgs.js"
 import { TaskRegistry } from "../services/taskRegistry.js"
 import type {
 	CachedTask,
@@ -35,40 +34,71 @@ import type {
 	TaskTreeNode,
 } from "../types/types.js"
 import { makeTaskCtx, type TaskCtxShape } from "../services/taskCtx.js"
+import { TaskRunnerContext } from "../services/taskRunner.js"
 
 export type ParamsToArgs<
-	P extends Record<string, NamedParam | PositionalParam>,
+	Params extends Record<string, NamedParam | PositionalParam>,
 > = {
-	[K in keyof P as P[K] extends { isOptional: false } | { default: unknown }
+	[K in keyof Params as Params[K] extends
+		| { isOptional: false }
+		| { default: unknown }
 		? K
-		: never]: P[K] extends TaskParam
-		? StandardSchemaV1.InferOutput<P[K]["type"]>
+		: never]: Params[K] extends TaskParam
+		? StandardSchemaV1.InferOutput<Params[K]["type"]>
 		: never
 } & {
-	[K in keyof P as P[K] extends { isOptional: false } | { default: unknown }
+	[K in keyof Params as Params[K] extends
+		| { isOptional: false }
+		| { default: unknown }
 		? never
-		: K]?: P[K] extends TaskParam
-		? StandardSchemaV1.InferOutput<P[K]["type"]>
+		: K]?: Params[K] extends TaskParam
+		? StandardSchemaV1.InferOutput<Params[K]["type"]>
 		: never
 }
 
-export type TaskParamsToArgs<T extends Task> = {
-	[K in keyof T["params"] as T["params"][K] extends
-		| { isOptional: false }
-		| { default: unknown }
+// value type for a TaskParam
+type ParamOutput<P> = P extends TaskParam
+	? StandardSchemaV1.InferOutput<P["type"]>
+	: never
+
+// required vs optional (your rules)
+type RequiredKeys<P> = {
+	[K in keyof P]: P[K] extends { isOptional: false } | { default: unknown }
 		? K
-		: never]: T["params"][K] extends TaskParam
-		? StandardSchemaV1.InferOutput<T["params"][K]["type"]>
 		: never
-} & {
-	[K in keyof T["params"] as T["params"][K] extends
-		| { isOptional: false }
-		| { default: unknown }
-		? never
-		: K]?: T["params"][K] extends TaskParam
-		? StandardSchemaV1.InferOutput<T["params"][K]["type"]>
-		: never
-}
+}[keyof P]
+
+type OptionalKeys<P> = Exclude<keyof P, RequiredKeys<P>>
+
+// build args; empty params => forbid any keys via Record<string, never>
+type BuildArgs<P extends object> = [keyof P] extends [never]
+	? Record<string, never>
+	: { [K in RequiredKeys<P>]: ParamOutput<P[K]> } & {
+			[K in OptionalKeys<P>]?: ParamOutput<P[K]>
+		}
+
+// Final: exact args for a Task's params
+export type TaskParamsToArgs<T extends Task> = BuildArgs<
+	NonNullable<T["params"]>
+> // NonNullable in case params can be undefined
+
+// export type TaskParamsToArgs<T extends Task> = {
+// 	[K in keyof T["params"] as T["params"][K] extends
+// 		| { isOptional: false }
+// 		| { default: unknown }
+// 		? K
+// 		: never]: T["params"][K] extends TaskParam
+// 		? StandardSchemaV1.InferOutput<T["params"][K]["type"]>
+// 		: never
+// } & {
+// 	[K in keyof T["params"] as T["params"][K] extends
+// 		| { isOptional: false }
+// 		| { default: unknown }
+// 		? never
+// 		: K]?: T["params"][K] extends TaskParam
+// 		? StandardSchemaV1.InferOutput<T["params"][K]["type"]>
+// 		: never
+// }
 
 export type TaskSuccess<T extends Task> = [T] extends [
 	Task<infer _A, infer _D, infer _P>,
@@ -103,18 +133,24 @@ export const getTaskPathById = (id: Symbol) =>
 	})
 
 export const collectDependencies = (
-	rootTasks: Task[],
-	collected: Map<symbol, Task> = new Map(),
-): Map<symbol, Task | (Task & { args: Record<string, unknown> })> => {
+	rootTasks: (Task & { args: Record<string, unknown> })[],
+	collected: Map<
+		symbol,
+		Task & { args: Record<string, unknown> }
+	> = new Map(),
+): Map<symbol, Task & { args: Record<string, unknown> }> => {
 	for (const rootTask of rootTasks) {
 		if (collected.has(rootTask.id)) continue
 		collected.set(rootTask.id, rootTask)
 		for (const key in rootTask.dependencies) {
 			// TODO: fix? Task dependencies are {}, cant be indexed.
 			// But Record<string, Task> as default is circular. not allowed
-			const dependency = (rootTask.dependencies as Record<string, Task>)[
-				key
-			]
+			const dependency = (
+				rootTask.dependencies as Record<
+					string,
+					Task & { args: Record<string, unknown> }
+				>
+			)[key]
 			if (!dependency) continue
 			collectDependencies([dependency], collected)
 		}
@@ -124,12 +160,14 @@ export const collectDependencies = (
 
 export class TaskArgsParseError extends Data.TaggedError("TaskArgsParseError")<{
 	message: string
+	arg?: unknown
+	param?: PositionalParam<unknown> | NamedParam<unknown>
 }> {}
 
 // Helper function to validate a single parameter
 const resolveArg = <T = unknown>(
 	param: PositionalParam<T> | NamedParam<T>, // Adjust type as per your actual schema structure
-	arg: string | undefined,
+	arg: unknown | undefined,
 ): Effect.Effect<T | undefined, TaskArgsParseError> => {
 	// TODO: arg might be undefined
 	if (!arg) {
@@ -138,105 +176,165 @@ const resolveArg = <T = unknown>(
 		}
 		return Effect.fail(
 			new TaskArgsParseError({
-				message: `Missing argument for ${param.name}`,
+				message: `Missing argument for ${param.name}, arg: ${arg}, param: ${JSON.stringify(param)}`,
 			}),
 		)
 	}
-	const value = param.parse(arg) ?? param.default
+	const value = arg ?? param.default
 	const outputType = param.type["~standard"].types?.output
 	const result = param.type["~standard"].validate(value)
 
 	if (result instanceof Promise) {
 		return Effect.fail(
 			new TaskArgsParseError({
-				message: `Async validation not implemented for ${param.name ?? "positional parameter"}`,
+				message: `Async validation not implemented for ${param.name ?? "positional parameter"}, arg: ${arg}, param: ${param}`,
 			}),
 		)
 	}
 	if (result.issues) {
 		return Effect.fail(
 			new TaskArgsParseError({
-				message: `Validation failed for ${param.name ?? "positional parameter"}: ${JSON.stringify(result.issues, null, 2)}`,
+				message: `Validation failed for ${param.name ?? "positional parameter"}: ${JSON.stringify(result.issues, null, 2)}, arg: ${arg}, param: ${param}`,
 			}),
 		)
 	}
 	return Effect.succeed(result.value)
 }
 
-export const resolveTaskArgs = (
-	task: Task,
-	taskArgs: { positionalArgs: string[]; namedArgs: Record<string, string> },
+const resolveCliArg = <T = unknown>(
+	param: NamedParam<T> | PositionalParam<T>,
+	arg: string | undefined,
+): Effect.Effect<T | undefined, TaskArgsParseError> => {
+	if (arg === undefined && param.isOptional) {
+		return Effect.succeed(param.default)
+	}
+	if (arg === undefined) {
+		return Effect.fail(
+			new TaskArgsParseError({
+				message: `Missing argument for ${param.name}, arg: ${arg}, param: ${JSON.stringify(param)}`,
+			}),
+		)
+	}
+	const parsedArg = param.parse(arg)
+	// return Effect.succeed(arg)
+	return resolveArg<T>(param, parsedArg)
+}
+
+export const resolveArgsMap = (
+	task: Task & { args: Record<string, unknown> },
 ) =>
 	Effect.gen(function* () {
-		const { positionalArgs, namedArgs } = taskArgs
+		let argsMap: Record<string, unknown> = {}
+		const { globalArgs, taskArgs: cliTaskArgs } = yield* CLIFlags
+		const { isRootTask } = yield* TaskRunnerContext
+		// if (isRootTask && cliTaskArgs) {
 
-		const named: Record<
-			string,
-			{
-				arg: unknown
-				param: NamedParam
+		// }
+		// breaks if dynamic call with empty args
+
+		const hasCliTaskArgs =
+			Boolean(Object.keys(cliTaskArgs.namedArgs).length) ||
+			Boolean(cliTaskArgs.positionalArgs.length)
+
+		// if (isRootTask && hasCliTaskArgs) {
+		//     // TODO: check params. not args.
+
+		// 	// convert cliTaskArgs to argsMap
+		// 	for (const [argName, arg] of Object.entries(
+		// 		cliTaskArgs.namedArgs,
+		// 	)) {
+		// 		const param = task.namedParams[argName]
+		// 		if (!param) {
+		// 			return yield* Effect.fail(
+		// 				new TaskArgsParseError({
+		// 					message: `Missing parameter: ${argName}`,
+		// 				}),
+		// 			)
+		// 		}
+		// 		const resolvedArg = yield* resolveArg(param, arg)
+		// 		argsMap[argName] = resolvedArg
+		// 	}
+		// 	for (const [index, arg] of cliTaskArgs.positionalArgs.entries()) {
+		// 		const param = task.positionalParams[index]
+		// 		if (!param) {
+		// 			return yield* Effect.fail(
+		// 				new TaskArgsParseError({
+		// 					message: `Missing positional parameter: ${index}`,
+		// 				}),
+		// 			)
+		// 		}
+		// 		const resolvedArg = yield* resolveArg(param, arg)
+		// 		argsMap[param.name] = resolvedArg
+		// 	}
+		// } else {
+		// 	// TODO: we need to check all params. not args. because they may be empty
+		// 	// and we still want the default values
+		// 	// dynamic calls from other tasks
+		// 	const argsArray = Object.entries(task.args)
+		// 	for (const [argName, arg] of argsArray) {
+		// 		const param = task.params[argName]
+		// 		if (!param) {
+		// 			return yield* Effect.fail(
+		// 				new TaskArgsParseError({
+		// 					message: `Missing parameter: ${argName}`,
+		// 				}),
+		// 			)
+		// 		}
+		// 		const resolvedArg = yield* resolveArg(param, arg)
+		// 		argsMap[argName] = resolvedArg
+		// 	}
+		// }
+
+		if (isRootTask && hasCliTaskArgs) {
+			// TODO: check params. not args.
+
+			// convert cliTaskArgs to argsMap
+			for (const [paramName, param] of Object.entries(task.namedParams)) {
+				const arg = cliTaskArgs.namedArgs[paramName]
+
+				if (!arg && !param.isOptional) {
+					return yield* Effect.fail(
+						new TaskArgsParseError({
+							message: `Missing parameter: ${paramName}`,
+						}),
+					)
+				}
+				const resolvedArg = yield* resolveCliArg(param, arg)
+				argsMap[paramName] = resolvedArg
 			}
-		> = {}
-		for (const [name, param] of Object.entries(task.namedParams)) {
-			const namedArg = namedArgs[name]
-			const arg = yield* resolveArg(param, namedArg)
-			named[name] = {
-				arg,
-				param,
+			for (const [index, param] of task.positionalParams.entries()) {
+				const arg = cliTaskArgs.positionalArgs[index]
+				if (!arg && !param.isOptional) {
+					return yield* Effect.fail(
+						new TaskArgsParseError({
+							message: `Missing positional parameter: ${index}`,
+						}),
+					)
+				}
+				const resolvedArg = yield* resolveCliArg(param, arg)
+				argsMap[param.name] = resolvedArg
 			}
-		}
-		const positional: Record<
-			string,
-			{
-				arg: unknown
-				param: PositionalParam
-			}
-		> = {}
-		for (const index in task.positionalParams) {
-			const param = task.positionalParams[index]
-			const positionalArg = positionalArgs[index]
-			if (!param) {
-				return yield* Effect.fail(
-					new TaskArgsParseError({
-						message: `Missing positional argument: ${index}`,
-					}),
-				)
-			}
-			const arg = yield* resolveArg(param, positionalArg)
-			positional[param.name] = {
-				arg,
-				param,
+		} else {
+			// TODO: we need to check all params. not args. because they may be empty
+			// and we still want the default values
+			// dynamic calls from other tasks
+			const paramsArray = Object.entries(task.params)
+			for (const [paramName, param] of paramsArray) {
+				const arg = task.args[paramName]
+				if (!arg && !param.isOptional) {
+					return yield* Effect.fail(
+						new TaskArgsParseError({
+							message: `Missing parameter: ${paramName}`,
+						}),
+					)
+				}
+				const resolvedArg = yield* resolveArg(param, arg)
+				argsMap[paramName] = resolvedArg
 			}
 		}
 
-		return {
-			positional,
-			named,
-		}
+		return argsMap
 	})
-
-// export const resolveArgsMap = (
-// 	task: Task,
-// 	args: Record<string, unknown>,
-// ): {
-// 	positional: Record<string, {
-// 		arg: unknown
-// 		param: PositionalParam
-// 	}>
-// 	named: Record<string, {
-// 		arg: unknown
-// 		param: NamedParam
-// 	}>
-// } => {
-// 	const argsArray = Object.entries(args)
-// 	const positional = argsArray.filter(([key]) => task.positionalParams.find((p) => p.name === key))
-// 	// TODO: fix
-// 	const named = argsArray.filter(([key]) => task.namedParams[key])
-// 	return {
-// 		positional,
-// 		named,
-// 	}
-// }
 
 /**
  * Topologically sorts tasks based on the "provide" field dependencies.
@@ -246,7 +344,9 @@ export const resolveTaskArgs = (
  * @returns An array of tasks sorted in execution order.
  * @throws Error if a cycle is detected.
  */
-export const topologicalSortTasks = (tasks: Map<symbol, Task>): Task[] => {
+export const topologicalSortTasks = (
+	tasks: Map<symbol, Task & { args: Record<string, unknown> }>,
+): (Task & { args: Record<string, unknown> })[] => {
 	const indegree = new Map<symbol, number>()
 	const adjList = new Map<symbol, symbol[]>()
 
@@ -259,7 +359,10 @@ export const topologicalSortTasks = (tasks: Map<symbol, Task>): Task[] => {
 	// Build the graph using the "provide" field.
 	for (const [id, task] of tasks.entries()) {
 		for (const [key, providedTask] of Object.entries(
-			task.dependencies as Record<string, Task>,
+			task.dependencies as Record<
+				string,
+				Task & { args: Record<string, unknown> }
+			>,
 		)) {
 			const depId = providedTask.id
 			// Only consider provided dependencies that are in our tasks map.
@@ -280,7 +383,7 @@ export const topologicalSortTasks = (tasks: Map<symbol, Task>): Task[] => {
 		}
 	}
 
-	const sortedTasks: Task[] = []
+	const sortedTasks: (Task & { args: Record<string, unknown> })[] = []
 	while (queue.length > 0) {
 		const currentId = queue.shift()
 		if (!currentId) {
@@ -426,8 +529,8 @@ export const uncachedTaskCount = Metric.counter("uncached_task_count", {
 
 // TODO: 1 task per time. its used like that anyway
 // rename to executeTask
-export const executeTasks = Effect.fn("execute_tasks")(function* (
-	tasks: (Task | (Task & { args: Record<string, unknown> }))[],
+export const makeTaskEffects = Effect.fn("make_task_effects")(function* (
+	tasks: (Task & { args: Record<string, unknown> })[],
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) {
 	const defaultConfig = yield* DefaultConfig
@@ -436,7 +539,6 @@ export const executeTasks = Effect.fn("execute_tasks")(function* (
 	const taskRegistry = yield* TaskRegistry
 	const { config } = yield* ICEConfigService
 	const { globalArgs, taskArgs: cliTaskArgs } = yield* CLIFlags
-	const { taskArgs } = yield* TaskArgsService
 	const currentNetwork = globalArgs.network ?? "local"
 	const currentNetworkConfig =
 		config?.networks?.[currentNetwork] ??
@@ -513,35 +615,9 @@ export const executeTasks = Effect.fn("execute_tasks")(function* (
 			})
 			progressCb({ taskId: task.id, taskPath, status: "starting" })
 
-			// TODO: also handle dynamic calls from other tasks
-			// this is purely for the cli
-			let argsMap: Record<string, unknown>
-			if ("args" in task && Object.keys(task.args).length > 0) {
-				yield* Effect.logDebug("task.args found:", task.args, taskPath)
-				argsMap = task.args
-			} else {
-				yield* Effect.logDebug(
-					"task.args not found, resolving task args",
-					taskPath,
-				)
-				// TODO: causes issues if task is called programmatically
-				const resolvedTaskArgs = yield* resolveTaskArgs(
-					task,
-					cliTaskArgs,
-				)
-				// TODO: clean up
-				const hasTaskArgs = Object.keys(taskArgs).length > 0
-				argsMap = hasTaskArgs
-					? taskArgs
-					: Object.fromEntries([
-							...Object.entries(resolvedTaskArgs.named).map(
-								([name, arg]) => [arg.param.name, arg.arg],
-							),
-							...Object.entries(resolvedTaskArgs.positional).map(
-								([index, arg]) => [index, arg.arg],
-							),
-						])
-			}
+			// TODO: no cliTaskArgs for child tasks
+			const argsMap = yield* resolveArgsMap(task)
+
 			yield* Effect.annotateCurrentSpan({
 				argsMap,
 			})
@@ -553,7 +629,7 @@ export const executeTasks = Effect.fn("execute_tasks")(function* (
 				progressCb,
 			)
 			// TODO: simplify?
-			let result: Option.Option<unknown> = Option.none()
+			let result: unknown
 			let cacheKey: Option.Option<string> = Option.none()
 
 			const maybeCachedTask = isCachedTask(task)
@@ -637,7 +713,7 @@ export const executeTasks = Effect.fn("execute_tasks")(function* (
 								})
 							},
 						})
-						result = Option.some(decodedResult)
+						result = decodedResult
 						yield* Effect.logDebug("decoded result:", decodedResult)
 					} else {
 						// TODO: reading cache failed, why would this happen?
@@ -671,23 +747,23 @@ export const executeTasks = Effect.fn("execute_tasks")(function* (
 								error,
 							})
 						},
-					}).pipe(Effect.option)
-					if (Option.isNone(result)) {
-						yield* Effect.logDebug("No result for task", taskPath)
-						return yield* Effect.fail(
-							new TaskRuntimeError({
-								message: `No result for task ${taskPath}`,
-							}),
-						)
-					}
+					})
+					// if (Option.isNone(result)) {
+					// 	yield* Effect.logDebug("No result for task", taskPath)
+					// 	return yield* Effect.fail(
+					// 		new TaskRuntimeError({
+					// 			message: `No result for task ${taskPath}`,
+					// 		}),
+					// 	)
+					// }
 					// TODO: fix. maybe not json stringify?
 					yield* Effect.annotateCurrentSpan({
-						encoding: Option.isSome(result),
+						encoding: result,
 					})
-					if (Option.isSome(cacheKey) && Option.isSome(result)) {
-						yield* Effect.logDebug("encoding result:", result.value)
+					if (Option.isSome(cacheKey)) {
+						yield* Effect.logDebug("encoding result:", result)
 						// stupid typescript cant infer otherwise........
-						const value = result.value
+						const value = result
 						const encodedResult = yield* Effect.tryPromise({
 							try: () => cachedTask.encode(taskCtx, value, input),
 							catch: (error) => {
@@ -724,17 +800,17 @@ export const executeTasks = Effect.fn("execute_tasks")(function* (
 							error,
 						})
 					},
-				}).pipe(Effect.option)
+				})
 			}
 
-			if (Option.isNone(result)) {
-				yield* Effect.logDebug("No result for task", taskPath)
-				return yield* Effect.fail(
-					new TaskRuntimeError({
-						message: `No result for task ${taskPath}`,
-					}),
-				)
-			}
+			// if (Option.isNone(result)) {
+			// 	yield* Effect.logDebug("No result for task", taskPath)
+			// 	return yield* Effect.fail(
+			// 		new TaskRuntimeError({
+			// 			message: `No result for task ${taskPath}`,
+			// 		}),
+			// 	)
+			// }
 			if (Option.isNone(cacheKey)) {
 				yield* Effect.logDebug(
 					"No cache key for task, skipped caching",
@@ -753,7 +829,7 @@ export const executeTasks = Effect.fn("execute_tasks")(function* (
 					cacheKey: Option.isSome(cacheKey)
 						? cacheKey.value
 						: undefined,
-					result: result.value,
+					result: result,
 				})
 			}
 
@@ -762,18 +838,18 @@ export const executeTasks = Effect.fn("execute_tasks")(function* (
 				taskId: task.id,
 				taskPath,
 				status: "completed",
-				result: result.value,
+				result: result,
 				// TODO: pass in cacheKey? probably not needed
 			})
 
 			yield* Effect.annotateCurrentSpan({
-				result: result.value,
+				result: result,
 			})
 			yield* totalTaskCount(Effect.succeed(1))
 			return {
 				taskId: task.id,
 				taskPath,
-				result: result.value,
+				result: result,
 				// TODO: pass in cacheKey? probably not needed
 			}
 		})(),

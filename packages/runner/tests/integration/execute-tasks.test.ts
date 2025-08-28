@@ -3,9 +3,10 @@ import { describe, expect, it } from "vitest"
 import { layer } from "@effect/vitest"
 import { task } from "../../src/builders/task.js"
 import { ICEConfigService } from "../../src/services/iceConfig.js"
-import { executeTasks, topologicalSortTasks } from "../../src/tasks/lib.js"
+import { makeTaskEffects, topologicalSortTasks } from "../../src/tasks/lib.js"
 import { CachedTask, ICEConfig, Task, TaskTree } from "../../src/types/types.js"
 import { makeTestLayer, getTasks, makeCachedTask } from "./setup.js"
+import { runTask, runTasks } from "../../src/tasks/run.js"
 
 describe("executeTasks", () => {
 	// const testLayer = (() => {
@@ -46,17 +47,25 @@ describe("executeTasks", () => {
 				const progress: Array<string> = []
 				const tasks = yield* getTasks()
 				// TODO: makeRuntime here?
-				const taskEffects = yield* executeTasks(
-					tasks,
-					({ taskPath, status }) => {
-						if (status === "completed") {
-							progress.push(taskPath)
+				// const taskEffects = yield* makeTaskEffects(
+				// 	tasks,
+				// 	({ taskPath, status }) => {
+				// 		if (status === "completed") {
+				// 			progress.push(taskPath)
+				// 		}
+				// 	},
+				// )
+				// const results = yield* Effect.all(taskEffects, {
+				// 	concurrency: "unbounded",
+				// })
+				yield* runTasks(
+					tasks.map((t) => ({ task: t, args: {} })),
+					(update) => {
+						if (update.status === "completed") {
+							progress.push(update.taskPath)
 						}
 					},
 				)
-				const results = yield* Effect.all(taskEffects, {
-					concurrency: "unbounded",
-				})
 				// C must be last, order of A / B does not matter
 				console.log(progress)
 				expect(progress.at(-1)).toBe("c")
@@ -65,45 +74,36 @@ describe("executeTasks", () => {
 		)
 	})
 
-	layer(
-		makeTestLayer(
-			{},
-			{
-				cached: makeCachedTask("cached-task", "first"),
-			},
-		),
-	)((it) => {
-		it.effect("reads from and writes to the cache only once", () =>
-			Effect.gen(function* () {
-				const { taskTree } = yield* ICEConfigService
-				const tasks = yield* getTasks()
-				// 1st run ⇒ miss + store
-				const cached = taskTree["cached"] as CachedTask
-				const taskEffects = yield* executeTasks(tasks)
-				const first = yield* Effect.all(taskEffects, {
-					concurrency: "unbounded",
-				})
+	it("reads from and writes to the cache only once", async () => {
+		const taskTree = {
+			cached: makeCachedTask(
+				task("cached-task")
+					.run(async () => "first")
+					.make(),
+				"first",
+			),
+		}
+		Effect.gen(function* () {
+			// 1st run ⇒ miss + store
+			const cached = taskTree["cached"] as CachedTask
+			const first = yield* runTask(taskTree["cached"], {})
+			// const taskEffects = yield* makeTaskEffects(tasks)
+			// const first = yield* Effect.all(taskEffects, {
+			// 	concurrency: "unbounded",
+			// })
 
-				expect(first.find((r) => r.taskId === cached.id)?.result).toBe(
-					"first",
-				)
+			expect(first).toBe("first")
 
-				// change the effect to prove it is *not* evaluated the 2nd time
-				// cached.effect = Effect.dieMessage("should not evaluate")
-				cached.effect = async () => {
-					throw new Error("should not evaluate")
-				}
+			// change the effect to prove it is *not* evaluated the 2nd time
+			// cached.effect = Effect.dieMessage("should not evaluate")
+			cached.effect = async () => {
+				throw new Error("should not evaluate")
+			}
 
-				// 2nd run ⇒ hit, same value
-				const taskEffects2 = yield* executeTasks(tasks)
-				const second = yield* Effect.all(taskEffects2, {
-					concurrency: "unbounded",
-				})
-				expect(second.find((r) => r.taskId === cached.id)?.result).toBe(
-					"first",
-				)
-			}),
-		)
+			// 2nd run ⇒ hit, same value
+			const second = yield* runTask(taskTree["cached"], {})
+			expect(second).toBe("first")
+		})
 	})
 
 	it("obeys the global concurrency limit", async () => {
@@ -135,7 +135,7 @@ describe("executeTasks", () => {
 		runtime.runPromise(
 			Effect.gen(function* () {
 				const tasks = yield* getTasks()
-				const taskEffects = yield* executeTasks(tasks)
+				const taskEffects = yield* makeTaskEffects(tasks)
 				const results = yield* Effect.all(taskEffects, {
 					concurrency: 2,
 				})
@@ -158,35 +158,35 @@ describe("executeTasks", () => {
 		// const root = makeTask("root", "ROOT")
 
 		const level3 = task("level3")
-			.run(() => "L3")
+			.run(async () => "L3")
 			.make()
 		const level2 = task("level2")
-			.run(() => "L2")
+			.deps({ prev: level3 })
+			.run(async () => "L2")
 			.make()
 		const level1 = task("level1")
-			.run(() => "L1")
+			.deps({ prev: level2 })
+			.run(async () => "L1")
 			.make()
 		const root = task("root")
-			.run(() => "ROOT")
+			.deps({ prev: level1 })
+			.run(async () => "ROOT")
 			.make()
 
-		// TODO: use builder instead
-		level2.dependencies = { prev: level3 }
-		level1.dependencies = { prev: level2 }
-		root.dependencies = { prev: level1 }
+		// // TODO: use builder instead
+		// level2.dependencies = { prev: level3 }
+		// level1.dependencies = { prev: level2 }
+		// root.dependencies = { prev: level1 }
 
 		// Track execution order
 		const trackingTasks = [level3, level2, level1, root].map<Task>(
 			(task) => ({
 				...task,
-				effect: (taskCtx) =>
-					Effect.gen(function* () {
-						executionOrder.push(task.description)
-						const result = yield* Effect.tryPromise(() =>
-							task.effect(taskCtx),
-						)
-						return result
-					}).pipe(Effect.runPromise),
+				effect: async (taskCtx) => {
+					executionOrder.push(task.description)
+					const result = await task.effect(taskCtx)
+					return result
+				},
 			}),
 		)
 
@@ -210,7 +210,7 @@ describe("executeTasks", () => {
 		const runtime = ManagedRuntime.make(testLayer)
 		await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks(tasks)
+				const taskEffects = yield* makeTaskEffects(tasks)
 				const results = yield* Effect.all(taskEffects, {
 					concurrency: "unbounded",
 				})
@@ -227,34 +227,29 @@ describe("executeTasks", () => {
 
 		// Create diamond: top -> left/right -> bottom
 		const top = task("top")
-			.run(() => "TOP")
+			.run(async () => "TOP")
 			.make()
 		const left = task("left")
-			.run(() => "LEFT")
+			.deps({ parent: top })
+			.run(async () => "LEFT")
 			.make()
 		const right = task("right")
-			.run(() => "RIGHT")
+			.deps({ parent: top })
+			.run(async () => "RIGHT")
 			.make()
 		const bottom = task("bottom")
-			.run(() => "BOTTOM")
+			.deps({ leftParent: left, rightParent: right })
+			.run(async () => "BOTTOM")
 			.make()
-
-		// Set up dependencies
-		left.dependencies = { parent: top }
-		right.dependencies = { parent: top }
-		bottom.dependencies = { leftParent: left, rightParent: right }
 
 		// Track execution order
 		const trackingTasks = [top, left, right, bottom].map<Task>((task) => ({
 			...task,
-			effect: (taskCtx) =>
-				Effect.gen(function* () {
-					executionOrder.push(task.description)
-					const result = yield* Effect.tryPromise(() =>
-						task.effect(taskCtx),
-					)
-					return result
-				}).pipe(Effect.runPromise),
+			effect: async (taskCtx) => {
+				executionOrder.push(task.description)
+				const result = await task.effect(taskCtx)
+				return result
+			},
 		}))
 
 		const tasks = topologicalSortTasks(
@@ -278,7 +273,7 @@ describe("executeTasks", () => {
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks(tasks)
+				const taskEffects = yield* makeTaskEffects(tasks)
 				const results = yield* Effect.all(taskEffects, {
 					concurrency: "unbounded",
 				})
@@ -327,7 +322,7 @@ describe("executeTasks", () => {
 		await expect(
 			runtime.runPromise(
 				Effect.gen(function* () {
-					const taskEffects = yield* executeTasks(tasks)
+					const taskEffects = yield* makeTaskEffects(tasks)
 					const results = yield* Effect.all(taskEffects, {
 						concurrency: "unbounded",
 					})
@@ -341,22 +336,34 @@ describe("executeTasks", () => {
 		const executionOrder: Array<string> = []
 
 		// Create mixed scenario: cached -> non-cached -> cached
-		const cachedRoot = makeCachedTask("cached-root", "CACHED_ROOT")
-		const nonCachedMiddle = task("non-cached-middle")
-			.run(() => "NON_CACHED")
-			.make()
-		const cachedLeaf = makeCachedTask("cached-leaf", "CACHED_LEAF")
 
-		// Set up dependencies
-		nonCachedMiddle.dependencies = { root: cachedRoot }
-		cachedLeaf.dependencies = { middle: nonCachedMiddle }
+		const t = task()
+			.run(async (ctx) => "CACHED_ROOT")
+			.make()
+
+		const cachedRoot = makeCachedTask(t, "CACHED_ROOT")
+		const nonCachedMiddle = task()
+			.deps({ root: cachedRoot })
+			.run(async () => "NON_CACHED_MIDDLE")
+			.make()
+		const cachedLeaf = makeCachedTask(
+			task()
+				.deps({ middle: nonCachedMiddle })
+				.run(async () => "CACHED_LEAF")
+				.make(),
+			"CACHED_LEAF",
+		)
+
+		// // Set up dependencies
+		// nonCachedMiddle.dependencies = { root: cachedRoot }
+		// cachedLeaf.dependencies = { middle: nonCachedMiddle }
 
 		// Track execution order for the non-cached task
 		const trackingNonCached: Task = {
 			...nonCachedMiddle,
 			effect: (taskCtx) =>
 				Effect.gen(function* () {
-					executionOrder.push(nonCachedMiddle.description)
+					executionOrder.push("NON_CACHED_MIDDLE")
 					const result = yield* Effect.tryPromise(() =>
 						nonCachedMiddle.effect(taskCtx),
 					)
@@ -364,19 +371,17 @@ describe("executeTasks", () => {
 				}).pipe(Effect.runPromise),
 		}
 
-		const tasks = topologicalSortTasks(
-			new Map<symbol, Task | CachedTask>([
-				[cachedRoot.id, cachedRoot],
-				[trackingNonCached.id, trackingNonCached],
-				[cachedLeaf.id, cachedLeaf],
-			]),
-		)
-
 		const taskTree = {
-			"cached-root": cachedRoot,
-			"non-cached-middle": trackingNonCached,
-			"cached-leaf": cachedLeaf,
+			cachedRoot,
+			trackingNonCached,
+			cachedLeaf,
 		}
+
+		const tasksWithArgs: Array<{ task: Task; args: {} }> = [
+			{ task: cachedRoot, args: {} },
+			{ task: trackingNonCached, args: {} },
+			{ task: cachedLeaf, args: {} },
+		]
 
 		const testLayer = makeTestLayer({}, taskTree)
 		const runtime = ManagedRuntime.make(testLayer)
@@ -384,15 +389,12 @@ describe("executeTasks", () => {
 		// First run - all should execute
 		const firstResults = await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks(tasks)
-				const results = yield* Effect.all(taskEffects, {
-					concurrency: "unbounded",
-				})
+				const results = yield* runTasks(tasksWithArgs)
 				return results
 			}),
 		)
 
-		expect(executionOrder).toEqual(["non-cached-middle"])
+		expect(executionOrder).toEqual(["NON_CACHED_MIDDLE"])
 		expect(firstResults.length).toBe(3)
 
 		// Reset execution order
@@ -401,15 +403,12 @@ describe("executeTasks", () => {
 		// Second run - cached tasks should use cache, non-cached should run again
 		const secondResults = await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks(tasks)
-				const results = yield* Effect.all(taskEffects, {
-					concurrency: "unbounded",
-				})
+				const results = yield* runTasks(tasksWithArgs)
 				return results
 			}),
 		)
 
-		expect(executionOrder).toEqual(["non-cached-middle"]) // Only non-cached ran
+		expect(executionOrder).toEqual(["NON_CACHED_MIDDLE"]) // Only non-cached ran
 		expect(secondResults.length).toBe(3)
 	})
 
@@ -434,7 +433,7 @@ describe("executeTasks", () => {
 		} satisfies CachedTask<string>
 
 		const taskTree = {
-			"dynamic-cached": dynamicCachedTask,
+			dynamicCachedTask,
 		}
 
 		const testLayer = makeTestLayer({}, taskTree)
@@ -443,7 +442,7 @@ describe("executeTasks", () => {
 		// First run with cacheKeyCounter = 0
 		const firstResults = await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks([dynamicCachedTask])
+				const taskEffects = yield* makeTaskEffects([dynamicCachedTask])
 				const results = yield* Effect.all(taskEffects, {
 					concurrency: "unbounded",
 				})
@@ -459,7 +458,7 @@ describe("executeTasks", () => {
 		// Second run with different cache key should re-execute
 		const secondResults = await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks([dynamicCachedTask])
+				const taskEffects = yield* makeTaskEffects([dynamicCachedTask])
 				const results = yield* Effect.all(taskEffects, {
 					concurrency: "unbounded",
 				})
@@ -523,7 +522,7 @@ describe("executeTasks", () => {
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks(tasks)
+				const taskEffects = yield* makeTaskEffects(tasks)
 				const results = yield* Effect.all(taskEffects, {
 					concurrency: 2,
 				})
@@ -573,7 +572,7 @@ describe("executeTasks", () => {
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks(tasks)
+				const taskEffects = yield* makeTaskEffects(tasks)
 				const results = yield* Effect.all(taskEffects, {
 					concurrency: 3,
 				})
@@ -651,7 +650,7 @@ describe("executeTasks", () => {
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks(tasks)
+				const taskEffects = yield* makeTaskEffects(tasks)
 				const results = yield* Effect.all(taskEffects, {
 					concurrency: "unbounded",
 				})
@@ -716,7 +715,7 @@ describe("executeTasks", () => {
 
 		const results = await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks(tasks)
+				const taskEffects = yield* makeTaskEffects(tasks)
 				const results = yield* Effect.all(taskEffects, {
 					concurrency: "unbounded",
 				})
@@ -782,7 +781,7 @@ describe("executeTasks", () => {
 
 		const results = await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks(tasks)
+				const taskEffects = yield* makeTaskEffects(tasks)
 				const results = yield* Effect.all(taskEffects, {
 					concurrency: "unbounded",
 				})
@@ -842,7 +841,7 @@ describe("executeTasks", () => {
 		// First run - should cache both
 		const firstResults = await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks([
+				const taskEffects = yield* makeTaskEffects([
 					stringCachedTask,
 					binaryCachedTask,
 				])
@@ -857,17 +856,19 @@ describe("executeTasks", () => {
 		expect(firstResults[1]?.result).toEqual(new Uint8Array([1, 2, 3, 4]))
 
 		// Modify effects to verify cache is used
-		stringCachedTask.effect = (taskCtx) => Effect.gen(function* () {
-			return "modified_string"
-		}).pipe(Effect.runPromise)
-		binaryCachedTask.effect = (taskCtx) => Effect.gen(function* () {
-			return new Uint8Array([5, 6, 7, 8])
-		}).pipe(Effect.runPromise)
+		stringCachedTask.effect = (taskCtx) =>
+			Effect.gen(function* () {
+				return "modified_string"
+			}).pipe(Effect.runPromise)
+		binaryCachedTask.effect = (taskCtx) =>
+			Effect.gen(function* () {
+				return new Uint8Array([5, 6, 7, 8])
+			}).pipe(Effect.runPromise)
 
 		// Second run - should use cache
 		const secondResults = await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks([
+				const taskEffects = yield* makeTaskEffects([
 					stringCachedTask,
 					binaryCachedTask,
 				])
@@ -911,9 +912,10 @@ describe("executeTasks", () => {
 		level6.dependencies = { prev: level5 }
 
 		// Make level4 fail
-		level4.effect = (taskCtx) => Effect.gen(function* () {
-			yield* Effect.fail("Deep chain failure")
-		}).pipe(Effect.runPromise)
+		level4.effect = (taskCtx) =>
+			Effect.gen(function* () {
+				yield* Effect.fail("Deep chain failure")
+			}).pipe(Effect.runPromise)
 
 		const tasks = topologicalSortTasks(
 			new Map([
@@ -941,7 +943,7 @@ describe("executeTasks", () => {
 		await expect(
 			runtime.runPromise(
 				Effect.gen(function* () {
-					const taskEffects = yield* executeTasks(tasks)
+					const taskEffects = yield* makeTaskEffects(tasks)
 					const results = yield* Effect.all(taskEffects, {
 						concurrency: "unbounded",
 					})
@@ -953,19 +955,49 @@ describe("executeTasks", () => {
 
 	it("handles multiple independent cached task chains", async () => {
 		// Create two independent chains, each with cached tasks
-		const chain1Root = makeCachedTask("chain1_root", "C1_ROOT")
-		const chain1Middle = makeCachedTask("chain1_middle", "C1_MIDDLE")
-		const chain1Leaf = makeCachedTask("chain1_leaf", "C1_LEAF")
+		const chain1Root = makeCachedTask(
+			task("chain1_root")
+				.run(async () => "C1_ROOT")
+				.make(),
+			"C1_ROOT",
+		)
+		const chain1Middle = makeCachedTask(
+			task("chain1_middle")
+				.run(async () => "C1_MIDDLE")
+				.make(),
+			"C1_MIDDLE",
+		)
+		const chain1Leaf = makeCachedTask(
+			task("chain1_leaf")
+				.run(async () => "C1_LEAF")
+				.make(),
+			"C1_LEAF",
+		)
 
-		const chain2Root = makeCachedTask("chain2_root", "C2_ROOT")
-		const chain2Middle = makeCachedTask("chain2_middle", "C2_MIDDLE")
-		const chain2Leaf = makeCachedTask("chain2_leaf", "C2_LEAF")
+		const chain2Root = makeCachedTask(
+			task("chain2_root")
+				.run(async () => "C2_ROOT")
+				.make(),
+			"C2_ROOT",
+		)
+		const chain2Middle = makeCachedTask(
+			task("chain2_middle")
+				.run(async () => "C2_MIDDLE")
+				.make(),
+			"C2_MIDDLE",
+		)
+		const chain2Leaf = makeCachedTask(
+			task("chain2_leaf")
+				.run(async () => "C2_LEAF")
+				.make(),
+			"C2_LEAF",
+		)
 
-		// Set up dependencies within each chain
-		chain1Middle.dependencies = { root: chain1Root }
-		chain1Leaf.dependencies = { middle: chain1Middle }
-		chain2Middle.dependencies = { root: chain2Root }
-		chain2Leaf.dependencies = { middle: chain2Middle }
+		// // Set up dependencies within each chain
+		// chain1Middle.dependencies = { root: chain1Root }
+		// chain1Leaf.dependencies = { middle: chain1Middle }
+		// chain2Middle.dependencies = { root: chain2Root }
+		// chain2Leaf.dependencies = { middle: chain2Middle }
 
 		const allTasks = [
 			chain1Root,
@@ -989,7 +1021,7 @@ describe("executeTasks", () => {
 		// First run - all should execute
 		const firstResults = await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks(tasks)
+				const taskEffects = yield* makeTaskEffects(tasks)
 				const results = yield* Effect.all(taskEffects, {
 					concurrency: "unbounded",
 				})
@@ -1009,7 +1041,7 @@ describe("executeTasks", () => {
 		// Second run - should use cache for all
 		const secondResults = await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks(tasks)
+				const taskEffects = yield* makeTaskEffects(tasks)
 				const results = yield* Effect.all(taskEffects, {
 					concurrency: "unbounded",
 				})
@@ -1071,33 +1103,43 @@ describe("executeTasks", () => {
 		const trackingTasks: Task[] = [
 			{
 				...root,
-				effect: (taskCtx) => Effect.gen(function* () {
-					executionOrder.push("root")
-					yield* Effect.tryPromise(() => root.effect(taskCtx))
-				}).pipe(Effect.runPromise),
+				effect: (taskCtx) =>
+					Effect.gen(function* () {
+						executionOrder.push("root")
+						yield* Effect.tryPromise(() => root.effect(taskCtx))
+					}).pipe(Effect.runPromise),
 			},
 			{
 				...fastBranch,
-				effect: (taskCtx) => Effect.gen(function* () {
-					yield* Effect.sleep("10 millis")
-					executionOrder.push("fast")
-					yield* Effect.tryPromise(() => fastBranch.effect(taskCtx))
-				}).pipe(Effect.runPromise),
+				effect: (taskCtx) =>
+					Effect.gen(function* () {
+						yield* Effect.sleep("10 millis")
+						executionOrder.push("fast")
+						yield* Effect.tryPromise(() =>
+							fastBranch.effect(taskCtx),
+						)
+					}).pipe(Effect.runPromise),
 			},
 			{
 				...slowBranch,
-				effect: (taskCtx) => Effect.gen(function* () {
-					yield* Effect.sleep("50 millis")
-					executionOrder.push("slow")
-					yield* Effect.tryPromise(() => slowBranch.effect(taskCtx))
-				}).pipe(Effect.runPromise),
+				effect: (taskCtx) =>
+					Effect.gen(function* () {
+						yield* Effect.sleep("50 millis")
+						executionOrder.push("slow")
+						yield* Effect.tryPromise(() =>
+							slowBranch.effect(taskCtx),
+						)
+					}).pipe(Effect.runPromise),
 			},
 			{
 				...convergence,
-				effect: (taskCtx) => Effect.gen(function* () {
-					executionOrder.push("convergence")
-					yield* Effect.tryPromise(() => convergence.effect(taskCtx))
-				}).pipe(Effect.runPromise),
+				effect: (taskCtx) =>
+					Effect.gen(function* () {
+						executionOrder.push("convergence")
+						yield* Effect.tryPromise(() =>
+							convergence.effect(taskCtx),
+						)
+					}).pipe(Effect.runPromise),
 			},
 		]
 
@@ -1114,7 +1156,7 @@ describe("executeTasks", () => {
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
-				const taskEffects = yield* executeTasks(tasks)
+				const taskEffects = yield* makeTaskEffects(tasks)
 				const results = yield* Effect.all(taskEffects, {
 					concurrency: "unbounded",
 				})

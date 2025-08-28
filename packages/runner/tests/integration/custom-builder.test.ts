@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest"
 import {
 	BindingsTask,
 	BuildTask,
-	CanisterScope,
+	CustomCanisterScope,
 	CanisterScopeSimple,
 	CreateTask,
 	customCanister,
@@ -24,17 +24,16 @@ import { ICEConfigService } from "../../src/services/iceConfig.js"
 import { Moc } from "../../src/services/moc.js"
 import { picReplicaImpl } from "../../src/services/pic/pic.js"
 import { DefaultReplica, Replica } from "../../src/services/replica.js"
-import { TaskArgsService } from "../../src/services/taskArgs.js"
 import { TaskRegistry } from "../../src/services/taskRegistry.js"
-import { executeTasks, topologicalSortTasks } from "../../src/tasks/lib.js"
-import { runTask } from "../../src/tasks/run.js"
+import {
+	makeTaskEffects,
+	TaskParamsToArgs,
+	topologicalSortTasks,
+} from "../../src/tasks/lib.js"
+import { runTask, runTasks } from "../../src/tasks/run.js"
 import { ICEConfig, Task, TaskTree } from "../../src/types/types.js"
 import { telemetryExporter, telemetryLayer, makeTestLayer } from "./setup.js"
-
-const DefaultReplicaService = Layer.effect(DefaultReplica, picReplicaImpl).pipe(
-	Layer.provide(NodeContext.layer),
-	Layer.provide(configLayer),
-)
+import { makeTestRuntime } from "./setup.js"
 
 // Not needed for now
 
@@ -148,17 +147,6 @@ const makeCanisterId = (
 // 	Ed25519KeyIdentity.generate().getPrincipal()
 // }
 
-const makeTestRuntime = (
-	{ cliTaskArgs = { positionalArgs: [], namedArgs: {} }, taskArgs = {} } = {
-		cliTaskArgs: { positionalArgs: [], namedArgs: {} },
-		taskArgs: {},
-	},
-	taskTree: TaskTree = {},
-) => {
-	const layer = makeTestLayer({ cliTaskArgs, taskArgs }, taskTree)
-	return ManagedRuntime.make(layer)
-}
-
 // const makeTestRuntime = (
 // 	{ cliTaskArgs = { positionalArgs: [], namedArgs: {} }, taskArgs = {} } = {
 // 		cliTaskArgs: { positionalArgs: [], namedArgs: {} },
@@ -228,13 +216,15 @@ const makeTestCanister = () => {
 	}
 }
 
-const initializeCanister = <T extends CanisterScope>(canister: T) =>
+const initializeCanister = <T extends CustomCanisterScope>(canister: T) =>
 	Effect.gen(function* () {
-		const createResult = yield* runTask(
-			canister.children.create,
-		)
+		type TestP = TaskParamsToArgs<typeof canister.children.install>
+		const createResult = yield* runTask(canister.children.create)
 		const { wasmPath, candidPath } = yield* runTask(canister.children.build)
-		const { didJSPath, didTSPath } = yield* runTask(canister.children.bindings)
+		const { didJSPath, didTSPath } = yield* runTask(
+			canister.children.bindings,
+			{},
+		)
 		return {
 			canisterId: createResult,
 			wasmPath,
@@ -254,8 +244,6 @@ describe("custom builder", () => {
 		const taskTree = {
 			test_canister,
 		}
-		const progress: Array<string> = []
-		const tasks = [test_canister.children.deploy]
 		const runtime = makeTestRuntime({}, taskTree)
 		// const result = await runtime.runPromise()
 		const result = await runtime.runPromise(
@@ -272,26 +260,6 @@ describe("custom builder", () => {
 
 	it("should execute canister tasks in correct dependency order", async () => {
 		const { canister: test_canister } = makeTestCanister()
-		// Track execution order by wrapping tasks
-
-		// const trackTask = <T extends Task>(task: T) => ({
-		// 	...task,
-		// 	effect: Effect.gen(function* () {
-		// 		executionOrder.push(task.description)
-		// 		const result = yield* task.effect
-		// 		return result
-		// 	}),
-		// })
-
-		// const trackingTasks = [
-		//     test_canister.children.create,
-		//     test_canister.children.build,
-		//     test_canister.children.bindings,
-		//     test_canister.children.install,
-		// ]
-		// const tasks = topologicalSortTasks(
-		// 	new Map(trackingTasks.map((task) => [task.id, task])),
-		// )
 
 		const taskTree = {
 			test_canister,
@@ -301,48 +269,17 @@ describe("custom builder", () => {
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
-				// const {
-				// 	canisterId,
-				// 	wasmPath,
-				// 	candidPath,
-				// 	didJSPath,
-				// 	didTSPath,
-				// } = yield* initializeCanister(test_canister)
-
-				// // TODO: ctx.runTask doesnt use the same runtime... dynamic tasks problem
-				// yield* runTask(test_canister.children.install, {
-				//     canisterId,
-				//     wasm: wasmPath,
-				//     candid: candidPath,
-				//     mode: "reinstall",
-				//     // didJSPath,
-				//     // didTSPath,
-				// })
-				yield* runTask(test_canister.children.deploy) // TODO: should have length 5 of tasks
-				// yield* Metrics
-
-				// TODO: .pipe(span / observe / tracing)
-				// const executionOrder: Array<string> = []
-
-				// const taskEffects = yield* executeTasks(tasks)
-
-				// const results = yield* Effect.all(taskEffects, {
-				// 	concurrency: "unbounded",
-				// })
-				// return results
-				// return executionOrder
+				yield* runTask(test_canister.children.deploy)
 			}),
 		)
 		const executionOrder = telemetryExporter
 			.getFinishedSpans()
 			.filter((s) => s.name === "task_execute_effect")
-		// .filter((s) => s.attributes?.["result"])
 
-		// telemetryExporter.export()
-
+		console.log(telemetryExporter.getFinishedSpans())
 		console.log(executionOrder)
 		console.log(executionOrder.length)
-		expect(executionOrder).toHaveLength(4)
+		expect(executionOrder).toHaveLength(5)
 
 		// Should execute in dependency order: create, build, bindings, install_args, install
 		expect(
@@ -413,15 +350,15 @@ describe("custom builder", () => {
 		})
 
 		// Should have different canister IDs
-		expect(results[0]!.canisterId).not.toBe(
-			results[1]!.canisterId,
-		)
+		expect(results[0]!.canisterId).not.toBe(results[1]!.canisterId)
 	})
 
 	it("should handle canister dependencies", async () => {
 		const dependency_canister = customCanister({
 			wasm: path.resolve(__dirname, "../fixtures/canister/example.wasm"),
 			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
+		}).installArgs(async ({ ctx }) => {
+			return []
 		}).make()
 
 		const main_canister = customCanister({
@@ -429,14 +366,14 @@ describe("custom builder", () => {
 			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
 		})
 			.dependsOn({
-				dependency: dependency_canister.children.install,
+				dependency_canister,
 			})
 			.deps({
-				dependency: dependency_canister.children.install,
+				dependency_canister,
 			})
 			.installArgs(async ({ ctx, deps }) => {
 				// Use the dependency canister in install args
-				expect(deps.dependency.canisterId).toBeTruthy()
+				expect(deps.dependency_canister.canisterId).toBeTruthy()
 				return []
 			})
 			.make()
@@ -450,6 +387,8 @@ describe("custom builder", () => {
 
 		const result = await runtime.runPromise(
 			Effect.gen(function* () {
+				// const result1 = yield* runTask(dependency_canister.children.deploy)
+                // TODO: deps dont work?
 				const result = yield* runTask(main_canister.children.deploy)
 				return result
 			}),
@@ -497,10 +436,10 @@ describe("custom builder", () => {
 			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
 		})
 			.dependsOn({
-				canister1: canister1.children.install,
+				canister1,
 			})
 			.deps({
-				canister1: canister1.children.install,
+				canister1,
 			})
 			.installArgs(async ({ ctx, deps }) => {
 				executionOrder.push("canister2_install_args")
@@ -513,10 +452,10 @@ describe("custom builder", () => {
 			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
 		})
 			.dependsOn({
-				canister2: canister2.children.install,
+				canister2,
 			})
 			.deps({
-				canister2: canister2.children.install,
+				canister2,
 			})
 			.installArgs(async ({ ctx, deps }) => {
 				executionOrder.push("canister3_install_args")
@@ -594,14 +533,16 @@ describe("custom builder", () => {
 		await runtime.runPromise(
 			Effect.gen(function* () {
 				const tasks = [
-					canister1.children.install,
-					canister2.children.install,
-					canister3.children.install,
+					canister1.children.deploy,
+					canister2.children.deploy,
+					canister3.children.deploy,
 				]
-				// Array.map
-				const results = yield* Effect.all(
-					tasks.map((t) => runTask(t)),
-					{ concurrency: 2 },
+				const results = yield* runTasks(
+					tasks.map((t) => ({
+						task: t,
+						// TODO?
+						args: { mode: "auto" as const },
+					})),
 				)
 				return results
 			}),
@@ -635,7 +576,7 @@ describe("custom builder", () => {
 		// First run with configVersion = 1
 		const firstResult = await runtime.runPromise(
 			Effect.gen(function* () {
-				const result = yield* runTask(dynamic_canister.children.install)
+				const result = yield* runTask(dynamic_canister.children.deploy)
 				return result
 			}),
 		)
@@ -651,7 +592,7 @@ describe("custom builder", () => {
 		// Second run should re-execute due to configuration change
 		const secondResult = await runtime.runPromise(
 			Effect.gen(function* () {
-				const result = yield* runTask(dynamic_canister.children.install)
+				const result = yield* runTask(dynamic_canister.children.deploy)
 				return result
 			}),
 		)
@@ -685,7 +626,7 @@ describe("custom builder", () => {
 
 		const result = await runtime.runPromise(
 			Effect.gen(function* () {
-				const result = yield* runTask(test_canister.children.install)
+				const result = yield* runTask(test_canister.children.deploy)
 				return result
 			}),
 		)
@@ -792,10 +733,10 @@ describe("custom builder", () => {
 
 		const res = await runtime.runPromise(
 			Effect.gen(function* () {
-				const result = yield* runTask(test_canister.children.create, {})
-				yield* runTask(test_canister.children.build)
-				yield* runTask(test_canister.children.bindings)
-				return result
+				const { canisterId } = yield* runTask(
+					test_canister.children.deploy,
+				)
+				return canisterId
 			}),
 		)
 		const canisterId = res
@@ -806,10 +747,9 @@ describe("custom builder", () => {
 			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
 		}
 
-		// First run - should execute install_args
 		await runtime.runPromise(
 			Effect.gen(function* () {
-				const result = yield* runTask(test_canister.children.install, {
+				const result = yield* runTask(test_canister.children.deploy, {
 					mode: "reinstall",
 					...canisterConfig,
 				})
@@ -826,7 +766,7 @@ describe("custom builder", () => {
 		await runtime.runPromise(
 			Effect.gen(function* () {
 				// TODO: it runs upgrade even though we set "reinstall"
-				const result = yield* runTask(test_canister.children.install, {
+				const result = yield* runTask(test_canister.children.deploy, {
 					mode: "reinstall",
 					...canisterConfig,
 				})
@@ -900,10 +840,10 @@ describe("custom builder", () => {
 			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
 		})
 			.dependsOn({
-				root: root_canister.children.install,
+				root_canister,
 			})
 			.deps({
-				root: root_canister.children.install,
+				root_canister,
 			})
 			.installArgs(async ({ ctx, deps }) => {
 				executionOrder.push("branch1")
@@ -916,10 +856,10 @@ describe("custom builder", () => {
 			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
 		})
 			.dependsOn({
-				root: root_canister.children.install,
+				root_canister,
 			})
 			.deps({
-				root: root_canister.children.install,
+				root_canister,
 			})
 			.installArgs(async ({ ctx, deps }) => {
 				executionOrder.push("branch2")
@@ -932,12 +872,12 @@ describe("custom builder", () => {
 			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
 		})
 			.dependsOn({
-				branch1: branch1_canister.children.install,
-				branch2: branch2_canister.children.install,
+				branch1_canister,
+				branch2_canister,
 			})
 			.deps({
-				branch1: branch1_canister.children.install,
-				branch2: branch2_canister.children.install,
+				branch1_canister,
+				branch2_canister,
 			})
 			.installArgs(async ({ ctx, deps }) => {
 				executionOrder.push("convergence")

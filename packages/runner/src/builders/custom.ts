@@ -1,5 +1,5 @@
 import { Effect, Record } from "effect"
-import type { Scope, Task, TaskTree } from "../types/types.js"
+import type { CachedTask, Scope, Task, TaskTree } from "../types/types.js"
 // import mo from "motoko"
 import { FileSystem, Path } from "@effect/platform"
 import { InstallModes } from "../services/replica.js"
@@ -7,7 +7,6 @@ import {
 	BindingsTask,
 	BuildTask,
 	DeployTask,
-	CanisterScope,
 	DependencyMismatchError,
 	ExtractScopeSuccesses,
 	InstallTask,
@@ -16,6 +15,11 @@ import {
 	UpgradeTask,
 	TaskError,
 	builderRuntime,
+	CreateTask,
+	StopTask,
+	RemoveTask,
+	StatusTask,
+	FileDigest,
 } from "./lib.js"
 import { getNodeByPath, ParamsToArgs, TaskParamsToArgs } from "../tasks/lib.js"
 import {
@@ -41,6 +45,36 @@ import {
 import { generateDIDJS } from "../canister.js"
 import { type TaskCtxShape } from "../services/taskCtx.js"
 import { type } from "arktype"
+
+export type CustomCanisterScope<
+	_SERVICE = unknown,
+	I = unknown,
+	U = unknown,
+	D extends Record<string, Task> = Record<string, Task>,
+	P extends Record<string, Task> = Record<string, Task>,
+> = {
+	_tag: "scope"
+	id: symbol
+	tags: Array<string | symbol>
+	description: string
+	defaultTask: "deploy"
+	// only limited to tasks
+	// children: Record<string, Task>
+	children: {
+		// create: Task<string>
+		create: CreateTask
+		bindings: BindingsTask
+		build: CustomBuildTask
+		install: InstallTask<_SERVICE, I, D, P>
+		upgrade: UpgradeTask<_SERVICE, U, D, P>
+		// D,
+		// P
+		stop: StopTask
+		remove: RemoveTask
+		deploy: DeployTask<_SERVICE>
+		status: StatusTask
+	}
+}
 
 export type CustomCanisterConfig = {
 	wasm: string
@@ -148,32 +182,43 @@ export const makeCustomDeployTask = <_SERVICE>(
 					const parentScope = (yield* getNodeByPath(
 						taskCtx,
 						canisterName,
-					)) as CanisterScope<_SERVICE>
+					)) as CustomCanisterScope<_SERVICE>
 					const { args } = taskCtx
 					const taskArgs = args as DeployTaskArgs
 					// const mode = yield* resolveMode()
 
-					// TODO: this requires create, because some have canisterId hardcoded?
-					const mode =
-						taskArgs.mode === "auto"
-							? yield* resolveMode(
-									taskCtx,
-									canisterConfig?.canisterId,
+					// TODO: default doesnt work for mode?
+					yield* Effect.logDebug("deploy taskArgs:", taskArgs)
+					const result = yield* Effect.all(
+						[
+							Effect.gen(function* () {
+								yield* Effect.logDebug(
+									"Now running create task",
 								)
-							: taskArgs.mode
-					console.log("mode", mode, "taskArgs.mode", taskArgs.mode)
-					const [canisterId, [{ wasmPath, candidPath }]] =
-						yield* Effect.all(
-							[
-								Effect.gen(function* () {
-									yield* Effect.logDebug(
-										"Now running create task",
-									)
-									const canisterId = yield* Effect.tryPromise(
-										{
+								const canisterId = yield* Effect.tryPromise({
+									try: () =>
+										runTask(
+											parentScope.children.create,
+											{},
+										),
+									catch: (error) => {
+										return new TaskError({
+											message: String(error),
+										})
+									},
+								})
+								yield* Effect.logDebug(
+									"Finished running create task",
+								)
+								return canisterId
+							}),
+							Effect.gen(function* () {
+								return yield* Effect.all(
+									[
+										Effect.tryPromise({
 											try: () =>
 												runTask(
-													parentScope.children.create,
+													parentScope.children.build,
 													{},
 												),
 											catch: (error) => {
@@ -181,63 +226,81 @@ export const makeCustomDeployTask = <_SERVICE>(
 													message: String(error),
 												})
 											},
-										},
-									)
-									yield* Effect.logDebug(
-										"Finished running create task",
-									)
-									return canisterId
-								}),
-								Effect.gen(function* () {
-									return yield* Effect.all(
-										[
-											Effect.tryPromise({
-												try: () =>
-													runTask(
-														parentScope.children
-															.build,
-														{},
-													),
-												catch: (error) => {
-													return new TaskError({
-														message: String(error),
-													})
-												},
-											}),
-											// runTaskEffect(
-											// 	parentScope.children.build,
-											// 	{},
-											// ),
-											Effect.tryPromise({
-												try: () =>
-													runTask(
-														parentScope.children
-															.bindings,
-														{},
-													),
-												catch: (error) => {
-													return new TaskError({
-														message: String(error),
-													})
-												},
-											}),
-											// runTaskEffect(
-											// 	parentScope.children.bindings,
-											// 	{},
-											// ),
-										],
-										{
-											concurrency: "unbounded",
-										},
-									)
-								}),
-							],
-							{
-								concurrency: "unbounded",
-							},
-						)
+										}),
+										// runTaskEffect(
+										// 	parentScope.children.build,
+										// 	{},
+										// ),
+										Effect.tryPromise({
+											try: () =>
+												runTask(
+													parentScope.children
+														.bindings,
+													{},
+												),
+											catch: (error) => {
+												return new TaskError({
+													message: String(error),
+												})
+											},
+										}),
+										// runTaskEffect(
+										// 	parentScope.children.bindings,
+										// 	{},
+										// ),
+									],
+									{
+										concurrency: "unbounded",
+									},
+								)
+							}),
+						],
+						{
+							concurrency: "unbounded",
+						},
+					)
+					const [canisterId, [{ wasmPath, candidPath }]] = result
+					// TODO: this requires create, because some have canisterId hardcoded?
+					// nope, what about dynamic canister ids? these arent checked?
+					// TODO: canister installed, but cache deleted. should use reinstall, not install
+					yield* Effect.logDebug("taskArgs pre-install:", taskArgs)
+					const mode =
+						taskArgs.mode === "auto"
+							? yield* resolveMode(taskCtx, canisterId)
+							: taskArgs.mode
+					yield* Effect.logDebug("deploy mode:", mode)
 
-					yield* Effect.logDebug("Now running install task")
+					yield* Effect.logDebug("Now running install task", {
+						canisterId,
+						wasmPath,
+						mode,
+						result: JSON.stringify(result),
+					})
+					// result: [
+					// 	"uqqxf-5h777-77774-qaaaa-cai",
+					// 	[
+					// 		{
+					// 			_id: "Option",
+					// 			_tag: "Some",
+					// 			value: {
+					// 				wasmPath:
+					// 					"/Users/user/projects/ice_example/.ice/canisters/dip20/dip20.wasm.gz",
+					// 				candidPath:
+					// 					"/Users/user/projects/ice_example/.ice/canisters/dip20/dip20.did",
+					// 			},
+					// 		},
+					// 		{
+					// 			_id: "Option",
+					// 			_tag: "Some",
+					// 			value: {
+					// 				didJSPath:
+					// 					"/Users/user/projects/ice_example/.ice/canisters/dip20/dip20.did.js",
+					// 				didTSPath:
+					// 					"/Users/user/projects/ice_example/.ice/canisters/dip20/dip20.did.ts",
+					// 			},
+					// 		},
+					// 	],
+					// ]
 					let taskResult
 					if (mode === "upgrade") {
 						// TODO: but if its the first time, unnecessary? how do we know to run it
@@ -364,6 +427,30 @@ export const makeBindingsTask = (
 		params: {},
 	} satisfies BindingsTask
 }
+
+export type CustomBuildTask = Omit<
+	CachedTask<
+		{
+			wasmPath: string
+			candidPath: string
+		},
+		{},
+		{},
+		{
+			canisterName: string
+			taskPath: string
+			wasm: FileDigest
+			candid: FileDigest
+			depCacheKeys: Record<string, string | undefined>
+		}
+	>,
+	"params"
+> & {
+	params: typeof customBuildParams
+	// params: Record<string, never>
+}
+
+const customBuildParams = {}
 
 // TODO: pass in wasm and candid as task params instead?
 export const makeCustomBuildTask = <P extends Record<string, unknown>>(
@@ -527,14 +614,14 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 		tags: [Tags.CANISTER, Tags.CUSTOM, Tags.BUILD],
 		namedParams: {},
 		positionalParams: [],
-		params: {},
+		params: customBuildParams,
 	}
 }
 
 export class CustomCanisterBuilder<
 	I,
 	U,
-	S extends CanisterScope<_SERVICE, I, U, D, P>,
+	S extends CustomCanisterScope<_SERVICE, I, U, D, P>,
 	D extends Record<string, Task>,
 	P extends Record<string, Task>,
 	Config extends CustomCanisterConfig,
@@ -553,7 +640,7 @@ export class CustomCanisterBuilder<
 	): CustomCanisterBuilder<
 		I,
 		U,
-		CanisterScope<_SERVICE, I, U, D, P>,
+		CustomCanisterScope<_SERVICE, I, U, D, P>,
 		D,
 		P,
 		Config,
@@ -565,7 +652,7 @@ export class CustomCanisterBuilder<
 				...this.#scope.children,
 				create: makeCreateTask<P>(canisterConfigOrFn, [Tags.CUSTOM]),
 			},
-		} satisfies CanisterScope<_SERVICE, I, U, D, P>
+		} satisfies CustomCanisterScope<_SERVICE, I, U, D, P>
 		return new CustomCanisterBuilder(updatedScope)
 	}
 
@@ -577,7 +664,7 @@ export class CustomCanisterBuilder<
 	): CustomCanisterBuilder<
 		I,
 		U,
-		CanisterScope<_SERVICE, I, U, D, P>,
+		CustomCanisterScope<_SERVICE, I, U, D, P>,
 		D,
 		P,
 		Config,
@@ -589,7 +676,7 @@ export class CustomCanisterBuilder<
 				...this.#scope.children,
 				build: makeCustomBuildTask<P>(canisterConfigOrFn),
 			},
-		} satisfies CanisterScope<_SERVICE, I, U, D, P>
+		} satisfies CustomCanisterScope<_SERVICE, I, U, D, P>
 		return new CustomCanisterBuilder(updatedScope)
 	}
 
@@ -610,7 +697,7 @@ export class CustomCanisterBuilder<
 	): CustomCanisterBuilder<
 		I,
 		U,
-		CanisterScope<_SERVICE, I, U, D, P>,
+		CustomCanisterScope<_SERVICE, I, U, D, P>,
 		D,
 		P,
 		Config,
@@ -645,7 +732,7 @@ export class CustomCanisterBuilder<
 					dependencies: this.#scope.children.install.dependencies,
 				} as UpgradeTask<_SERVICE, I, D, P>,
 			},
-		} satisfies CanisterScope<_SERVICE, I, I, D, P>
+		} satisfies CustomCanisterScope<_SERVICE, I, I, D, P>
 
 		return new CustomCanisterBuilder(updatedScope)
 	}
@@ -667,7 +754,7 @@ export class CustomCanisterBuilder<
 	): CustomCanisterBuilder<
 		I,
 		U,
-		CanisterScope<_SERVICE, I, U, D, P>,
+		CustomCanisterScope<_SERVICE, I, U, D, P>,
 		D,
 		P,
 		Config,
@@ -689,7 +776,7 @@ export class CustomCanisterBuilder<
 					dependencies: this.#scope.children.install.dependencies,
 				} as UpgradeTask<_SERVICE, U, D, P>,
 			},
-		} satisfies CanisterScope<_SERVICE, I, U, D, P>
+		} satisfies CustomCanisterScope<_SERVICE, I, U, D, P>
 
 		return new CustomCanisterBuilder(updatedScope)
 	}
@@ -699,7 +786,7 @@ export class CustomCanisterBuilder<
 	): CustomCanisterBuilder<
 		I,
 		U,
-		CanisterScope<_SERVICE, I, U, D, NP>,
+		CustomCanisterScope<_SERVICE, I, U, D, NP>,
 		D,
 		NP,
 		Config,
@@ -719,7 +806,7 @@ export class CustomCanisterBuilder<
 					dependencies: updatedDependencies,
 				} as UpgradeTask<_SERVICE, U, D, NP>,
 			},
-		} satisfies CanisterScope<_SERVICE, I, U, D, NP>
+		} satisfies CustomCanisterScope<_SERVICE, I, U, D, NP>
 		return new CustomCanisterBuilder(updatedScope)
 	}
 
@@ -731,7 +818,7 @@ export class CustomCanisterBuilder<
 	): CustomCanisterBuilder<
 		I,
 		U,
-		CanisterScope<_SERVICE, I, U, ND, P>,
+		CustomCanisterScope<_SERVICE, I, U, ND, P>,
 		ND,
 		P,
 		Config,
@@ -751,7 +838,7 @@ export class CustomCanisterBuilder<
 					dependsOn: updatedDependsOn,
 				} as UpgradeTask<_SERVICE, U, ND, P>,
 			},
-		} satisfies CanisterScope<_SERVICE, I, U, ND, P>
+		} satisfies CustomCanisterScope<_SERVICE, I, U, ND, P>
 		return new CustomCanisterBuilder(updatedScope)
 	}
 
@@ -775,7 +862,7 @@ export class CustomCanisterBuilder<
 			...self.#scope,
 			id: Symbol("scope"),
 			children: linkedChildren,
-		} satisfies CanisterScope<_SERVICE, I, U, D, P>
+		} satisfies CustomCanisterScope<_SERVICE, I, U, D, P>
 		return finalScope
 		// const self = this as CustomCanisterBuilder<I, S, D, P, Config, _SERVICE>
 		// return {
@@ -799,7 +886,7 @@ export const customCanister = <_SERVICE = unknown, I = unknown, U = unknown>(
 ): CustomCanisterBuilder<
 	I,
 	U,
-	CanisterScope<_SERVICE, I, U, {}, {}>,
+	CustomCanisterScope<_SERVICE, I, U, {}, {}>,
 	{},
 	{},
 	CustomCanisterConfig,
@@ -823,12 +910,12 @@ export const customCanister = <_SERVICE = unknown, I = unknown, U = unknown>(
 			deploy: makeCustomDeployTask<_SERVICE>(canisterConfigOrFn),
 			status: makeCanisterStatusTask([Tags.CUSTOM]),
 		},
-	} satisfies CanisterScope<_SERVICE, I, U, {}, {}>
+	} satisfies CustomCanisterScope<_SERVICE, I, U, {}, {}>
 
 	return new CustomCanisterBuilder<
 		I,
 		U,
-		CanisterScope<_SERVICE, I, U, {}, {}>,
+		CustomCanisterScope<_SERVICE, I, U, {}, {}>,
 		{},
 		{},
 		CustomCanisterConfig,

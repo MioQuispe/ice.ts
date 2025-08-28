@@ -22,6 +22,7 @@ import {
 	normalizeDepsMap,
 	ValidProvidedDeps,
 	TaskError,
+	builderRuntime,
 } from "./lib.js"
 
 type MergeTaskParams<
@@ -282,30 +283,42 @@ class TaskBuilder<
 	) {
 		const newTask = {
 			...this.#task,
-			effect: (taskCtx) => Effect.fn("task_effect")(function* () {
-				const deps = Record.map(taskCtx.depResults, (dep) => dep.result)
-				const maybePromise = fn({
-					args: taskCtx.args as ExtractArgsFromTaskParams<TP>,
-					ctx: taskCtx as TaskCtxShape<ExtractArgsFromTaskParams<TP>>,
-					deps: deps as ExtractScopeSuccesses<T["dependencies"]> &
-						ExtractScopeSuccesses<T["dependsOn"]>,
-				})
-				const result =
-					maybePromise instanceof Promise
-						? yield* Effect.tryPromise({
-								try: () => patchGlobals(() => maybePromise),
-								catch: (error) => {
-									return new TaskError({
-										message: String(error),
+
+			effect: (taskCtx) =>
+				builderRuntime.runPromise(
+					Effect.fn("task_effect")(function* () {
+						const deps = Record.map(
+							taskCtx.depResults,
+							(dep) => dep.result,
+						)
+						const maybePromise = fn({
+							args: taskCtx.args as ExtractArgsFromTaskParams<TP>,
+							ctx: taskCtx as TaskCtxShape<
+								ExtractArgsFromTaskParams<TP>
+							>,
+							deps: deps as ExtractScopeSuccesses<
+								T["dependencies"]
+							> &
+								ExtractScopeSuccesses<T["dependsOn"]>,
+						})
+						const result =
+							maybePromise instanceof Promise
+								? yield* Effect.tryPromise({
+										try: () =>
+											patchGlobals(() => maybePromise),
+										catch: (error) => {
+											return new TaskError({
+												message: String(error),
+											})
+											// return error instanceof Error
+											// 	? error
+											// 	: new Error(String(error))
+										},
 									})
-									// return error instanceof Error
-									// 	? error
-									// 	: new Error(String(error))
-								},
-							})
-						: maybePromise
-				return result
-			})(),
+								: maybePromise
+						return result
+					})(),
+				),
 			// TODO: create a task constructor for this, which fixes the type errors
 		} satisfies Task
 
@@ -339,7 +352,7 @@ export function task(description = "") {
 		params: {},
 		namedParams: {},
 		positionalParams: [],
-		effect: async (ctx) => {}
+		effect: async (ctx) => {},
 	} satisfies Task
 	return new TaskBuilder<Start, typeof baseTask, {}>(baseTask)
 }

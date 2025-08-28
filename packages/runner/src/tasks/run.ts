@@ -3,7 +3,7 @@ import { ICEConfigService } from "../services/iceConfig.js"
 import type { Task } from "../types/types.js"
 import {
 	collectDependencies,
-	executeTasks,
+	makeTaskEffects,
 	findTaskInTaskTree,
 	getTaskPathById,
 	type ProgressUpdate,
@@ -11,35 +11,35 @@ import {
 	TaskRuntimeError,
 	TaskSuccess,
 	topologicalSortTasks,
+	ParamsToArgs,
 } from "./lib.js"
-import { TaskRunner } from "../services/taskRunner.js"
 
 export interface RunTaskOptions {
 	forceRun?: boolean
 }
 
-
 // TODO: runTasks? we need to collect all deps once
 export const runTask = Effect.fn("run_task")(function* <T extends Task>(
 	task: T,
-	args: TaskParamsToArgs<T> = {} as TaskParamsToArgs<T>,
+	args?: TaskParamsToArgs<T>,
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) {
-	yield* Effect.logDebug("Getting task path...", task.description)
-	const path = yield* getTaskPathById(task.id)
-	yield* Effect.annotateCurrentSpan({
-		taskPath: path,
-	})
-	yield* Effect.logDebug("Got task path:", path)
+	// TODO:
+	// yield* Effect.logDebug("Getting task path...", task.description)
+	const taskPath = yield* getTaskPathById(task.id)
+	// yield* Effect.annotateCurrentSpan({
+	// 	taskPath: path,
+	// })
+	yield* Effect.logDebug("run_task:", taskPath, { args })
 	const taskWithArgs = {
 		...task,
 		// TODO: this adds args: undefined. fix
-		args,
+		args: args ?? {},
 	}
 	yield* Effect.logDebug("Collecting dependencies...")
-	const collectedTasks = collectDependencies([task])
+	const collectedTasks = collectDependencies([taskWithArgs])
 	yield* Effect.logDebug("Collected dependencies")
-	collectedTasks.set(task.id, taskWithArgs)
+	// collectedTasks.set(task.id, taskWithArgs)
 	yield* Effect.logDebug("Sorting tasks...")
 	const sortedTasks = yield* Effect.try({
 		try: () => topologicalSortTasks(collectedTasks),
@@ -52,27 +52,21 @@ export const runTask = Effect.fn("run_task")(function* <T extends Task>(
 	})
 	yield* Effect.logDebug("Sorted tasks")
 	yield* Effect.logDebug("Executing tasks...")
-    // const ctx = yield* Effect.context<TaskRunner>()
-    // const taskRunner = Context.get(ctx, TaskRunner)
-    // const { runTaskAsync } = taskRunner
-	const taskEffects = yield* executeTasks(sortedTasks, progressCb)
-    // .pipe(
-    //     Effect.succe
-    // )
-    // TODO: get taskRuntime here
-
-	// TODO: remove once we decouple task.effect from the runtime
+	const taskEffects = yield* makeTaskEffects(sortedTasks, progressCb)
 	const results = yield* Effect.all(taskEffects, {
 		concurrency: "unbounded",
 	}).pipe(
-		Effect.mapError((error) => {
-			return new TaskRuntimeError({
-				message: "Error executing tasks",
-				error,
-			})
-		}),
+		// Effect.mapError((error) => {
+		// 	return new TaskRuntimeError({
+		// 		message: "Error executing tasks",
+		// 		error,
+		// 	})
+		// }),
+		Effect.annotateLogs("caller", "runTask"),
+		Effect.annotateLogs("taskPath", taskPath),
 	)
 	yield* Effect.logDebug("Tasks executed")
+	// TODO: get all input task results
 	const maybeResult = results.find((r) => r.taskId === task.id)
 	if (!maybeResult) {
 		return yield* Effect.fail(
@@ -83,4 +77,41 @@ export const runTask = Effect.fn("run_task")(function* <T extends Task>(
 		)
 	}
 	return maybeResult.result as TaskSuccess<T>
+})
+
+export const runTasks = Effect.fn("run_tasks")(function* <T extends Task>(
+	tasks: Array<T & { args: TaskParamsToArgs<T> }>,
+	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
+) {
+	// TODO:
+	// yield* Effect.logDebug("Getting task path...", task.description)
+	// const path = yield* getTaskPathById(task.id)
+	// yield* Effect.annotateCurrentSpan({
+	// 	taskPath: path,
+	// })
+	// yield* Effect.logDebug("Got task path:", path)
+	yield* Effect.logDebug("Collecting dependencies...")
+	const collectedTasks = collectDependencies(tasks)
+	yield* Effect.logDebug("Collected dependencies")
+	yield* Effect.logDebug("Sorting tasks...")
+	const sortedTasks = yield* Effect.try({
+		try: () => topologicalSortTasks(collectedTasks),
+		catch: (error) => {
+			return new TaskRuntimeError({
+				message: "Error sorting tasks",
+				error,
+			})
+		},
+	})
+	yield* Effect.logDebug("Sorted tasks")
+	yield* Effect.logDebug("Executing tasks...")
+	const taskEffects = yield* makeTaskEffects(sortedTasks, progressCb)
+	const results = yield* Effect.all(taskEffects, {
+		concurrency: "unbounded",
+	}).pipe(
+        Effect.annotateLogs("caller", "runTasks"),
+    )
+	yield* Effect.logDebug("Tasks executed")
+	// TODO: get all input task results
+	return results.map((r) => r.result) as Array<TaskSuccess<T>>
 })

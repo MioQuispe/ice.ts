@@ -11,7 +11,6 @@ import {
 	Tracer,
 } from "effect"
 import { task } from "../../src/builders/task.js"
-import { configLayer } from "../../src/index.js"
 import { CanisterIdsService } from "../../src/services/canisterIds.js"
 import { CLIFlags } from "../../src/services/cliFlags.js"
 import { DefaultConfig } from "../../src/services/defaultConfig.js"
@@ -19,23 +18,30 @@ import { ICEConfigService } from "../../src/services/iceConfig.js"
 import { Moc } from "../../src/services/moc.js"
 import { picReplicaImpl } from "../../src/services/pic/pic.js"
 import { DefaultReplica } from "../../src/services/replica.js"
-import { TaskArgsService } from "../../src/services/taskArgs.js"
 import { TaskRegistry } from "../../src/services/taskRegistry.js"
-import { executeTasks, topologicalSortTasks } from "../../src/tasks/lib.js"
+import { makeTaskEffects, topologicalSortTasks } from "../../src/tasks/lib.js"
 import { CachedTask, ICEConfig, Task, TaskTree } from "../../src/types/types.js"
 import { NodeSdk as OpenTelemetryNodeSdk } from "@effect/opentelemetry"
+import { TaskRunnerContext, TaskRunnerLive } from "../../src/services/taskRunner.js"
 import {
 	InMemorySpanExporter,
 	BatchSpanProcessor,
 	SimpleSpanProcessor,
 } from "@opentelemetry/sdk-trace-base"
+import { configLayer } from "../../src/services/config.js"
+import {
+	makeTelemetryLayer,
+	TelemetryConfig,
+} from "../../src/services/telemetryConfig.js"
 
 export const telemetryExporter = new InMemorySpanExporter()
-export const telemetryLayer = OpenTelemetryNodeSdk.layer(() => ({
-	// traceExporter: telemetryExporter,
+const telemetryConfig = {
 	resource: { serviceName: "ice" },
 	spanProcessor: new SimpleSpanProcessor(telemetryExporter),
-}))
+	shutdownTimeout: undefined,
+	metricReader: undefined,
+	logRecordProcessor: undefined,
+}
 
 const DefaultReplicaService = Layer.effect(DefaultReplica, picReplicaImpl).pipe(
 	Layer.provide(NodeContext.layer),
@@ -65,33 +71,50 @@ export const makeTestLayer = (
 		globalArgs,
 		taskArgs: cliTaskArgs,
 	})
-	const TaskArgsLayer = Layer.succeed(TaskArgsService, { taskArgs })
-	// Layer.succeed(CLIFlags, {
-	// 	globalArgs,
-	// 	taskArgs: cliTaskArgs,
-	// }),
-	// Layer.succeed(TaskArgsService, { taskArgs }),
-	const testLayer = Layer.mergeAll(
-		telemetryLayer,
-		NodeContext.layer,
-		CLIFlagsLayer,
-		TaskArgsLayer,
-		ICEConfigLayer,
-		DefaultConfigLayer,
-		TaskRegistry.Live.pipe(
-			// TODO: double-check that this works
-			// Layer.provide(layerFileSystem(".ice/cache")),
-			Layer.provide(layerMemory),
-			Layer.provide(NodeContext.layer),
+	const telemetryConfigLayer = Layer.succeed(TelemetryConfig, telemetryConfig)
+	const telemetryLayer = makeTelemetryLayer(telemetryConfig)
+	const taskRunnerLayer = TaskRunnerLive()
+	const taskRunnerContext = Layer.succeed(TaskRunnerContext, {
+		isRootTask: true,
+	})
+
+	const testLayer = Layer.provideMerge(
+		Layer.mergeAll(
+			DefaultConfigLayer,
+			TaskRegistry.Live.pipe(
+				// TODO: double-check that this works
+				// Layer.provide(layerFileSystem(".ice/cache")),
+				Layer.provide(layerMemory),
+			),
+			taskRunnerLayer,
+			DefaultReplicaService,
+			Moc.Live,
+			// configLayer,
+			CanisterIdsService.Test,
+			// Logger.pretty,
+			Logger.minimumLogLevel(LogLevel.Debug),
 		),
-		DefaultReplicaService,
-		Moc.Live.pipe(Layer.provide(NodeContext.layer)),
-		configLayer,
-		CanisterIdsService.Test,
-		// Logger.pretty,
-		Logger.minimumLogLevel(LogLevel.Debug),
+		Layer.mergeAll(
+			NodeContext.layer,
+			CLIFlagsLayer,
+			ICEConfigLayer,
+			telemetryLayer,
+			telemetryConfigLayer,
+			taskRunnerContext,
+		),
 	)
 	return testLayer
+}
+
+export const makeTestRuntime = (
+	{ cliTaskArgs = { positionalArgs: [], namedArgs: {} }, taskArgs = {} } = {
+		cliTaskArgs: { positionalArgs: [], namedArgs: {} },
+		taskArgs: {},
+	},
+	taskTree: TaskTree = {},
+) => {
+	const layer = makeTestLayer({ cliTaskArgs, taskArgs }, taskTree)
+	return ManagedRuntime.make(layer)
 }
 
 export const getTasks = () =>
@@ -103,19 +126,15 @@ export const getTasks = () =>
 		return tasks
 	})
 
-export const makeCachedTask = (
-	name: string,
-	value: string,
-): CachedTask<string> => {
+export const makeCachedTask = (task: Task, key: string) => {
 	const cachedTask = {
-		...task().make(),
-		effect: async () => value,
-		computeCacheKey: () => name, // ← always the same key
-		input: () => Effect.succeed(undefined).pipe(Effect.runPromise),
-		encode: (taskCtx, v) => Effect.succeed(v).pipe(Effect.runPromise), // identity
-		decode: (taskCtx, v) =>
-			Effect.succeed(v as string).pipe(Effect.runPromise),
+		...task,
+		// effect: async () => value,
+		computeCacheKey: () => key, // ← always the same key
+		input: () => Promise.resolve(undefined),
+		encode: async (taskCtx, v) => v as string,
+		decode: async (taskCtx, v) => v as string,
 		encodingFormat: "string",
-	} satisfies CachedTask<string>
+	} satisfies CachedTask
 	return cachedTask
 }

@@ -19,9 +19,7 @@ import type { ICEUser, Task, TaskTree } from "../types/types.js"
 import { CLIFlags } from "./cliFlags.js"
 import { DefaultConfig, InitializedDefaultConfig } from "./defaultConfig.js"
 import { ICEConfigService } from "./iceConfig.js"
-import { TaskArgsService } from "./taskArgs.js"
-import { TaskRunner } from "./taskRunner.js"
-// import { ParentTaskCtx } from "./parentTaskCtx.js"
+import { TaskRunner, TaskRunnerContext } from "./taskRunner.js"
 import { runTask } from "../tasks/run.js"
 
 // export type TaskParamsToArgs<T extends Task> = {
@@ -37,7 +35,6 @@ import { runTask } from "../tasks/run.js"
 // 		? StandardSchemaV1.InferOutput<T["params"][K]["type"]>
 // 		: never
 // }
-
 
 // previous one:
 // export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
@@ -121,9 +118,7 @@ export interface TaskCtxShape<A extends Record<string, unknown> = {}> {
 	readonly replica: ReplicaService
 
 	readonly runTask: {
-		<T extends Task>(
-			task: T,
-		): Promise<TaskSuccess<T>>
+		<T extends Task>(task: T): Promise<TaskSuccess<T>>
 		<T extends Task>(
 			task: T,
 			args: TaskParamsToArgs<T>,
@@ -166,8 +161,6 @@ export const makeTaskCtx = Effect.fn("taskCtx_make")(function* (
 	>,
 	progressCb: (update: ProgressUpdate<unknown>) => void,
 ) {
-	// TODO: not TaskRunner because we are inside it?
-	// const { runTaskAsync } = yield* TaskRunner
 	const { runtime } = yield* TaskRunner
 	const defaultConfig = yield* DefaultConfig
 	// const { appDir, iceDir } = yield* Config
@@ -175,7 +168,6 @@ export const makeTaskCtx = Effect.fn("taskCtx_make")(function* (
 	const iceDir = yield* Config.string("ICE_DIR_NAME")
 	const { config } = yield* ICEConfigService
 	const { globalArgs, taskArgs: cliTaskArgs } = yield* CLIFlags
-	const { taskArgs } = yield* TaskArgsService
 	const currentNetwork = globalArgs.network ?? "local"
 	const currentNetworkConfig =
 		config?.networks?.[currentNetwork] ??
@@ -211,9 +203,13 @@ export const makeTaskCtx = Effect.fn("taskCtx_make")(function* (
 	const iceConfigService = yield* ICEConfigService
 	const { taskTree } = iceConfigService
 
+	// TODO: telemetry
 	// Pass down the same runtime to the child task
 	const ChildTaskRunner = Layer.succeed(TaskRunner, {
 		runtime,
+	})
+	const taskRunnerContext = Layer.succeed(TaskRunnerContext, {
+		isRootTask: false,
 	})
 	return {
 		...defaultConfig,
@@ -225,13 +221,16 @@ export const makeTaskCtx = Effect.fn("taskCtx_make")(function* (
 			task: T,
 			args?: TaskParamsToArgs<T>,
 		): Promise<TaskSuccess<T>> => {
-			const resolvedArgs = args ?? ({} as TaskParamsToArgs<T>)
-			const result = await runtime
-				.runPromise(
-					runTask(task, resolvedArgs, progressCb).pipe(
-						Effect.provide(ChildTaskRunner),
-					),
-				)
+			// const resolvedArgs = args ?? ({} as TaskParamsToArgs<T>)
+			// console.log("resolvedArgs:", resolvedArgs, args)
+			const result = await runtime.runPromise(
+				runTask(task, args, progressCb).pipe(
+					Effect.provide(ChildTaskRunner),
+					Effect.provide(taskRunnerContext),
+					Effect.annotateLogs("caller", "taskCtx.runTask"),
+					Effect.annotateLogs("taskPath", taskPath),
+				),
+			)
 			return result
 		},
 		replica: currentReplica,

@@ -38,19 +38,10 @@ import type { CachedTask, Task } from "../types/types.js"
 import { proxyActor } from "../utils/extension.js"
 import { ExtractArgsFromTaskParams } from "./task.js"
 import { CustomCanisterConfig, deployParams } from "./custom.js"
-// import { configLayer } from "../index.js"
 import { Moc } from "../services/moc.js"
 import { type TaskCtxShape } from "../services/taskCtx.js"
+import { configLayer } from "../services/config.js"
 
-// TODO: move to taskctx
-const configMap = new Map([
-	["APP_DIR", realpathSync(process.cwd())],
-	["ICE_DIR_NAME", ".ice"],
-])
-
-const configLayer = Layer.setConfigProvider(
-	ConfigProvider.fromMap(configMap),
-)
 const baseLayer = Layer.mergeAll(
 	NodeContext.layer,
 	Moc.Live.pipe(Layer.provide(NodeContext.layer)),
@@ -71,18 +62,6 @@ const baseLayer = Layer.mergeAll(
 	Logger.minimumLogLevel(LogLevel.Debug),
 )
 export const builderRuntime = ManagedRuntime.make(baseLayer)
-
-// export const makeTaskRuntime = (taskCtx: TaskCtxShape) => {
-// 	const taskLayer = Layer.succeed(TaskCtx, taskCtx)
-// 	const runtime = ManagedRuntime.make(Layer.mergeAll(baseLayer, taskLayer))
-// 	return runtime
-// }
-
-// export const runEffect = async (taskCtx: TaskCtxShape) => {
-//     const runtime = makeTaskRuntime(taskCtx)
-//     // return runtime.runPromise(effect)
-//     return runtime.runPromise
-// }
 
 export class TaskError extends Data.TaggedError("TaskError")<{
 	message?: string
@@ -565,36 +544,6 @@ export type StatusTask = Task<{
 }>
 
 // TODO: use Scope type
-export type CanisterScope<
-	_SERVICE = unknown,
-	I = unknown,
-	U = unknown,
-	D extends Record<string, Task> = Record<string, Task>,
-	P extends Record<string, Task> = Record<string, Task>,
-> = {
-	_tag: "scope"
-	id: symbol
-	tags: Array<string | symbol>
-	description: string
-	defaultTask: "deploy"
-	// only limited to tasks
-	// children: Record<string, Task>
-	children: {
-		// create: Task<string>
-		create: CreateTask
-		bindings: BindingsTask
-		build: BuildTask
-		install: InstallTask<_SERVICE, I, D, P>
-		upgrade: UpgradeTask<_SERVICE, U, D, P>
-		// D,
-		// P
-		stop: StopTask
-		remove: RemoveTask
-		deploy: DeployTask<_SERVICE>
-		status: StatusTask
-	}
-}
-
 export type CanisterScopeSimple = {
 	_tag: "scope"
 	id: symbol
@@ -1029,7 +978,6 @@ export const resolveMode = (
 						Effect.catchTag("CanisterStatusError", (err) => {
 							// TODO: previous canister_ids could exist
 							// but canister not even created
-							console.log("CanisterStatusError", err)
 							return Effect.succeed({
 								status: CanisterStatus.NOT_FOUND,
 							})
@@ -1043,15 +991,12 @@ export const resolveMode = (
 			canisterInfo.status === CanisterStatus.NOT_FOUND ||
 			canisterInfo.module_hash.length === 0
 
-		console.log(canisterInfo.status)
-
 		let mode: InstallModes = "install"
 		if (canisterInfo.status === CanisterStatus.NOT_FOUND) {
 			// TODO: noModule fails
 			if (noModule) {
 				mode = "install"
 			} else {
-				console.log(canisterInfo)
 				return yield* Effect.fail(
 					new TaskError({
 						message: "Canister not found but has module??",
@@ -1225,7 +1170,7 @@ export const makeInstallTask = <
 		// customInitIDL: undefined,
 	},
 ): InstallTask<_SERVICE, I, D, P> => {
-	// TODO: ??
+	// TODO: canister installed, but cache deleted. should use reinstall, not install
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/install"),
