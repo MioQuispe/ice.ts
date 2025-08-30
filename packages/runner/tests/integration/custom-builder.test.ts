@@ -32,7 +32,6 @@ import {
 } from "../../src/tasks/lib.js"
 import { runTask, runTasks } from "../../src/tasks/run.js"
 import { ICEConfig, Task, TaskTree } from "../../src/types/types.js"
-import { telemetryExporter, telemetryLayer, makeTestLayer } from "./setup.js"
 import { makeTestRuntime } from "./setup.js"
 
 // Not needed for now
@@ -135,68 +134,8 @@ const makeCanisterId = (
 	//   return generateRandomCanisterIdInSubnet(subnetType)
 }
 
-// const makeCanisterId = (): string => {
-// 	// Generate a random 10-byte array for canister ID
-// 	const randomBytes = new Uint8Array(10)
-// 	crypto.getRandomValues(randomBytes)
-
-// 	return Principal.fromUint8Array(randomBytes).toString()
-// }
-
 // const makePrincipal = () => {
 // 	Ed25519KeyIdentity.generate().getPrincipal()
-// }
-
-// const makeTestRuntime = (
-// 	{ cliTaskArgs = { positionalArgs: [], namedArgs: {} }, taskArgs = {} } = {
-// 		cliTaskArgs: { positionalArgs: [], namedArgs: {} },
-// 		taskArgs: {},
-// 	},
-// 	taskTree: TaskTree = {},
-// ) => {
-// 	const globalArgs = { network: "local", logLevel: "debug" } as const
-// 	const config = {} satisfies Partial<ICEConfig>
-// 	// const taskTree = {} satisfies TaskTree
-// 	const testICEConfigService = ICEConfigService.of({
-// 		config,
-// 		taskTree,
-// 	})
-
-// 	const DefaultConfigLayer = DefaultConfig.Live.pipe(
-// 		Layer.provide(DefaultReplicaService),
-// 	)
-// 	const ICEConfigLayer = Layer.succeed(ICEConfigService, testICEConfigService)
-// 	const CLIFlagsLayer = Layer.succeed(CLIFlags, {
-// 		globalArgs,
-// 		taskArgs: cliTaskArgs,
-// 	})
-// 	const TaskArgsLayer = Layer.succeed(TaskArgsService, { taskArgs })
-// 	// Layer.succeed(CLIFlags, {
-// 	// 	globalArgs,
-// 	// 	taskArgs: cliTaskArgs,
-// 	// }),
-// 	// Layer.succeed(TaskArgsService, { taskArgs }),
-// 	const layer = Layer.mergeAll(
-// 		telemetryLayer,
-// 		NodeContext.layer,
-// 		CLIFlagsLayer,
-// 		TaskArgsLayer,
-// 		ICEConfigLayer,
-// 		DefaultConfigLayer,
-// 		TaskRegistry.Live.pipe(
-// 			// TODO: double-check that this works
-// 			// Layer.provide(layerFileSystem(".ice/cache")),
-// 			Layer.provide(layerMemory),
-// 			Layer.provide(NodeContext.layer),
-// 		),
-// 		DefaultReplicaService,
-// 		Moc.Live.pipe(Layer.provide(NodeContext.layer)),
-// 		configLayer,
-// 		CanisterIdsService.Test,
-// 		Logger.pretty,
-// 		Logger.minimumLogLevel(LogLevel.Debug),
-// 	)
-// 	return ManagedRuntime.make(layer)
 // }
 
 const makeTestCanister = () => {
@@ -244,7 +183,7 @@ describe("custom builder", () => {
 		const taskTree = {
 			test_canister,
 		}
-		const runtime = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
 		// const result = await runtime.runPromise()
 		const result = await runtime.runPromise(
 			Effect.gen(function* () {
@@ -258,18 +197,22 @@ describe("custom builder", () => {
 		})
 	})
 
+    // TODO: If other tests run before this, it breaks.
+    // need to make sure side-effects dont affect other tests
+    // maybe clean up tasks after each test
+    // reset pocket ic state etc.
 	it("should execute canister tasks in correct dependency order", async () => {
-		const { canister: test_canister } = makeTestCanister()
+		const { canister: test_canister22 } = makeTestCanister()
 
 		const taskTree = {
-			test_canister,
+			test_canister22: test_canister22,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree, ".ice_test_2")
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
-				yield* runTask(test_canister.children.deploy)
+				yield* runTask(test_canister22.children.deploy)
 			}),
 		)
 		const executionOrder = telemetryExporter
@@ -284,22 +227,22 @@ describe("custom builder", () => {
 		// Should execute in dependency order: create, build, bindings, install_args, install
 		expect(
 			executionOrder.filter(
-				(s) => s.attributes?.["taskPath"] === "test_canister:create",
+				(s) => s.attributes?.["taskPath"] === "test_canister22:create",
 			).length > 0,
 		).toBeTruthy()
 		expect(
 			executionOrder.filter(
-				(s) => s.attributes?.["taskPath"] === "test_canister:build",
+				(s) => s.attributes?.["taskPath"] === "test_canister22:build",
 			).length > 0,
 		).toBeTruthy()
 		expect(
 			executionOrder.filter(
-				(s) => s.attributes?.["taskPath"] === "test_canister:bindings",
+				(s) => s.attributes?.["taskPath"] === "test_canister22:bindings",
 			).length > 0,
 		).toBeTruthy()
 		expect(
 			executionOrder.filter(
-				(s) => s.attributes?.["taskPath"] === "test_canister:install",
+				(s) => s.attributes?.["taskPath"] === "test_canister22:install",
 			).length > 0,
 		).toBeTruthy()
 
@@ -328,7 +271,7 @@ describe("custom builder", () => {
 			canister2,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
 
 		// Deploy both canisters
 		const results = await runtime.runPromise(
@@ -383,7 +326,7 @@ describe("custom builder", () => {
 			main_canister,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
 
 		const result = await runtime.runPromise(
 			Effect.gen(function* () {
@@ -409,7 +352,7 @@ describe("custom builder", () => {
 			failing_canister,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
 
 		await expect(
 			runtime.runPromise(
@@ -469,7 +412,7 @@ describe("custom builder", () => {
 			canister3,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
@@ -528,7 +471,7 @@ describe("custom builder", () => {
 			canister3,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
@@ -539,7 +482,7 @@ describe("custom builder", () => {
 				]
 				const results = yield* runTasks(
 					tasks.map((t) => ({
-						task: t,
+						...t,
 						// TODO?
 						args: { mode: "auto" as const },
 					})),
@@ -571,7 +514,7 @@ describe("custom builder", () => {
 			dynamic_canister,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
 
 		// First run with configVersion = 1
 		const firstResult = await runtime.runPromise(
@@ -614,7 +557,7 @@ describe("custom builder", () => {
 		}
 
 		// Test with install mode
-		const runtime = makeTestRuntime(
+		const { runtime, telemetryExporter } = makeTestRuntime(
 			{
 				cliTaskArgs: {
 					positionalArgs: [],
@@ -648,7 +591,7 @@ describe("custom builder", () => {
 			test_canister,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
 
 		// First deploy the canister
 		await runtime.runPromise(
@@ -688,7 +631,7 @@ describe("custom builder", () => {
 			test_canister,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
 
 		// Deploy the canister first
 		await runtime.runPromise(
@@ -729,7 +672,7 @@ describe("custom builder", () => {
 		const taskTree = {
 			test_canister,
 		}
-		const runtime = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
 
 		const res = await runtime.runPromise(
 			Effect.gen(function* () {
@@ -808,7 +751,7 @@ describe("custom builder", () => {
 			dependent_canister,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
 
 		await expect(
 			runtime.runPromise(
@@ -892,7 +835,7 @@ describe("custom builder", () => {
 			convergence_canister,
 		}
 
-		const runtime = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
 
 		await runtime.runPromise(
 			Effect.gen(function* () {

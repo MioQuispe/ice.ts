@@ -9,6 +9,7 @@ import {
 	ManagedRuntime,
 	LogLevel,
 	ConfigProvider,
+	Config,
 } from "effect"
 import type { Task } from "../types/types.js"
 import { TaskParamsToArgs, TaskSuccess } from "../tasks/lib.js"
@@ -27,7 +28,7 @@ import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
 import type { Scope, TaskTree } from "../types/types.js"
 import { TaskRegistry } from "./taskRegistry.js"
 export { Opt } from "../types/types.js"
-import { layerFileSystem } from "@effect/platform/KeyValueStore"
+import { layerFileSystem, layerMemory } from "@effect/platform/KeyValueStore"
 import { CanisterIdsService } from "./canisterIds.js"
 import { DefaultConfig } from "./defaultConfig.js"
 import { Moc } from "./moc.js"
@@ -37,6 +38,8 @@ import { picReplicaImpl } from "./pic/pic.js"
 import { TaskRuntimeError } from "../tasks/lib.js"
 import { TelemetryConfig } from "./telemetryConfig.js"
 import { makeTelemetryLayer } from "./telemetryConfig.js"
+import { KeyValueStore } from "@effect/platform"
+import { IceDir } from "./iceDir.js"
 
 type TaskReturnValue<T extends Task> = ReturnType<T["effect"]>
 
@@ -66,7 +69,7 @@ export class TaskRunnerContext extends Context.Tag("TaskRunnerContext")<
 	TaskRunnerContext,
 	{
 		isRootTask: boolean
-        // TODO: cli flags etc.
+		// TODO: cli flags etc.
 	}
 >() {}
 
@@ -81,9 +84,11 @@ export const TaskRunnerLive = () =>
 	Layer.effect(
 		TaskRunner,
 		Effect.gen(function* () {
+			const appDir = yield* Config.string("APP_DIR")
+			// const iceDir = yield* Config.string("ICE_DIR_NAME")
 			const configMap = new Map([
-				["APP_DIR", fs.realpathSync(process.cwd())],
-				["ICE_DIR_NAME", ".ice"],
+				["APP_DIR", appDir],
+				// ["ICE_DIR_NAME", iceDir],
 			])
 			const configLayer = Layer.setConfigProvider(
 				ConfigProvider.fromMap(configMap),
@@ -98,6 +103,8 @@ export const TaskRunnerLive = () =>
 			const CLIFlagsLayer = Layer.succeed(CLIFlags, CLIFlagsService)
 			const ICEConfig = yield* ICEConfigService
 			const ICEConfigLayer = Layer.succeed(ICEConfigService, ICEConfig)
+			const iceDir = yield* IceDir
+			const IceDirLayer = Layer.succeed(IceDir, iceDir)
 			// TODO: make it work for tests too
 			const telemetryConfig = yield* TelemetryConfig
 			const telemetryLayer = makeTelemetryLayer(telemetryConfig)
@@ -105,35 +112,48 @@ export const TaskRunnerLive = () =>
 				TelemetryConfig,
 				telemetryConfig,
 			)
+			const KV = yield* KeyValueStore.KeyValueStore
+			const KVStorageLayer = Layer.succeed(
+				KeyValueStore.KeyValueStore,
+				KV,
+			)
+
+			const CanisterIds = yield* CanisterIdsService
+			const CanisterIdsLayer = Layer.succeed(
+				CanisterIdsService,
+				CanisterIds,
+			)
 
 			const taskRuntime = ManagedRuntime.make(
-				Layer.mergeAll(
-					telemetryLayer,
-					NodeContext.layer,
-					TaskRegistry.Live.pipe(
-                        // TODO: tests need this to be in memory
-						Layer.provide(layerFileSystem(".ice/cache")),
-						Layer.provide(NodeContext.layer),
+				Layer.provideMerge(
+					Layer.mergeAll(
+						telemetryLayer,
+						NodeContext.layer,
+						TaskRegistry.Live,
+						DefaultReplicaService,
+						DefaultConfig.Live.pipe(
+							Layer.provide(DefaultReplicaService),
+						),
+						Moc.Live,
+						CanisterIdsLayer,
+						// DevTools.layerWebSocket().pipe(
+						// 	Layer.provide(NodeSocket.layerWebSocketConstructor),
+						// ),
+						CLIFlagsLayer,
+						ICEConfigLayer,
+						telemetryConfigLayer,
+						Logger.pretty,
+						Logger.minimumLogLevel(
+							logLevelMap[globalArgs.logLevel],
+						),
 					),
-					DefaultReplicaService,
-					DefaultConfig.Live.pipe(
-						Layer.provide(DefaultReplicaService),
+					Layer.mergeAll(
+						// 	TODO: find better way. the layer should be injected instead
+						IceDirLayer,
+						KVStorageLayer,
+						configLayer,
+						NodeContext.layer,
 					),
-					Moc.Live.pipe(Layer.provide(NodeContext.layer)),
-					CanisterIdsService.Live.pipe(
-						Layer.provide(NodeContext.layer),
-						Layer.provide(configLayer),
-					),
-					// DevTools.layerWebSocket().pipe(
-					// 	Layer.provide(NodeSocket.layerWebSocketConstructor),
-					// ),
-					CLIFlagsLayer,
-					ICEConfigLayer,
-					telemetryConfigLayer,
-					// TODO: share logger with parent runtime
-					// LoggerBundleLayer,
-					Logger.pretty,
-					Logger.minimumLogLevel(logLevelMap[globalArgs.logLevel]),
 				),
 			)
 			return {

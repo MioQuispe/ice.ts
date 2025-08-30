@@ -21,6 +21,7 @@ import { DefaultConfig, InitializedDefaultConfig } from "./defaultConfig.js"
 import { ICEConfigService } from "./iceConfig.js"
 import { TaskRunner, TaskRunnerContext } from "./taskRunner.js"
 import { runTask } from "../tasks/run.js"
+import { IceDir } from "./iceDir.js"
 
 // export type TaskParamsToArgs<T extends Task> = {
 // 	[K in keyof T["params"] as T["params"][K] extends { isOptional: true }
@@ -163,9 +164,8 @@ export const makeTaskCtx = Effect.fn("taskCtx_make")(function* (
 ) {
 	const { runtime } = yield* TaskRunner
 	const defaultConfig = yield* DefaultConfig
-	// const { appDir, iceDir } = yield* Config
 	const appDir = yield* Config.string("APP_DIR")
-	const iceDir = yield* Config.string("ICE_DIR_NAME")
+	const { path: iceDir } = yield* IceDir
 	const { config } = yield* ICEConfigService
 	const { globalArgs, taskArgs: cliTaskArgs } = yield* CLIFlags
 	const currentNetwork = globalArgs.network ?? "local"

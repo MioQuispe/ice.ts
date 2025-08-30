@@ -1,5 +1,6 @@
 import { FileSystem, Path } from "@effect/platform"
 import { Config, Context, Effect, Layer, Record, Ref } from "effect"
+import { IceDir } from "./iceDir.js"
 
 /**
  * Represents the canister IDs stored in memory.
@@ -53,29 +54,15 @@ export class CanisterIdsService extends Context.Tag("CanisterIdsService")<
 			const ref = yield* Ref.make(initialIds)
 			const fs = yield* FileSystem.FileSystem
 			const path = yield* Path.Path
-			const appDir = yield* Config.string("APP_DIR")
-			// Ref to store the last flushed canister IDs for change detection
-			//   const lastFlushedIdsRef = yield* Ref.make(initialIds)
+            const {path: iceDirPath} = yield* IceDir
 
 			/**
 			 * Flushes in-memory canister IDs to disk only if there are changes.
 			 */
 			const flush = Effect.gen(function* () {
-				const canisterIdsPath = path.join(appDir, ".ice", "canister_ids.json")
+				const canisterIdsPath = path.join(iceDirPath, "canister_ids.json")
 				const currentIds = yield* Ref.get(ref)
-				// const lastFlushedIds = yield* Ref.get(lastFlushedIdsRef)
 
-				// Compare current IDs with last flushed IDs
-				// if (JSON.stringify(currentIds) !== JSON.stringify(lastFlushedIds)) {
-				// if (!fs.exists(canisterIdsPath)) {
-				// }
-
-				// TODO: Move this elsewhere?
-				const iceDir = path.join(appDir, ".ice")
-				const dirExists = yield* fs.exists(iceDir)
-				if (!dirExists) {
-					yield* fs.makeDirectory(iceDir)
-				}
 				yield* fs.writeFile(
 					canisterIdsPath,
 					Buffer.from(JSON.stringify(currentIds, null, 2)),
@@ -83,11 +70,6 @@ export class CanisterIdsService extends Context.Tag("CanisterIdsService")<
 					//   flag: "w",
 					// }
 				)
-				//   // Update last flushed IDs ref after successful write
-				//   yield* Ref.set(lastFlushedIdsRef, currentIds)
-				// } else {
-				//   yield* Effect.logDebug("No changes in canister IDs, skipping flush to disk.")
-				// }
 			}).pipe(
 				Effect.catchAll((error) =>
 					Effect.logError("Failed to flush canister IDs to disk", error),
@@ -174,8 +156,8 @@ export class CanisterIdsService extends Context.Tag("CanisterIdsService")<
 const readInitialCanisterIds = Effect.gen(function* readInitialCanisterIds() {
 	const fs = yield* FileSystem.FileSystem
 	const path = yield* Path.Path
-	const appDir = yield* Config.string("APP_DIR")
-	const canisterIdsPath = path.join(appDir, ".ice", "canister_ids.json")
+	const {path: iceDirPath} = yield* IceDir
+	const canisterIdsPath = path.join(iceDirPath, "canister_ids.json")
 	const exists = yield* fs.exists(canisterIdsPath)
 	if (!exists) return {}
 	const content = yield* fs.readFileString(canisterIdsPath)

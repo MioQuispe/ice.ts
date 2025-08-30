@@ -45,7 +45,6 @@ import type * as ActorTypes from "../../types/actor.js"
 const __dirname = url.fileURLToPath(new URL(".", import.meta.url))
 export const picReplicaImpl = Effect.gen(function* () {
 	const commandExecutor = yield* CommandExecutor.CommandExecutor
-	const fs = yield* FileSystem.FileSystem
 	const path = yield* Path.Path
 	// const port = 8080
 	// const host = "http://0.0.0.0"

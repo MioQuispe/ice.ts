@@ -59,6 +59,7 @@ import {
 	TaskRunner,
 	TaskRunnerContext,
 } from "../services/taskRunner.js"
+import { IceDir } from "../services/iceDir.js"
 import { runTask, runTasks } from "../tasks/run.js"
 import { configLayer } from "../services/config.js"
 import {
@@ -162,32 +163,46 @@ export const makeCliRuntime = ({
 	}
 	const telemetryConfigLayer = Layer.succeed(TelemetryConfig, telemetryConfig)
 	const telemetryLayer = makeTelemetryLayer(telemetryConfig)
+
+	// TODO: fix. provide iceDir
+	const KVStorageLayer = layerFileSystem(".ice/cache").pipe(
+		Layer.provide(NodeContext.layer),
+	)
 	const TaskRunnerLayer = TaskRunnerLive()
+
+	const IceDirLayer = IceDir.Live({ iceDirName: ".ice" }).pipe(
+		Layer.provide(NodeContext.layer),
+	)
 
 	return ManagedRuntime.make(
 		Layer.provideMerge(
 			Layer.mergeAll(
 				TaskRunnerLayer,
-				TaskRegistry.Live.pipe(
-					Layer.provide(layerFileSystem(".ice/cache")),
-				),
+				TaskRegistry.Live,
 				DefaultReplicaService,
 				DefaultConfig.Live.pipe(Layer.provide(DefaultReplicaService)),
 				Moc.Live,
-				CanisterIdsService.Live.pipe(Layer.provide(configLayer)),
-				// CLIFlagsLayer,
-				// ICEConfigLayer,
-				// LoggerBundleLive,
 				Logger.pretty,
 				Logger.minimumLogLevel(logLevelMap[globalArgs.logLevel]),
+				IceDirLayer,
 			),
 			Layer.mergeAll(
-				NodeContext.layer,
-				ICEConfigLayer,
-				CLIFlagsLayer,
-				telemetryConfigLayer,
-				telemetryLayer,
-				// ParentTaskCtxLayer
+				Layer.provideMerge(
+					Layer.mergeAll(
+						CanisterIdsService.Live.pipe(
+							Layer.provide(configLayer),
+							Layer.provide(NodeContext.layer),
+						),
+						KVStorageLayer,
+						NodeContext.layer,
+						ICEConfigLayer,
+						CLIFlagsLayer,
+						telemetryConfigLayer,
+						telemetryLayer,
+						// ParentTaskCtxLayer
+					),
+					Layer.mergeAll(IceDirLayer),
+				),
 			),
 		),
 	)
@@ -358,6 +373,7 @@ const deployRun = async ({
 				node.tags.includes(Tags.CANISTER) &&
 				node.tags.includes(Tags.DEPLOY),
 		)) as Array<{ node: Task; path: string[] }>
+        // TODO: map cli args to task args here?
 		const tasks = tasksWithPath.map(({ node }) => node)
 		const tasksWithArgs = tasks.map((task) => ({
 			...task,

@@ -54,7 +54,7 @@ export const runTask = Effect.fn("run_task")(function* <T extends Task>(
 	yield* Effect.logDebug("Executing tasks...")
 	const taskEffects = yield* makeTaskEffects(sortedTasks, progressCb)
 	const results = yield* Effect.all(taskEffects, {
-		concurrency: "unbounded",
+		concurrency: "inherit",
 	}).pipe(
 		// Effect.mapError((error) => {
 		// 	return new TaskRuntimeError({
@@ -107,7 +107,7 @@ export const runTasks = Effect.fn("run_tasks")(function* <T extends Task>(
 	yield* Effect.logDebug("Executing tasks...")
 	const taskEffects = yield* makeTaskEffects(sortedTasks, progressCb)
 	const results = yield* Effect.all(taskEffects, {
-		concurrency: "unbounded",
+		concurrency: "inherit",
 	}).pipe(
         Effect.annotateLogs("caller", "runTasks"),
     )

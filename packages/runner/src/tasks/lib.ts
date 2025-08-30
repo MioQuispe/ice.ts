@@ -221,7 +221,7 @@ const resolveCliArg = <T = unknown>(
 }
 
 export const resolveArgsMap = (
-	task: Task & { args: Record<string, unknown> },
+	task: Task & { args?: Record<string, unknown> },
 ) =>
 	Effect.gen(function* () {
 		let argsMap: Record<string, unknown> = {}
@@ -320,7 +320,7 @@ export const resolveArgsMap = (
 			// dynamic calls from other tasks
 			const paramsArray = Object.entries(task.params)
 			for (const [paramName, param] of paramsArray) {
-				const arg = task.args[paramName]
+				const arg = task.args?.[paramName]
 				if (!arg && !param.isOptional) {
 					return yield* Effect.fail(
 						new TaskArgsParseError({
@@ -534,8 +534,8 @@ export const makeTaskEffects = Effect.fn("make_task_effects")(function* (
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) {
 	const defaultConfig = yield* DefaultConfig
-	const appDir = yield* Config.string("APP_DIR")
-	const iceDir = yield* Config.string("ICE_DIR_NAME")
+	// const appDir = yield* Config.string("APP_DIR")
+	// const iceDir = yield* Config.string("ICE_DIR_NAME")
 	const taskRegistry = yield* TaskRegistry
 	const { config } = yield* ICEConfigService
 	const { globalArgs, taskArgs: cliTaskArgs } = yield* CLIFlags

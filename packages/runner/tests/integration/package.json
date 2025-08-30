@@ -1,0 +1,17 @@
+{
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=7.0.0"
+  },
+  "name": "ice_example",
+  "scripts": {
+    "dev": "vite --port 3000",
+    "build": "tsc && vite build"
+  },
+  "type": "module",
+  "dependencies": {
+    "@dfinity/identity": "^2.3.0",
+    "@dfinity/principal": "^2.3.0",
+    "@ice.ts/runner": "file:../../../runner"
+  }
+}

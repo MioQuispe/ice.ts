@@ -47,10 +47,11 @@ const baseLayer = Layer.mergeAll(
 	Moc.Live.pipe(Layer.provide(NodeContext.layer)),
 	// taskLayer,
 	// TODO: move to taskctx
-	CanisterIdsService.Live.pipe(
-		Layer.provide(NodeContext.layer),
-		Layer.provide(configLayer),
-	),
+	// CanisterIdsService.Live.pipe(
+	// 	Layer.provide(NodeContext.layer),
+	// 	Layer.provide(configLayer),
+	// ),
+	CanisterIdsService.Test,
 	configLayer,
 	// telemetryLayer,
 	// DefaultsLayer,
@@ -1327,7 +1328,9 @@ export const makeInstallTask = <
 						canisterId,
 						canisterName,
 						mode,
-						actor: proxyActor(canisterName, actor),
+                        actor,
+                        // TODO: plugin which transforms install tasks?
+						// actor: proxyActor(canisterName, actor),
 					}
 				})(),
 			),
@@ -1496,6 +1499,7 @@ export const makeInstallTask = <
 							}),
 					})
 					const actor = yield* replica.createActor<_SERVICE>({
+                        // canisterName,
 						canisterId,
 						canisterDID,
 						identity,
@@ -1504,7 +1508,9 @@ export const makeInstallTask = <
 						mode,
 						canisterId,
 						canisterName,
-						actor: proxyActor(canisterName, actor),
+                        // TODO: plugin which transforms upgrade tasks?
+						// actor: proxyActor(canisterName, actor),
+						actor,
 						encodedArgs,
 						args: initArgs,
 					}
@@ -1772,7 +1778,9 @@ export const makeUpgradeTask = <
 						canisterId,
 						canisterName,
 						mode: "upgrade" as const,
-						actor: proxyActor(canisterName, actor),
+                        // TODO: plugin which transforms upgrade tasks?
+						// actor: proxyActor(canisterName, actor),
+						actor,
 					}
 				})(),
 			),
@@ -1941,7 +1949,9 @@ export const makeUpgradeTask = <
 						canisterId,
 						canisterName,
 						mode: "upgrade" as const,
-						actor: proxyActor(canisterName, actor),
+						actor,
+                        // TODO: plugin which transforms upgrade tasks?
+						// actor: proxyActor(canisterName, actor),
 						encodedArgs,
 						args: upgradeArgs,
 					}
