@@ -27,8 +27,10 @@ import {
 	TaskParamsToArgs,
 	findTaskInTaskTree,
 	TaskRuntimeError,
+	TaskArgsParseError,
+	resolveArg,
 } from "../tasks/lib.js"
-import type { Task } from "../types/types.js"
+import type { PositionalParam, NamedParam, Task } from "../types/types.js"
 import { task } from "../builders/task.js"
 import { NodeContext, NodeSocket } from "@effect/platform-node"
 import { layerFileSystem } from "@effect/platform/KeyValueStore"
@@ -43,7 +45,6 @@ import {
 	ManagedRuntime,
 } from "effect"
 import fs from "node:fs"
-import { CLIFlags } from "../services/cliFlags.js"
 import { DefaultConfig } from "../services/defaultConfig.js"
 import { DfxReplica } from "../services/dfx.js"
 import { Moc } from "../services/moc.js"
@@ -59,6 +60,7 @@ import {
 	TaskRunner,
 	TaskRunnerContext,
 } from "../services/taskRunner.js"
+import { InFlight } from "../services/inFlight.js"
 import { IceDir } from "../services/iceDir.js"
 import { runTask, runTasks } from "../tasks/run.js"
 import { configLayer } from "../services/config.js"
@@ -73,7 +75,10 @@ const taskRunnerContext = Layer.succeed(TaskRunnerContext, {
 })
 export const runTaskByPath = Effect.fn("runTaskByPath")(function* (
 	taskPath: string,
-	args: TaskParamsToArgs<Task> = {},
+	cliTaskArgs: {
+		positionalArgs: string[]
+		namedArgs: Record<string, string>
+	},
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) {
 	yield* Effect.annotateCurrentSpan({
@@ -83,11 +88,75 @@ export const runTaskByPath = Effect.fn("runTaskByPath")(function* (
 	const taskPathSegments: string[] = taskPath.split(":")
 	const { taskTree } = yield* ICEConfigService
 	const task = yield* findTaskInTaskTree(taskTree, taskPathSegments)
+	const argsMap = yield* resolveCliArgsMap(task, cliTaskArgs)
 	yield* Effect.logDebug("Task found", taskPath)
-	return yield* runTask(task, args, progressCb)
+	return yield* runTask(task, argsMap, progressCb)
 		.pipe(Effect.annotateLogs("caller", "runTaskByPath"))
 		.pipe(Effect.provide(taskRunnerContext))
 })
+
+const resolveCliArg = <T = unknown>(
+	param: NamedParam<T> | PositionalParam<T>,
+	arg: string | undefined,
+): Effect.Effect<T | undefined, TaskArgsParseError> => {
+	if (arg === undefined && param.isOptional) {
+		return Effect.succeed(param.default)
+	}
+	if (arg === undefined) {
+		return Effect.fail(
+			new TaskArgsParseError({
+				message: `Missing argument for ${param.name}, arg: ${arg}, param: ${JSON.stringify(param)}`,
+			}),
+		)
+	}
+	const parsedArg = param.parse(arg)
+	// return Effect.succeed(arg)
+	return Effect.succeed(parsedArg)
+}
+
+export const resolveCliArgsMap = (
+	task: Task,
+	cliTaskArgs: {
+		positionalArgs: string[]
+		namedArgs: Record<string, string>
+	},
+) =>
+	Effect.gen(function* () {
+		let argsMap: Record<string, unknown> = {}
+		for (const [paramName, param] of Object.entries(task.namedParams)) {
+			const arg = cliTaskArgs.namedArgs[paramName]
+			if (!arg && !param.isOptional) {
+				return yield* Effect.fail(
+					new TaskArgsParseError({
+						message: `Missing parameter: ${paramName}`,
+					}),
+				)
+			}
+			const resolvedArg = yield* resolveArg(
+				param,
+				arg ? param.parse(arg) : undefined,
+			)
+			argsMap[paramName] = resolvedArg
+		}
+		for (const [index, param] of task.positionalParams.entries()) {
+			const arg = cliTaskArgs.positionalArgs[index]
+			// TODO: defaults / optionals
+			if (!arg && !param.isOptional) {
+				return yield* Effect.fail(
+					new TaskArgsParseError({
+						message: `Missing positional arg: ${index}`,
+					}),
+				)
+			}
+			const resolvedArg = yield* resolveArg(
+				param,
+				arg ? param.parse(arg) : undefined,
+			)
+			argsMap[param.name] = resolvedArg
+		}
+
+		return argsMap
+	})
 
 const GlobalArgs = type({
 	network: "string" as const,
@@ -104,17 +173,10 @@ type MakeRuntimeArgs = {
 	globalArgs: { network: string; logLevel: string }
 	// TODO: either this or taskArgs
 	// fix type
-	cliTaskArgs?: {
-		positionalArgs: string[]
-		namedArgs: Record<string, string>
-	}
-	taskArgs?: Record<string, unknown>
 }
 
 export const makeCliRuntime = ({
 	globalArgs: rawGlobalArgs,
-	cliTaskArgs = { positionalArgs: [], namedArgs: {} },
-	taskArgs = {},
 }: MakeRuntimeArgs) => {
 	const globalArgs = GlobalArgs(rawGlobalArgs)
 	if (globalArgs instanceof type.errors) {
@@ -139,20 +201,10 @@ export const makeCliRuntime = ({
 	// 	// 	Layer.provide(NodeSocket.layerWebSocketConstructor),
 	// 	// ),
 	// 	()
-
-	const ICEConfigLayer = ICEConfigService.Live.pipe(
-		Layer.provide(NodeContext.layer),
-		Layer.provide(
-			Layer.succeed(CLIFlags, {
-				globalArgs,
-				taskArgs: cliTaskArgs,
-			}),
-		),
-	)
-	const CLIFlagsLayer = Layer.succeed(CLIFlags, {
-		globalArgs,
-		taskArgs: cliTaskArgs,
-	})
+	const ICEConfigLayer = ICEConfigService.Live({
+		network: globalArgs.network,
+		logLevel: logLevelMap[globalArgs.logLevel],
+	}).pipe(Layer.provide(NodeContext.layer))
 
 	const telemetryConfig = {
 		resource: { serviceName: "ice" },
@@ -172,40 +224,81 @@ export const makeCliRuntime = ({
 
 	const IceDirLayer = IceDir.Live({ iceDirName: ".ice" }).pipe(
 		Layer.provide(NodeContext.layer),
+		Layer.provide(configLayer),
 	)
 
-	return ManagedRuntime.make(
-		Layer.provideMerge(
-			Layer.mergeAll(
-				TaskRunnerLayer,
-				TaskRegistry.Live,
-				DefaultReplicaService,
-				DefaultConfig.Live.pipe(Layer.provide(DefaultReplicaService)),
-				Moc.Live,
-				Logger.pretty,
-				Logger.minimumLogLevel(logLevelMap[globalArgs.logLevel]),
-				IceDirLayer,
-			),
-			Layer.mergeAll(
-				Layer.provideMerge(
-					Layer.mergeAll(
-						CanisterIdsService.Live.pipe(
-							Layer.provide(configLayer),
-							Layer.provide(NodeContext.layer),
-						),
-						KVStorageLayer,
-						NodeContext.layer,
-						ICEConfigLayer,
-						CLIFlagsLayer,
-						telemetryConfigLayer,
-						telemetryLayer,
-						// ParentTaskCtxLayer
-					),
-					Layer.mergeAll(IceDirLayer),
-				),
-			),
-		),
+	const InFlightLayer = InFlight.Live.pipe(Layer.provide(NodeContext.layer))
+
+	const DefaultConfigLayer = DefaultConfig.Live.pipe(
+		Layer.provide(DefaultReplicaService),
 	)
+	const CanisterIdsLayer = CanisterIdsService.Live.pipe(
+		Layer.provide(NodeContext.layer),
+		Layer.provide(IceDirLayer),
+	)
+	const cliLayer = Layer.mergeAll(
+		DefaultConfigLayer,
+		TaskRegistry.Live.pipe(
+			Layer.provide(NodeContext.layer),
+			Layer.provide(KVStorageLayer),
+		),
+		TaskRunnerLayer.pipe(
+			Layer.provide(NodeContext.layer),
+			Layer.provide(IceDirLayer),
+			Layer.provide(CanisterIdsLayer),
+			Layer.provide(ICEConfigLayer),
+			Layer.provide(telemetryConfigLayer),
+			Layer.provide(KVStorageLayer),
+			Layer.provide(InFlightLayer),
+		),
+		InFlightLayer,
+		IceDirLayer,
+		DefaultReplicaService,
+		Moc.Live.pipe(Layer.provide(NodeContext.layer)),
+		Logger.pretty,
+		Logger.minimumLogLevel(logLevelMap[globalArgs.logLevel]),
+		CanisterIdsLayer,
+		configLayer,
+		KVStorageLayer,
+		NodeContext.layer,
+		ICEConfigLayer,
+		telemetryLayer,
+		telemetryConfigLayer,
+		taskRunnerContext,
+	)
+	return ManagedRuntime.make(cliLayer)
+
+	// return ManagedRuntime.make(
+	// 	Layer.provideMerge(
+	// 		Layer.mergeAll(
+	// 			TaskRunnerLayer,
+	// 			TaskRegistry.Live,
+	// 			DefaultReplicaService,
+	// 			DefaultConfig.Live.pipe(Layer.provide(DefaultReplicaService)),
+	// 			Moc.Live,
+	// 			Logger.pretty,
+	// 			Logger.minimumLogLevel(logLevelMap[globalArgs.logLevel]),
+	// 			IceDirLayer,
+	// 		),
+	// 		Layer.mergeAll(
+	// 			Layer.provideMerge(
+	// 				Layer.mergeAll(
+	// 					CanisterIdsService.Live.pipe(
+	// 						Layer.provide(configLayer),
+	// 						Layer.provide(NodeContext.layer),
+	// 					),
+	// 					KVStorageLayer,
+	// 					NodeContext.layer,
+	// 					ICEConfigLayer,
+	// 					telemetryConfigLayer,
+	// 					telemetryLayer,
+	// 					// ParentTaskCtxLayer
+	// 				),
+	// 				Layer.mergeAll(IceDirLayer, InFlightLayer, configLayer),
+	// 			),
+	// 		),
+	// 	),
+	// )
 }
 
 function moduleHashToHexString(moduleHash: [] | [number[]]): string {
@@ -293,36 +386,39 @@ const runCommand = defineCommand({
 		s.start(
 			`Running task... ${color.green(color.underline(args.taskPath))}`,
 		)
+		const cliTaskArgs = {
+			positionalArgs,
+			namedArgs,
+		}
 		await makeCliRuntime({
 			globalArgs,
-			cliTaskArgs: {
-				positionalArgs,
-				namedArgs,
-			},
 		}).runPromise(
-			runTaskByPath(args.taskPath).pipe(
-				Effect.tap((result) =>
-					Effect.gen(function* () {
-						const count = yield* Metric.value(totalTaskCount)
-						const cachedCount = yield* Metric.value(cachedTaskCount)
-						const uncachedCount =
-							yield* Metric.value(uncachedTaskCount)
-						const hitCount = yield* Metric.value(cacheHitCount)
-						console.log(
-							"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! task metrics:",
-							"total:",
-							count,
-							"cached:",
-							cachedCount,
-							"uncached:",
-							uncachedCount,
-							"cache hits:",
-							hitCount,
-							"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
-						)
-					}),
-				),
-			),
+			Effect.gen(function* () {
+				yield* runTaskByPath(args.taskPath, cliTaskArgs).pipe(
+					Effect.tap((result) =>
+						Effect.gen(function* () {
+							const count = yield* Metric.value(totalTaskCount)
+							const cachedCount =
+								yield* Metric.value(cachedTaskCount)
+							const uncachedCount =
+								yield* Metric.value(uncachedTaskCount)
+							const hitCount = yield* Metric.value(cacheHitCount)
+							console.log(
+								"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! task metrics:",
+								"total:",
+								count,
+								"cached:",
+								cachedCount,
+								"uncached:",
+								uncachedCount,
+								"cache hits:",
+								hitCount,
+								"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
+							)
+						}),
+					),
+				)
+			}),
 		)
 		s.stop(`Finished task: ${color.green(color.underline(args.taskPath))}`)
 	},
@@ -373,11 +469,20 @@ const deployRun = async ({
 				node.tags.includes(Tags.CANISTER) &&
 				node.tags.includes(Tags.DEPLOY),
 		)) as Array<{ node: Task; path: string[] }>
-        // TODO: map cli args to task args here?
+		// TODO: map cli args to task args here?
 		const tasks = tasksWithPath.map(({ node }) => node)
+		if (!tasks?.[0]) {
+			return yield* Effect.fail(
+				new TaskRuntimeError({
+					message: "No deploy tasks found",
+				}),
+			)
+		}
+		// TODO: fix mode not found
+		const argsMap = yield* resolveCliArgsMap(tasks[0], cliTaskArgs)
 		const tasksWithArgs = tasks.map((task) => ({
 			...task,
-			args: {},
+			args: argsMap,
 		}))
 
 		yield* runTasks(tasksWithArgs, (update) => {
@@ -395,19 +500,7 @@ const deployRun = async ({
 				// console.log(`Completed ${update.taskPath}`)
 			}
 		}).pipe(Effect.annotateLogs("caller", "deployRun"))
-		// yield* Effect.tryPromise({
-		// 	try: () =>
-		// 		runtime.runPromise(
-		// 			// TODO: wrong. deps not deduplicated
-		// 			// need a runTasks
-		// 		),
-		// 	catch: (e) => {
-		// 		return new TaskRuntimeError({
-		// 			message: "Error running task",
-		// 			error: e,
-		// 		})
-		// 	},
-		// })
+
 		const count = yield* Metric.value(totalTaskCount)
 		const cachedCount = yield* Metric.value(cachedTaskCount)
 		const uncachedCount = yield* Metric.value(uncachedTaskCount)
@@ -431,7 +524,6 @@ const deployRun = async ({
 	// )
 	await makeCliRuntime({
 		globalArgs,
-		cliTaskArgs,
 	}).runPromise(program.pipe(Effect.provide(taskRunnerContext)))
 	s.stop("Deployed all canisters")
 }
@@ -978,6 +1070,10 @@ const canisterCommand = defineCommand({
 		if (args._.length === 0) {
 			const globalArgs = getGlobalArgs("canister")
 			const { network, logLevel } = globalArgs
+			const cliTaskArgs = {
+				positionalArgs: [],
+				namedArgs: {},
+			}
 			await makeCliRuntime({
 				globalArgs: {
 					network,
@@ -1041,7 +1137,7 @@ const canisterCommand = defineCommand({
 					const result = yield* runTaskByPath(
 						`${canister.trimStart().trimEnd()}:${action.trimStart().trimEnd()}`,
 						// TODO: args?
-						{},
+						cliTaskArgs,
 						(update) => {
 							if (update.status === "starting") {
 								s.message(`Running ${update.taskPath}`)
@@ -1086,6 +1182,10 @@ const taskCommand = defineCommand({
 		if (args._.length === 0) {
 			const globalArgs = getGlobalArgs("task")
 			const { network, logLevel } = globalArgs
+			const cliTaskArgs = {
+				positionalArgs: [],
+				namedArgs: {},
+			}
 			await makeCliRuntime({
 				globalArgs: {
 					network,
@@ -1125,7 +1225,7 @@ const taskCommand = defineCommand({
 					const result = yield* runTaskByPath(
 						`${task.trimStart().trimEnd()}`,
 						// TODO: args?
-						{},
+						cliTaskArgs,
 						(update) => {
 							if (update.status === "starting") {
 								s.message(`Running ${update.taskPath}`)

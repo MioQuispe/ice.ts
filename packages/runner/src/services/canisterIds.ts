@@ -114,7 +114,6 @@ export class CanisterIdsService extends Context.Tag("CanisterIdsService")<
 			let testCanisterIds: CanisterIds = {}
 			return CanisterIdsService.of({
 				getCanisterIds: () => Effect.gen(function* () {
-					yield* Effect.logDebug("getCanisterIds", testCanisterIds)
 					return testCanisterIds
 				}),
 				setCanisterId: (params: {
@@ -130,7 +129,6 @@ export class CanisterIdsService extends Context.Tag("CanisterIdsService")<
 								[params.network]: params.canisterId,
 							},
 						}
-						yield* Effect.logDebug("setCanisterId", testCanisterIds)
 					}),
 				removeCanisterId: (canisterName: string) =>
 					Effect.gen(function* () {

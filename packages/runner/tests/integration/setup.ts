@@ -15,7 +15,6 @@ import {
 } from "effect"
 import { task } from "../../src/builders/task.js"
 import { CanisterIdsService } from "../../src/services/canisterIds.js"
-import { CLIFlags } from "../../src/services/cliFlags.js"
 import { DefaultConfig } from "../../src/services/defaultConfig.js"
 import { ICEConfigService } from "../../src/services/iceConfig.js"
 import { Moc } from "../../src/services/moc.js"
@@ -41,6 +40,7 @@ import {
 } from "../../src/services/telemetryConfig.js"
 import fs from "node:fs"
 import { IceDir } from "../../src/services/iceDir.js"
+import { InFlight } from "../../src/services/inFlight.js"
 
 const DefaultReplicaService = Layer.effect(DefaultReplica, picReplicaImpl).pipe(
 	Layer.provide(NodeContext.layer),
@@ -49,28 +49,21 @@ const DefaultReplicaService = Layer.effect(DefaultReplica, picReplicaImpl).pipe(
 
 // TODO: this should use a separate pocket-ic / .ice instance for each test.
 export const makeTestRuntime = (
-	{ cliTaskArgs = { positionalArgs: [], namedArgs: {} }, taskArgs = {} } = {
-		cliTaskArgs: { positionalArgs: [], namedArgs: {} },
-		taskArgs: {},
-	},
 	taskTree: TaskTree = {},
 	iceDirName: string = ".ice_test",
 ) => {
-	const globalArgs = { network: "local", logLevel: "debug" } as const
+	const globalArgs = { network: "local", logLevel: LogLevel.Debug } as const
 	const config = {} satisfies Partial<ICEConfig>
 	const testICEConfigService = ICEConfigService.of({
 		config,
 		taskTree,
+		globalArgs,
 	})
 
 	const DefaultConfigLayer = DefaultConfig.Live.pipe(
 		Layer.provide(DefaultReplicaService),
 	)
 	const ICEConfigLayer = Layer.succeed(ICEConfigService, testICEConfigService)
-	const CLIFlagsLayer = Layer.succeed(CLIFlags, {
-		globalArgs,
-		taskArgs: cliTaskArgs,
-	})
 	const telemetryExporter = new InMemorySpanExporter()
 	const telemetryConfig = {
 		resource: { serviceName: "ice" },
@@ -102,6 +95,8 @@ export const makeTestRuntime = (
 		Layer.provide(configLayer),
 	)
 
+	const InFlightLayer = InFlight.Live.pipe(Layer.provide(NodeContext.layer))
+
 	// const testLayer = Layer.provideMerge(
 	// 	Layer.mergeAll(
 	// 		DefaultConfigLayer,
@@ -118,7 +113,6 @@ export const makeTestRuntime = (
 	// 			CanisterIdsService.Test,
 	// 			KVStorageLayer,
 	// 			NodeContext.layer,
-	// 			CLIFlagsLayer,
 	// 			ICEConfigLayer,
 	// 			telemetryLayer,
 	// 			telemetryConfigLayer,
@@ -144,11 +138,12 @@ export const makeTestRuntime = (
 			Layer.provide(NodeContext.layer),
 			Layer.provide(iceDirLayer),
 			Layer.provide(CanisterIdsLayer),
-			Layer.provide(CLIFlagsLayer),
 			Layer.provide(ICEConfigLayer),
 			Layer.provide(telemetryConfigLayer),
 			Layer.provide(KVStorageLayer),
+			Layer.provide(InFlightLayer),
 		),
+		InFlightLayer,
 		iceDirLayer,
 		DefaultReplicaService,
 		Moc.Live.pipe(Layer.provide(NodeContext.layer)),
@@ -158,18 +153,16 @@ export const makeTestRuntime = (
 		configLayer,
 		KVStorageLayer,
 		NodeContext.layer,
-		CLIFlagsLayer,
 		ICEConfigLayer,
 		telemetryLayer,
 		telemetryConfigLayer,
 		taskRunnerContext,
 	)
 
-	// const layer = makeTestLayer({ cliTaskArgs, taskArgs }, taskTree, iceDirName)
-	return { 
-        runtime: ManagedRuntime.make(testLayer),
-        telemetryExporter,
-    }
+	return {
+		runtime: ManagedRuntime.make(testLayer),
+		telemetryExporter,
+	}
 }
 
 export const getTasks = () =>

@@ -18,7 +18,6 @@ import {
 	// telemetryLayer,
 } from "../../src/index.js"
 import { CanisterIdsService } from "../../src/services/canisterIds.js"
-import { CLIFlags } from "../../src/services/cliFlags.js"
 import { DefaultConfig } from "../../src/services/defaultConfig.js"
 import { ICEConfigService } from "../../src/services/iceConfig.js"
 import { Moc } from "../../src/services/moc.js"
@@ -183,7 +182,7 @@ describe("custom builder", () => {
 		const taskTree = {
 			test_canister,
 		}
-		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
 		// const result = await runtime.runPromise()
 		const result = await runtime.runPromise(
 			Effect.gen(function* () {
@@ -197,10 +196,10 @@ describe("custom builder", () => {
 		})
 	})
 
-    // TODO: If other tests run before this, it breaks.
-    // need to make sure side-effects dont affect other tests
-    // maybe clean up tasks after each test
-    // reset pocket ic state etc.
+	// TODO: If other tests run before this, it breaks.
+	// need to make sure side-effects dont affect other tests
+	// maybe clean up tasks after each test
+	// reset pocket ic state etc.
 	it("should execute canister tasks in correct dependency order", async () => {
 		const { canister: test_canister22 } = makeTestCanister()
 
@@ -208,7 +207,10 @@ describe("custom builder", () => {
 			test_canister22: test_canister22,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree, ".ice_test_2")
+		const { runtime, telemetryExporter } = makeTestRuntime(
+			taskTree,
+			".ice_test_2",
+		)
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
@@ -237,7 +239,8 @@ describe("custom builder", () => {
 		).toBeTruthy()
 		expect(
 			executionOrder.filter(
-				(s) => s.attributes?.["taskPath"] === "test_canister22:bindings",
+				(s) =>
+					s.attributes?.["taskPath"] === "test_canister22:bindings",
 			).length > 0,
 		).toBeTruthy()
 		expect(
@@ -271,7 +274,7 @@ describe("custom builder", () => {
 			canister2,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
 
 		// Deploy both canisters
 		const results = await runtime.runPromise(
@@ -300,9 +303,11 @@ describe("custom builder", () => {
 		const dependency_canister = customCanister({
 			wasm: path.resolve(__dirname, "../fixtures/canister/example.wasm"),
 			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
-		}).installArgs(async ({ ctx }) => {
-			return []
-		}).make()
+		})
+			.installArgs(async ({ ctx }) => {
+				return []
+			})
+			.make()
 
 		const main_canister = customCanister({
 			wasm: path.resolve(__dirname, "../fixtures/canister/example.wasm"),
@@ -326,12 +331,12 @@ describe("custom builder", () => {
 			main_canister,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
 
 		const result = await runtime.runPromise(
 			Effect.gen(function* () {
 				// const result1 = yield* runTask(dependency_canister.children.deploy)
-                // TODO: deps dont work?
+				// TODO: deps dont work?
 				const result = yield* runTask(main_canister.children.deploy)
 				return result
 			}),
@@ -352,7 +357,7 @@ describe("custom builder", () => {
 			failing_canister,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
 
 		await expect(
 			runtime.runPromise(
@@ -412,7 +417,7 @@ describe("custom builder", () => {
 			canister3,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
@@ -471,7 +476,7 @@ describe("custom builder", () => {
 			canister3,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
@@ -514,7 +519,7 @@ describe("custom builder", () => {
 			dynamic_canister,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
 
 		// First run with configVersion = 1
 		const firstResult = await runtime.runPromise(
@@ -547,29 +552,26 @@ describe("custom builder", () => {
 	})
 
 	it("should handle different install modes", async () => {
-		const test_canister = customCanister({
+		const test_canister_install_mode = customCanister({
 			wasm: path.resolve(__dirname, "../fixtures/canister/example.wasm"),
 			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
 		}).make()
 
 		const taskTree = {
-			test_canister,
+			test_canister_install_mode,
 		}
 
 		// Test with install mode
 		const { runtime, telemetryExporter } = makeTestRuntime(
-			{
-				cliTaskArgs: {
-					positionalArgs: [],
-					namedArgs: { mode: "install" },
-				},
-			},
 			taskTree,
+			".ice_test_install_mode",
 		)
 
 		const result = await runtime.runPromise(
 			Effect.gen(function* () {
-				const result = yield* runTask(test_canister.children.deploy)
+				const result = yield* runTask(
+					test_canister_install_mode.children.deploy,
+				)
 				return result
 			}),
 		)
@@ -591,7 +593,7 @@ describe("custom builder", () => {
 			test_canister,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
 
 		// First deploy the canister
 		await runtime.runPromise(
@@ -631,7 +633,7 @@ describe("custom builder", () => {
 			test_canister,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
 
 		// Deploy the canister first
 		await runtime.runPromise(
@@ -672,7 +674,7 @@ describe("custom builder", () => {
 		const taskTree = {
 			test_canister,
 		}
-		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
 
 		const res = await runtime.runPromise(
 			Effect.gen(function* () {
@@ -751,7 +753,7 @@ describe("custom builder", () => {
 			dependent_canister,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
 
 		await expect(
 			runtime.runPromise(
@@ -768,7 +770,7 @@ describe("custom builder", () => {
 	it("should handle complex branching with multiple dependencies", async () => {
 		const executionOrder: Array<string> = []
 
-		const root_canister = customCanister({
+		const branching_root_canister = customCanister({
 			wasm: path.resolve(__dirname, "../fixtures/canister/example.wasm"),
 			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
 		})
@@ -778,15 +780,12 @@ describe("custom builder", () => {
 			})
 			.make()
 
-		const branch1_canister = customCanister({
+		const branching_branch1_canister = customCanister({
 			wasm: path.resolve(__dirname, "../fixtures/canister/example.wasm"),
 			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
 		})
-			.dependsOn({
-				root_canister,
-			})
 			.deps({
-				root_canister,
+				branching_root_canister,
 			})
 			.installArgs(async ({ ctx, deps }) => {
 				executionOrder.push("branch1")
@@ -794,15 +793,12 @@ describe("custom builder", () => {
 			})
 			.make()
 
-		const branch2_canister = customCanister({
+		const branching_branch2_canister = customCanister({
 			wasm: path.resolve(__dirname, "../fixtures/canister/example.wasm"),
 			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
 		})
-			.dependsOn({
-				root_canister,
-			})
 			.deps({
-				root_canister,
+				branching_root_canister,
 			})
 			.installArgs(async ({ ctx, deps }) => {
 				executionOrder.push("branch2")
@@ -810,17 +806,13 @@ describe("custom builder", () => {
 			})
 			.make()
 
-		const convergence_canister = customCanister({
+		const branching_convergence_canister = customCanister({
 			wasm: path.resolve(__dirname, "../fixtures/canister/example.wasm"),
 			candid: path.resolve(__dirname, "../fixtures/canister/example.did"),
 		})
-			.dependsOn({
-				branch1_canister,
-				branch2_canister,
-			})
 			.deps({
-				branch1_canister,
-				branch2_canister,
+				branching_branch1_canister,
+				branching_branch2_canister,
 			})
 			.installArgs(async ({ ctx, deps }) => {
 				executionOrder.push("convergence")
@@ -829,23 +821,24 @@ describe("custom builder", () => {
 			.make()
 
 		const taskTree = {
-			root_canister,
-			branch1_canister,
-			branch2_canister,
-			convergence_canister,
+			branching_root_canister,
+			branching_branch1_canister,
+			branching_branch2_canister,
+			branching_convergence_canister,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime({}, taskTree)
+		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
 				const result = yield* runTask(
-					convergence_canister.children.deploy,
+					branching_convergence_canister.children.deploy,
 				)
 				return result
 			}),
 		)
 
+        console.log(executionOrder)
 		// Root should be first, convergence should be last
 		expect(executionOrder[0]).toBe("root")
 		expect(executionOrder[3]).toBe("convergence")

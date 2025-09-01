@@ -16,6 +16,7 @@ cursor/**
 .vscode/**
 **/.vscode
 **/.ice
+**/.ice_test*
 
 **/.cursorrules
 **/.cursorignore

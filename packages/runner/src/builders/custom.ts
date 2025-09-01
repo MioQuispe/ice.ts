@@ -174,10 +174,10 @@ export const makeCustomDeployTask = <_SERVICE>(
 						.split(":")
 						.slice(0, -1)
 						.join(":")
-					const canisterConfig = yield* resolveConfig(
-						taskCtx,
-						canisterConfigOrFn,
-					)
+					// const canisterConfig = yield* resolveConfig(
+					// 	taskCtx,
+					// 	canisterConfigOrFn,
+					// )
 					// TODO: include this in taskCtx instead? as { scope }
 					const parentScope = (yield* getNodeByPath(
 						taskCtx,
@@ -187,7 +187,6 @@ export const makeCustomDeployTask = <_SERVICE>(
 					const taskArgs = args as DeployTaskArgs
 					// const mode = yield* resolveMode()
 
-					// TODO: default doesnt work for mode?
 					yield* Effect.logDebug("deploy taskArgs:", taskArgs)
 					const result = yield* Effect.all(
 						[
@@ -263,12 +262,11 @@ export const makeCustomDeployTask = <_SERVICE>(
 					// TODO: this requires create, because some have canisterId hardcoded?
 					// nope, what about dynamic canister ids? these arent checked?
 					// TODO: canister installed, but cache deleted. should use reinstall, not install
-					yield* Effect.logDebug("taskArgs pre-install:", taskArgs)
 					const mode =
 						taskArgs.mode === "auto"
 							? yield* resolveMode(taskCtx, canisterId)
 							: taskArgs.mode
-					yield* Effect.logDebug("deploy mode:", mode)
+					yield* Effect.logDebug("resolved deploy mode:", mode)
 
 					yield* Effect.logDebug("Now running install task", {
 						canisterId,

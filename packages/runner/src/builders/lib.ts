@@ -41,27 +41,34 @@ import { CustomCanisterConfig, deployParams } from "./custom.js"
 import { Moc } from "../services/moc.js"
 import { type TaskCtxShape } from "../services/taskCtx.js"
 import { configLayer } from "../services/config.js"
+import { IceDir } from "../services/iceDir.js"
+
+const IceDirLayer = IceDir.Live({ iceDirName: ".ice" }).pipe(
+	Layer.provide(NodeContext.layer),
+	Layer.provide(configLayer),
+)
 
 const baseLayer = Layer.mergeAll(
 	NodeContext.layer,
 	Moc.Live.pipe(Layer.provide(NodeContext.layer)),
 	// taskLayer,
 	// TODO: move to taskctx
-	// CanisterIdsService.Live.pipe(
-	// 	Layer.provide(NodeContext.layer),
-	// 	Layer.provide(configLayer),
-	// ),
-	CanisterIdsService.Test,
+	CanisterIdsService.Live.pipe(
+		Layer.provide(NodeContext.layer),
+		Layer.provide(configLayer),
+		Layer.provide(IceDirLayer),
+	),
+	// CanisterIdsService.Test,
 	configLayer,
 	// telemetryLayer,
 	// DefaultsLayer,
-	// CLIFlagsLayer,
 	// TaskArgsLayer,
 	// ICEConfigLayer,
 	// TaskCtxLayer,
 	Logger.pretty,
 	Logger.minimumLogLevel(LogLevel.Debug),
 )
+// TODO: allow customizing for tests
 export const builderRuntime = ManagedRuntime.make(baseLayer)
 
 export class TaskError extends Data.TaggedError("TaskError")<{

@@ -13,8 +13,8 @@ import {
 	Match,
 	Metric,
 	Option,
+	pipe,
 } from "effect"
-import { CLIFlags } from "../services/cliFlags.js"
 import {
 	DefaultConfig,
 	InitializedDefaultConfig,
@@ -35,6 +35,7 @@ import type {
 } from "../types/types.js"
 import { makeTaskCtx, type TaskCtxShape } from "../services/taskCtx.js"
 import { TaskRunnerContext } from "../services/taskRunner.js"
+import { InFlight } from "../services/inFlight.js"
 
 export type ParamsToArgs<
 	Params extends Record<string, NamedParam | PositionalParam>,
@@ -165,7 +166,7 @@ export class TaskArgsParseError extends Data.TaggedError("TaskArgsParseError")<{
 }> {}
 
 // Helper function to validate a single parameter
-const resolveArg = <T = unknown>(
+export const resolveArg = <T = unknown>(
 	param: PositionalParam<T> | NamedParam<T>, // Adjust type as per your actual schema structure
 	arg: unknown | undefined,
 ): Effect.Effect<T | undefined, TaskArgsParseError> => {
@@ -201,40 +202,39 @@ const resolveArg = <T = unknown>(
 	return Effect.succeed(result.value)
 }
 
-const resolveCliArg = <T = unknown>(
-	param: NamedParam<T> | PositionalParam<T>,
-	arg: string | undefined,
-): Effect.Effect<T | undefined, TaskArgsParseError> => {
-	if (arg === undefined && param.isOptional) {
-		return Effect.succeed(param.default)
-	}
-	if (arg === undefined) {
-		return Effect.fail(
-			new TaskArgsParseError({
-				message: `Missing argument for ${param.name}, arg: ${arg}, param: ${JSON.stringify(param)}`,
-			}),
-		)
-	}
-	const parsedArg = param.parse(arg)
-	// return Effect.succeed(arg)
-	return resolveArg<T>(param, parsedArg)
-}
+// const resolveCliArg = <T = unknown>(
+// 	param: NamedParam<T> | PositionalParam<T>,
+// 	arg: string | undefined,
+// ): Effect.Effect<T | undefined, TaskArgsParseError> => {
+// 	if (arg === undefined && param.isOptional) {
+// 		return Effect.succeed(param.default)
+// 	}
+// 	if (arg === undefined) {
+// 		return Effect.fail(
+// 			new TaskArgsParseError({
+// 				message: `Missing argument for ${param.name}, arg: ${arg}, param: ${JSON.stringify(param)}`,
+// 			}),
+// 		)
+// 	}
+// 	const parsedArg = param.parse(arg)
+// 	// return Effect.succeed(arg)
+// 	return resolveArg<T>(param, parsedArg)
+// }
 
 export const resolveArgsMap = (
 	task: Task & { args?: Record<string, unknown> },
 ) =>
 	Effect.gen(function* () {
 		let argsMap: Record<string, unknown> = {}
-		const { globalArgs, taskArgs: cliTaskArgs } = yield* CLIFlags
 		const { isRootTask } = yield* TaskRunnerContext
 		// if (isRootTask && cliTaskArgs) {
 
 		// }
 		// breaks if dynamic call with empty args
 
-		const hasCliTaskArgs =
-			Boolean(Object.keys(cliTaskArgs.namedArgs).length) ||
-			Boolean(cliTaskArgs.positionalArgs.length)
+		// const hasCliTaskArgs =
+		// 	Boolean(Object.keys(cliTaskArgs.namedArgs).length) ||
+		// 	Boolean(cliTaskArgs.positionalArgs.length)
 
 		// if (isRootTask && hasCliTaskArgs) {
 		//     // TODO: check params. not args.
@@ -285,52 +285,68 @@ export const resolveArgsMap = (
 		// 	}
 		// }
 
-		if (isRootTask && hasCliTaskArgs) {
-			// TODO: check params. not args.
+		// if (isRootTask && hasCliTaskArgs) {
+		// 	// TODO: check params. not args.
 
-			// convert cliTaskArgs to argsMap
-			for (const [paramName, param] of Object.entries(task.namedParams)) {
-				const arg = cliTaskArgs.namedArgs[paramName]
+		// 	// convert cliTaskArgs to argsMap
+		// 	for (const [paramName, param] of Object.entries(task.namedParams)) {
+		// 		const arg = cliTaskArgs.namedArgs[paramName]
 
-				if (!arg && !param.isOptional) {
-					return yield* Effect.fail(
-						new TaskArgsParseError({
-							message: `Missing parameter: ${paramName}`,
-						}),
-					)
-				}
-				const resolvedArg = yield* resolveCliArg(param, arg)
-				argsMap[paramName] = resolvedArg
+		// 		if (!arg && !param.isOptional) {
+		// 			return yield* Effect.fail(
+		// 				new TaskArgsParseError({
+		// 					message: `Missing parameter: ${paramName}`,
+		// 				}),
+		// 			)
+		// 		}
+		// 		const resolvedArg = yield* resolveCliArg(param, arg)
+		// 		argsMap[paramName] = resolvedArg
+		// 	}
+		// 	for (const [index, param] of task.positionalParams.entries()) {
+		// 		const arg = cliTaskArgs.positionalArgs[index]
+		// 		if (!arg && !param.isOptional) {
+		// 			return yield* Effect.fail(
+		// 				new TaskArgsParseError({
+		// 					message: `Missing positional parameter: ${index}`,
+		// 				}),
+		// 			)
+		// 		}
+		// 		const resolvedArg = yield* resolveCliArg(param, arg)
+		// 		argsMap[param.name] = resolvedArg
+		// 	}
+		// } else {
+		// 	// TODO: we need to check all params. not args. because they may be empty
+		// 	// and we still want the default values
+		// 	// dynamic calls from other tasks
+		// 	const paramsArray = Object.entries(task.params)
+		// 	for (const [paramName, param] of paramsArray) {
+		// 		const arg = task.args?.[paramName]
+		// 		if (!arg && !param.isOptional) {
+		// 			return yield* Effect.fail(
+		// 				new TaskArgsParseError({
+		// 					message: `Missing parameter: ${paramName}`,
+		// 				}),
+		// 			)
+		// 		}
+		// 		const resolvedArg = yield* resolveArg(param, arg)
+		// 		argsMap[paramName] = resolvedArg
+		// 	}
+		// }
+		// TODO: we need to check all params. not args. because they may be empty
+		// and we still want the default values
+		// dynamic calls from other tasks
+		const paramsArray = Object.entries(task.params)
+		for (const [paramName, param] of paramsArray) {
+			const arg = task.args?.[paramName]
+			if (!arg && !param.isOptional) {
+				return yield* Effect.fail(
+					new TaskArgsParseError({
+						message: `Missing parameter: ${paramName}`,
+					}),
+				)
 			}
-			for (const [index, param] of task.positionalParams.entries()) {
-				const arg = cliTaskArgs.positionalArgs[index]
-				if (!arg && !param.isOptional) {
-					return yield* Effect.fail(
-						new TaskArgsParseError({
-							message: `Missing positional parameter: ${index}`,
-						}),
-					)
-				}
-				const resolvedArg = yield* resolveCliArg(param, arg)
-				argsMap[param.name] = resolvedArg
-			}
-		} else {
-			// TODO: we need to check all params. not args. because they may be empty
-			// and we still want the default values
-			// dynamic calls from other tasks
-			const paramsArray = Object.entries(task.params)
-			for (const [paramName, param] of paramsArray) {
-				const arg = task.args?.[paramName]
-				if (!arg && !param.isOptional) {
-					return yield* Effect.fail(
-						new TaskArgsParseError({
-							message: `Missing parameter: ${paramName}`,
-						}),
-					)
-				}
-				const resolvedArg = yield* resolveArg(param, arg)
-				argsMap[paramName] = resolvedArg
-			}
+			const resolvedArg = yield* resolveArg(param, arg)
+			argsMap[paramName] = resolvedArg
 		}
 
 		return argsMap
@@ -533,46 +549,8 @@ export const makeTaskEffects = Effect.fn("make_task_effects")(function* (
 	tasks: (Task & { args: Record<string, unknown> })[],
 	progressCb: (update: ProgressUpdate<unknown>) => void = () => {},
 ) {
-	const defaultConfig = yield* DefaultConfig
-	// const appDir = yield* Config.string("APP_DIR")
-	// const iceDir = yield* Config.string("ICE_DIR_NAME")
 	const taskRegistry = yield* TaskRegistry
-	const { config } = yield* ICEConfigService
-	const { globalArgs, taskArgs: cliTaskArgs } = yield* CLIFlags
-	const currentNetwork = globalArgs.network ?? "local"
-	const currentNetworkConfig =
-		config?.networks?.[currentNetwork] ??
-		defaultConfig.networks[currentNetwork]
-	const currentReplica = currentNetworkConfig?.replica
-	if (!currentReplica) {
-		return yield* Effect.fail(
-			new TaskRuntimeError({
-				message: `No replica found for network: ${currentNetwork}`,
-			}),
-		)
-	}
-	const currentUsers = config?.users ?? {}
-	const networks = config?.networks ?? defaultConfig.networks
-	// TODO: merge with defaultConfig.roles
-
-	const initializedRoles: Record<string, ICEUser> = {}
-	for (const [name, user] of Object.entries(config?.roles ?? {})) {
-		if (!currentUsers[user]) {
-			return yield* Effect.fail(
-				new TaskRuntimeError({
-					message: `User ${user} not found in current users`,
-				}),
-			)
-		}
-		initializedRoles[name] = currentUsers[user]
-	}
-
-	const resolvedRoles: {
-		[key: string]: ICEUser
-	} & InitializedDefaultConfig["roles"] = {
-		...defaultConfig.roles,
-		...initializedRoles,
-	}
+	const inflightTasks = yield* InFlight
 
 	// Create a deferred for every task to hold its eventual result.
 	const deferredMap = new Map<
@@ -628,231 +606,226 @@ export const makeTaskEffects = Effect.fn("make_task_effects")(function* (
 				dependencyResults,
 				progressCb,
 			)
-			// TODO: simplify?
-			let result: unknown
-			let cacheKey: Option.Option<string> = Option.none()
 
 			const maybeCachedTask = isCachedTask(task)
 
 			yield* Effect.annotateCurrentSpan({
 				isCached: Option.isSome(maybeCachedTask),
 			})
-			if (Option.isSome(maybeCachedTask)) {
-				yield* cachedTaskCount(Effect.succeed(1))
-				const cachedTask = maybeCachedTask.value
-				const input = yield* Effect.tryPromise({
-					try: () => cachedTask.input(taskCtx),
-					catch: (error) => {
-						return new TaskRuntimeError({
-							message: "Error getting cached task input",
-							error,
+			return yield* Option.match(maybeCachedTask, {
+				onSome: (cachedTask) =>
+					Effect.gen(function* () {
+						const input = yield* Effect.tryPromise({
+							try: () => cachedTask.input(taskCtx),
+							catch: (error) => {
+								return new TaskRuntimeError({
+									message: "Error getting cached task input",
+									error,
+								})
+							},
 						})
-					},
-				})
 
-				cacheKey = Option.some(cachedTask.computeCacheKey(input))
+						let cacheKey: string = cachedTask.computeCacheKey(input)
 
-				const isCacheValid =
-					"revalidate" in cachedTask
-						? yield* Effect.tryPromise({
-								try: () =>
-									cachedTask.revalidate!(taskCtx, { input }),
+						const maybeInflight = yield* inflightTasks.get(cacheKey)
+
+						if (Option.isSome(maybeInflight)) {
+							const inflight = maybeInflight.value
+							const result = yield* Deferred.await(inflight).pipe(
+								Effect.catchAll((error) => {
+									return new TaskRuntimeError({
+										message: "Error awaiting inflight task",
+										error,
+									})
+								}),
+							)
+							return {
+								cacheKey,
+								result,
+								taskId: task.id,
+								taskPath,
+							}
+						}
+
+                        // we want to do it after deduping
+						yield* cachedTaskCount(Effect.succeed(1))
+
+						const inFlightDef = yield* Deferred.make<
+							unknown,
+							unknown
+						>()
+						yield* inflightTasks.set(cacheKey, inFlightDef)
+
+						const isCacheValid =
+							"revalidate" in cachedTask
+								? yield* Effect.tryPromise({
+										try: () =>
+											cachedTask.revalidate!(taskCtx, {
+												input,
+											}),
+										catch: (error) => {
+											return new TaskRuntimeError({
+												message:
+													"Error revalidating cached task",
+												error,
+											})
+										},
+									})
+								: true
+
+						const cacheHit =
+							isCacheValid && (yield* taskRegistry.has(cacheKey))
+
+						yield* Effect.annotateCurrentSpan({
+							cacheHit: cacheHit,
+						})
+
+						if (cacheHit) {
+							yield* cacheHitCount(Effect.succeed(1))
+							yield* Effect.logDebug(
+								`Cache hit for cacheKey: ${cacheKey}`,
+							)
+							const encodingFormat = cachedTask.encodingFormat
+							const maybeResult = yield* taskRegistry.get(
+								cacheKey,
+								encodingFormat,
+							)
+							yield* Effect.annotateCurrentSpan({
+								decoding: Option.isSome(maybeResult),
+							})
+							if (Option.isSome(maybeResult)) {
+								const encodedResult = maybeResult.value
+								yield* Effect.logDebug(
+									"decoding result:",
+									encodedResult,
+								)
+								const decodedResult = yield* Effect.tryPromise({
+									try: () =>
+										cachedTask.decode(
+											taskCtx,
+											encodedResult,
+											input,
+										),
+									catch: (error) => {
+										return new TaskRuntimeError({
+											message:
+												"Error decoding cached task",
+											error,
+										})
+									},
+								})
+								const result = decodedResult
+								yield* Effect.logDebug(
+									"decoded result:",
+									decodedResult,
+								)
+								yield* Deferred.succeed(inFlightDef, result)
+								yield* inflightTasks.remove(cacheKey)
+								return {
+									cacheKey,
+									result,
+									taskId: task.id,
+									taskPath,
+								}
+							} else {
+								// TODO: reading cache failed, why would this happen?
+								// get rid of this and just throw?
+								return yield* Effect.fail(
+									new TaskRuntimeError({
+										message:
+											"Cache hit, but failed to read cache",
+									}),
+								)
+							}
+						} else {
+							const result = yield* Effect.tryPromise({
+								try: () => cachedTask.effect(taskCtx),
 								catch: (error) => {
 									return new TaskRuntimeError({
-										message:
-											"Error revalidating cached task",
+										message: "Error executing cached task",
 										error,
 									})
 								},
 							})
-						: true
-
-				const cacheHit =
-					isCacheValid &&
-					Option.isSome(cacheKey) &&
-					(yield* taskRegistry.has(cacheKey.value))
-
-				yield* Effect.annotateCurrentSpan({
-					cacheHit: cacheHit,
-				})
-				if (
-					// stupid typescript cant infer if we dont inline
-					isCacheValid &&
-					Option.isSome(cacheKey) &&
-					(yield* taskRegistry.has(cacheKey.value))
-				) {
-					yield* cacheHitCount(Effect.succeed(1))
-					yield* Effect.logDebug(
-						`Cache hit for cacheKey: ${cacheKey}`,
-					)
-					const encodingFormat = cachedTask.encodingFormat
-					const maybeResult = yield* taskRegistry.get(
-						cacheKey.value,
-						encodingFormat,
-					)
-					yield* Effect.annotateCurrentSpan({
-						decoding: Option.isSome(maybeResult),
-					})
-					if (Option.isSome(maybeResult)) {
-						const encodedResult = maybeResult.value
-						yield* Effect.logDebug(
-							"decoding result:",
-							encodedResult,
-						)
-						const decodedResult = yield* Effect.tryPromise({
-							try: () =>
-								cachedTask.decode(
-									taskCtx,
-									encodedResult,
-									input,
-								),
-							catch: (error) => {
-								return new TaskRuntimeError({
-									message: "Error decoding cached task",
-									error,
-								})
-							},
-						})
-						result = decodedResult
-						yield* Effect.logDebug("decoded result:", decodedResult)
-					} else {
-						// TODO: reading cache failed, why would this happen?
-						// get rid of this and just throw?
-						return yield* Effect.fail(
-							new TaskRuntimeError({
-								message: "Cache hit, but failed to read cache",
-							}),
-						)
-						// TODO: this is a problem.
-						// we shouldnt be able to get here.
-						// result = Option.some(
-						// 	yield* cachedTask.effect.pipe(
-						// 		Effect.provide(taskLayer),
-						// 		Effect.catchAll((error) =>
-						// 			logDetailedError(
-						// 				error,
-						// 				taskCtx,
-						// 				"cached task effect()",
-						// 			),
-						// 		),
-						// 	),
-						// )
-					}
-				} else {
-					result = yield* Effect.tryPromise({
-						try: () => cachedTask.effect(taskCtx),
-						catch: (error) => {
-							return new TaskRuntimeError({
-								message: "Error executing cached task",
-								error,
+							// TODO: fix. maybe not json stringify?
+							yield* Effect.annotateCurrentSpan({
+								encoding: result,
 							})
-						},
-					})
-					// if (Option.isNone(result)) {
-					// 	yield* Effect.logDebug("No result for task", taskPath)
-					// 	return yield* Effect.fail(
-					// 		new TaskRuntimeError({
-					// 			message: `No result for task ${taskPath}`,
-					// 		}),
-					// 	)
-					// }
-					// TODO: fix. maybe not json stringify?
-					yield* Effect.annotateCurrentSpan({
-						encoding: result,
-					})
-					if (Option.isSome(cacheKey)) {
-						yield* Effect.logDebug("encoding result:", result)
-						// stupid typescript cant infer otherwise........
-						const value = result
-						const encodedResult = yield* Effect.tryPromise({
-							try: () => cachedTask.encode(taskCtx, value, input),
+							yield* Effect.logDebug("encoding result:", result)
+							const encodedResult = yield* Effect.tryPromise({
+								try: () =>
+									cachedTask.encode(taskCtx, result, input),
+								catch: (error) => {
+									return new TaskRuntimeError({
+										message: "Error encoding cached task",
+										error,
+									})
+								},
+							})
+							yield* Effect.logDebug(
+								"encoded result",
+								"with type:",
+								typeof encodedResult,
+								"with value:",
+								encodedResult,
+							)
+							yield* taskRegistry.set(cacheKey, encodedResult)
+							yield* Deferred.succeed(inFlightDef, result)
+							yield* inflightTasks.remove(cacheKey)
+							return {
+								cacheKey,
+								result,
+								taskId: task.id,
+								taskPath,
+							}
+						}
+					}),
+				onNone: () =>
+					Effect.gen(function* () {
+						yield* uncachedTaskCount(Effect.succeed(1))
+						const result = yield* Effect.tryPromise({
+							try: () => task.effect(taskCtx),
 							catch: (error) => {
 								return new TaskRuntimeError({
-									message: "Error encoding cached task",
+									message: "Error executing task",
 									error,
 								})
 							},
 						})
-						yield* Effect.logDebug(
-							"encoded result",
-							"with type:",
-							typeof encodedResult,
-							"with value:",
-							encodedResult,
-						)
-						yield* taskRegistry.set(cacheKey.value, encodedResult)
-					} else {
-						// ????
-						yield* Effect.logDebug(
-							"Encoded, but no cache key for task",
+						return {
+							cacheKey: undefined,
+							result,
+							taskId: task.id,
 							taskPath,
-							"so not caching result",
-						)
+						}
+					}),
+			})
+		})().pipe(
+			Effect.flatMap((taskResult) =>
+				Effect.gen(function* () {
+					// TODO: updates from the task effect? pass in cb?
+					const currentDeferred = deferredMap.get(taskResult.taskId)
+					if (currentDeferred) {
+						yield* Deferred.succeed(currentDeferred, taskResult)
 					}
-				}
-			} else {
-				yield* uncachedTaskCount(Effect.succeed(1))
-				result = yield* Effect.tryPromise({
-					try: () => task.effect(taskCtx),
-					catch: (error) => {
-						return new TaskRuntimeError({
-							message: "Error executing task",
-							error,
-						})
-					},
-				})
-			}
 
-			// if (Option.isNone(result)) {
-			// 	yield* Effect.logDebug("No result for task", taskPath)
-			// 	return yield* Effect.fail(
-			// 		new TaskRuntimeError({
-			// 			message: `No result for task ${taskPath}`,
-			// 		}),
-			// 	)
-			// }
-			if (Option.isNone(cacheKey)) {
-				yield* Effect.logDebug(
-					"No cache key for task, skipped caching",
-					taskPath,
-				)
-				// TODO: how do we handle this?
-				// return yield* Effect.fail(
-				// 	new Error(`No cache key for task ${taskPath}`),
-				// )
-			}
+					// TODO: yield instead?
+					progressCb({
+						taskId: task.id,
+						taskPath: taskResult.taskPath,
+						status: "completed",
+						result: taskResult.result,
+					})
 
-			// TODO: updates from the task effect? pass in cb?
-			const currentDeferred = deferredMap.get(task.id)
-			if (currentDeferred) {
-				yield* Deferred.succeed(currentDeferred, {
-					cacheKey: Option.isSome(cacheKey)
-						? cacheKey.value
-						: undefined,
-					result: result,
-				})
-			}
-
-			// TODO: yield instead?
-			progressCb({
-				taskId: task.id,
-				taskPath,
-				status: "completed",
-				result: result,
-				// TODO: pass in cacheKey? probably not needed
-			})
-
-			yield* Effect.annotateCurrentSpan({
-				result: result,
-			})
-			yield* totalTaskCount(Effect.succeed(1))
-			return {
-				taskId: task.id,
-				taskPath,
-				result: result,
-				// TODO: pass in cacheKey? probably not needed
-			}
-		})(),
+					yield* Effect.annotateCurrentSpan({
+						result: taskResult.result,
+					})
+					// TODO: dont set for deduplicated tasks?
+					yield* totalTaskCount(Effect.succeed(1))
+					return taskResult
+				}),
+			),
+		),
 	)
 	return taskEffects
 })

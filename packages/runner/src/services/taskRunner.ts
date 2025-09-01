@@ -21,7 +21,6 @@ import { NodeContext } from "@effect/platform-node"
 import { type } from "arktype"
 import { Logger, Tracer } from "effect"
 import fs from "node:fs"
-import { CLIFlags } from "./cliFlags.js"
 import { NodeSdk as OpenTelemetryNodeSdk } from "@effect/opentelemetry"
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
@@ -40,6 +39,7 @@ import { TelemetryConfig } from "./telemetryConfig.js"
 import { makeTelemetryLayer } from "./telemetryConfig.js"
 import { KeyValueStore } from "@effect/platform"
 import { IceDir } from "./iceDir.js"
+import { InFlight } from "./inFlight.js"
 
 type TaskReturnValue<T extends Task> = ReturnType<T["effect"]>
 
@@ -98,9 +98,6 @@ export const TaskRunnerLive = () =>
 				picReplicaImpl,
 			).pipe(Layer.provide(NodeContext.layer))
 			// TODO: dont pass down to child tasks
-			const CLIFlagsService = yield* CLIFlags
-			const { globalArgs, taskArgs } = CLIFlagsService
-			const CLIFlagsLayer = Layer.succeed(CLIFlags, CLIFlagsService)
 			const ICEConfig = yield* ICEConfigService
 			const ICEConfigLayer = Layer.succeed(ICEConfigService, ICEConfig)
 			const iceDir = yield* IceDir
@@ -117,6 +114,8 @@ export const TaskRunnerLive = () =>
 				KeyValueStore.KeyValueStore,
 				KV,
 			)
+			const InFlightService = yield* InFlight
+			const InFlightLayer = Layer.succeed(InFlight, InFlightService)
 
 			const CanisterIds = yield* CanisterIdsService
 			const CanisterIdsLayer = Layer.succeed(
@@ -125,35 +124,32 @@ export const TaskRunnerLive = () =>
 			)
 
 			const taskRuntime = ManagedRuntime.make(
-				Layer.provideMerge(
-					Layer.mergeAll(
-						telemetryLayer,
-						NodeContext.layer,
-						TaskRegistry.Live,
-						DefaultReplicaService,
-						DefaultConfig.Live.pipe(
-							Layer.provide(DefaultReplicaService),
-						),
-						Moc.Live,
-						CanisterIdsLayer,
-						// DevTools.layerWebSocket().pipe(
-						// 	Layer.provide(NodeSocket.layerWebSocketConstructor),
-						// ),
-						CLIFlagsLayer,
-						ICEConfigLayer,
-						telemetryConfigLayer,
-						Logger.pretty,
-						Logger.minimumLogLevel(
-							logLevelMap[globalArgs.logLevel],
-						),
+				Layer.mergeAll(
+					telemetryLayer,
+					NodeContext.layer,
+					TaskRegistry.Live.pipe(
+                        Layer.provide(KVStorageLayer),
+                    ),
+					DefaultReplicaService,
+					DefaultConfig.Live.pipe(
+						Layer.provide(DefaultReplicaService),
 					),
-					Layer.mergeAll(
-						// 	TODO: find better way. the layer should be injected instead
-						IceDirLayer,
-						KVStorageLayer,
-						configLayer,
-						NodeContext.layer,
-					),
+					Moc.Live.pipe(
+                        Layer.provide(NodeContext.layer),
+                    ),
+					CanisterIdsLayer,
+					// DevTools.layerWebSocket().pipe(
+					// 	Layer.provide(NodeSocket.layerWebSocketConstructor),
+					// ),
+					ICEConfigLayer,
+					telemetryConfigLayer,
+					Logger.pretty,
+					Logger.minimumLogLevel(ICEConfig.globalArgs.logLevel),
+					InFlightLayer,
+					IceDirLayer,
+					KVStorageLayer,
+					configLayer,
+					NodeContext.layer,
 				),
 			)
 			return {

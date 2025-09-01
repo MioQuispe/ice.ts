@@ -16,7 +16,6 @@ import {
 	TaskSuccess,
 } from "../tasks/lib.js"
 import type { ICEUser, Task, TaskTree } from "../types/types.js"
-import { CLIFlags } from "./cliFlags.js"
 import { DefaultConfig, InitializedDefaultConfig } from "./defaultConfig.js"
 import { ICEConfigService } from "./iceConfig.js"
 import { TaskRunner, TaskRunnerContext } from "./taskRunner.js"
@@ -166,8 +165,7 @@ export const makeTaskCtx = Effect.fn("taskCtx_make")(function* (
 	const defaultConfig = yield* DefaultConfig
 	const appDir = yield* Config.string("APP_DIR")
 	const { path: iceDir } = yield* IceDir
-	const { config } = yield* ICEConfigService
-	const { globalArgs, taskArgs: cliTaskArgs } = yield* CLIFlags
+	const { config, globalArgs } = yield* ICEConfigService
 	const currentNetwork = globalArgs.network ?? "local"
 	const currentNetworkConfig =
 		config?.networks?.[currentNetwork] ??
@@ -214,6 +212,7 @@ export const makeTaskCtx = Effect.fn("taskCtx_make")(function* (
 	return {
 		...defaultConfig,
 		taskPath,
+        // TODO: add caching?
 		// TODO: wrap with proxy?
 		// TODO: needs to use same runtime
 		// runTask: asyncRunTask,

@@ -33,23 +33,7 @@ import { FlatScrollableTaskTreeList } from "./components/scrollable-task-tree-li
 // 	DefaultsLayer,
 // 	ICEConfigService.Live.pipe(
 // 		Layer.provide(NodeContext.layer),
-// 		Layer.provide(
-// 			Layer.succeed(CLIFlags, {
-// 				globalArgs: { network: "local", logLevel: "debug" },
-// 				taskArgs: {
-// 					positionalArgs: [],
-// 					namedArgs: {},
-// 				},
-// 			}),
-// 		),
 // 	),
-// 	Layer.succeed(CLIFlags, {
-// 		globalArgs: { network: "local", logLevel: "debug" },
-// 		taskArgs: {
-// 			positionalArgs: [],
-// 			namedArgs: {},
-// 		},
-// 	}),
 // 	Layer.succeed(TaskArgsService, {
 // 		taskArgs: {},
 // 	}),
@@ -202,8 +186,7 @@ const ICEProvider: React.FC<{
 	})
 
 	const runTask = async (path: string[]) => {
-		// TODO: create taskArgs / cliflags layers here instead?
-		// makeRuntime?
+		// TODO: pass in cli args
 		await runtime.runPromise(runTaskByPath(path.join(":")))
 	}
 
