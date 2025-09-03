@@ -31,7 +31,7 @@ import {
 } from "../../src/tasks/lib.js"
 import { runTask, runTasks } from "../../src/tasks/run.js"
 import { ICEConfig, Task, TaskTree } from "../../src/types/types.js"
-import { makeTestRuntime } from "./setup.js"
+import { makeTaskRunner, makeTestEnv } from "./setup.js"
 
 // Not needed for now
 
@@ -182,10 +182,11 @@ describe("custom builder", () => {
 		const taskTree = {
 			test_canister,
 		}
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 		// const result = await runtime.runPromise()
 		const result = await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTask } = yield* makeTaskRunner(taskTree)
 				const result = yield* runTask(test_canister.children.deploy)
 				return result
 			}),
@@ -207,13 +208,11 @@ describe("custom builder", () => {
 			test_canister22: test_canister22,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime(
-			taskTree,
-			".ice_test_2",
-		)
+		const { runtime, telemetryExporter } = makeTestEnv(".ice_test_2")
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTask } = yield* makeTaskRunner(taskTree)
 				yield* runTask(test_canister22.children.deploy)
 			}),
 		)
@@ -274,11 +273,12 @@ describe("custom builder", () => {
 			canister2,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		// Deploy both canisters
 		const results = await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTask } = yield* makeTaskRunner(taskTree)
 				const result1 = yield* runTask(canister1.children.deploy)
 				const result2 = yield* runTask(canister2.children.deploy)
 				return [result1, result2]
@@ -331,10 +331,11 @@ describe("custom builder", () => {
 			main_canister,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		const result = await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTask } = yield* makeTaskRunner(taskTree)
 				// const result1 = yield* runTask(dependency_canister.children.deploy)
 				// TODO: deps dont work?
 				const result = yield* runTask(main_canister.children.deploy)
@@ -357,11 +358,12 @@ describe("custom builder", () => {
 			failing_canister,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		await expect(
 			runtime.runPromise(
 				Effect.gen(function* () {
+					const { runTask } = yield* makeTaskRunner(taskTree)
 					const result = yield* runTask(
 						failing_canister.children.deploy,
 					)
@@ -417,10 +419,11 @@ describe("custom builder", () => {
 			canister3,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTask } = yield* makeTaskRunner(taskTree)
 				const result = yield* runTask(canister3.children.deploy)
 				return result
 			}),
@@ -475,16 +478,17 @@ describe("custom builder", () => {
 			canister2,
 			canister3,
 		}
+		const tasks = [
+			canister1.children.deploy,
+			canister2.children.deploy,
+			canister3.children.deploy,
+		]
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
-				const tasks = [
-					canister1.children.deploy,
-					canister2.children.deploy,
-					canister3.children.deploy,
-				]
+				const { runTasks } = yield* makeTaskRunner(taskTree)
 				const results = yield* runTasks(
 					tasks.map((t) => ({
 						...t,
@@ -519,11 +523,12 @@ describe("custom builder", () => {
 			dynamic_canister,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		// First run with configVersion = 1
 		const firstResult = await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTask } = yield* makeTaskRunner(taskTree)
 				const result = yield* runTask(dynamic_canister.children.deploy)
 				return result
 			}),
@@ -540,6 +545,7 @@ describe("custom builder", () => {
 		// Second run should re-execute due to configuration change
 		const secondResult = await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTask } = yield* makeTaskRunner(taskTree)
 				const result = yield* runTask(dynamic_canister.children.deploy)
 				return result
 			}),
@@ -562,13 +568,11 @@ describe("custom builder", () => {
 		}
 
 		// Test with install mode
-		const { runtime, telemetryExporter } = makeTestRuntime(
-			taskTree,
-			".ice_test_install_mode",
-		)
+		const { runtime, telemetryExporter } = makeTestEnv(".ice_test_install_mode")
 
 		const result = await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTask } = yield* makeTaskRunner(taskTree)
 				const result = yield* runTask(
 					test_canister_install_mode.children.deploy,
 				)
@@ -593,11 +597,12 @@ describe("custom builder", () => {
 			test_canister,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		// First deploy the canister
 		await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTask } = yield* makeTaskRunner(taskTree)
 				const result = yield* runTask(test_canister.children.deploy)
 				return result
 			}),
@@ -606,6 +611,7 @@ describe("custom builder", () => {
 		// Then stop it
 		await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTask } = yield* makeTaskRunner(taskTree)
 				const result = yield* runTask(test_canister.children.stop)
 				return result
 			}),
@@ -614,6 +620,7 @@ describe("custom builder", () => {
 		// Then remove it
 		await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTask } = yield* makeTaskRunner(taskTree)
 				const result = yield* runTask(test_canister.children.remove)
 				return result
 			}),
@@ -633,11 +640,12 @@ describe("custom builder", () => {
 			test_canister,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		// Deploy the canister first
 		await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTask } = yield* makeTaskRunner(taskTree)
 				const result = yield* runTask(test_canister.children.deploy)
 				return result
 			}),
@@ -646,6 +654,7 @@ describe("custom builder", () => {
 		// Check status
 		const statusResult = await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTask } = yield* makeTaskRunner(taskTree)
 				const result = yield* runTask(test_canister.children.status)
 				return result
 			}),
@@ -674,10 +683,11 @@ describe("custom builder", () => {
 		const taskTree = {
 			test_canister,
 		}
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		const res = await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTask } = yield* makeTaskRunner(taskTree)
 				const { canisterId } = yield* runTask(
 					test_canister.children.deploy,
 				)
@@ -694,6 +704,7 @@ describe("custom builder", () => {
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTask } = yield* makeTaskRunner(taskTree)
 				const result = yield* runTask(test_canister.children.deploy, {
 					mode: "reinstall",
 					...canisterConfig,
@@ -711,6 +722,7 @@ describe("custom builder", () => {
 		await runtime.runPromise(
 			Effect.gen(function* () {
 				// TODO: it runs upgrade even though we set "reinstall"
+				const { runTask } = yield* makeTaskRunner(taskTree)
 				const result = yield* runTask(test_canister.children.deploy, {
 					mode: "reinstall",
 					...canisterConfig,
@@ -753,11 +765,12 @@ describe("custom builder", () => {
 			dependent_canister,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		await expect(
 			runtime.runPromise(
 				Effect.gen(function* () {
+					const { runTask } = yield* makeTaskRunner(taskTree)
 					const result = yield* runTask(
 						dependent_canister.children.deploy,
 					)
@@ -827,10 +840,11 @@ describe("custom builder", () => {
 			branching_convergence_canister,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTask } = yield* makeTaskRunner(taskTree)
 				const result = yield* runTask(
 					branching_convergence_canister.children.deploy,
 				)
@@ -838,7 +852,7 @@ describe("custom builder", () => {
 			}),
 		)
 
-        console.log(executionOrder)
+		console.log(executionOrder)
 		// Root should be first, convergence should be last
 		expect(executionOrder[0]).toBe("root")
 		expect(executionOrder[3]).toBe("convergence")

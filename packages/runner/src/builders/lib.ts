@@ -13,7 +13,8 @@ import {
 	Record,
 	Logger,
 	LogLevel,
-    ConfigProvider,
+	ConfigProvider,
+	Context,
 } from "effect"
 import { readFileSync, realpathSync } from "node:fs"
 import { stat } from "node:fs/promises"
@@ -38,21 +39,22 @@ import type { CachedTask, Task } from "../types/types.js"
 import { proxyActor } from "../utils/extension.js"
 import { ExtractArgsFromTaskParams } from "./task.js"
 import { CustomCanisterConfig, deployParams } from "./custom.js"
-import { Moc } from "../services/moc.js"
+import { Moc, MocError } from "../services/moc.js"
 import { type TaskCtxShape } from "../services/taskCtx.js"
 import { configLayer } from "../services/config.js"
 import { IceDir } from "../services/iceDir.js"
+import { ConfigError } from "effect/ConfigError"
+import { PlatformError } from "@effect/platform/Error"
 
 const IceDirLayer = IceDir.Live({ iceDirName: ".ice" }).pipe(
 	Layer.provide(NodeContext.layer),
 	Layer.provide(configLayer),
 )
-
 const baseLayer = Layer.mergeAll(
 	NodeContext.layer,
 	Moc.Live.pipe(Layer.provide(NodeContext.layer)),
 	// taskLayer,
-	// TODO: move to taskctx
+	// TODO: generic storage?
 	CanisterIdsService.Live.pipe(
 		Layer.provide(NodeContext.layer),
 		Layer.provide(configLayer),
@@ -68,8 +70,7 @@ const baseLayer = Layer.mergeAll(
 	Logger.pretty,
 	Logger.minimumLogLevel(LogLevel.Debug),
 )
-// TODO: allow customizing for tests
-export const builderRuntime = ManagedRuntime.make(baseLayer)
+export const defaultBuilderRuntime = ManagedRuntime.make(baseLayer)
 
 export class TaskError extends Data.TaggedError("TaskError")<{
 	message?: string
@@ -119,6 +120,7 @@ export type CreateConfig = {
 	canisterId?: string
 }
 export const makeCreateTask = <P extends Record<string, unknown>>(
+	runtime: ManagedRuntime.ManagedRuntime<unknown, unknown>,
 	canisterConfigOrFn:
 		| ((args: { ctx: TaskCtxShape; deps: P }) => Promise<CreateConfig>)
 		| ((args: { ctx: TaskCtxShape; deps: P }) => CreateConfig)
@@ -132,7 +134,7 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 		dependsOn: {},
 		dependencies: {},
 		effect: (taskCtx) =>
-			builderRuntime.runPromise(
+			runtime.runPromise(
 				Effect.fn("task_effect")(function* () {
 					const path = yield* Path.Path
 					const fs = yield* FileSystem.FileSystem
@@ -746,7 +748,9 @@ export function normalizeDepsMap(
 	)
 }
 
-export const makeStopTask = (): StopTask => {
+export const makeStopTask = (
+	builderRuntime: ManagedRuntime.ManagedRuntime<unknown, unknown>,
+): StopTask => {
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/stop"),
@@ -762,7 +766,10 @@ export const makeStopTask = (): StopTask => {
 						.slice(0, -1)
 						.join(":")
 					// TODO: handle error
-					const maybeCanisterId = yield* loadCanisterId(taskCtx, taskPath)
+					const maybeCanisterId = yield* loadCanisterId(
+						taskCtx,
+						taskPath,
+					)
 					if (Option.isNone(maybeCanisterId)) {
 						yield* Effect.logDebug(
 							`Canister ${canisterName} is not installed`,
@@ -806,7 +813,9 @@ export const makeStopTask = (): StopTask => {
 	} satisfies Task<void>
 }
 
-export const makeRemoveTask = (): RemoveTask => {
+export const makeRemoveTask = (
+	builderRuntime: ManagedRuntime.ManagedRuntime<unknown, unknown>,
+): RemoveTask => {
 	return {
 		_tag: "task",
 		id: Symbol("customCanister/remove"),
@@ -822,7 +831,10 @@ export const makeRemoveTask = (): RemoveTask => {
 						.slice(0, -1)
 						.join(":")
 					// TODO: handle error
-					const maybeCanisterId = yield* loadCanisterId(taskCtx, taskPath)
+					const maybeCanisterId = yield* loadCanisterId(
+						taskCtx,
+						taskPath,
+					)
 					if (Option.isNone(maybeCanisterId)) {
 						yield* Effect.logDebug(
 							`Canister ${canisterName} is not installed`,
@@ -855,7 +867,10 @@ export const makeRemoveTask = (): RemoveTask => {
 	} satisfies RemoveTask
 }
 
-export const makeCanisterStatusTask = (tags: string[]): StatusTask => {
+export const makeCanisterStatusTask = (
+	builderRuntime: ManagedRuntime.ManagedRuntime<unknown, unknown>,
+	tags: string[],
+): StatusTask => {
 	return {
 		_tag: "task",
 		// TODO: change
@@ -1161,6 +1176,7 @@ export const makeInstallTask = <
 	P extends Record<string, Task>,
 	_SERVICE,
 >(
+	builderRuntime: ManagedRuntime.ManagedRuntime<unknown, unknown>,
 	installArgsFn: (args: {
 		ctx: TaskCtxShape
 		deps: ExtractScopeSuccesses<D> & ExtractScopeSuccesses<P>
@@ -1296,7 +1312,9 @@ export const makeInstallTask = <
 							})
 						: yield* encodeArgs(initArgs as unknown[], canisterDID)
 
-					yield* Effect.logDebug("Loaded canister ID", { canisterId })
+					yield* Effect.logDebug("Loaded canister ID", {
+						canisterId,
+					})
 					const fs = yield* FileSystem.FileSystem
 
 					const canisterInfo = yield* replica.getCanisterInfo({
@@ -1335,8 +1353,8 @@ export const makeInstallTask = <
 						canisterId,
 						canisterName,
 						mode,
-                        actor,
-                        // TODO: plugin which transforms install tasks?
+						actor,
+						// TODO: plugin which transforms install tasks?
 						// actor: proxyActor(canisterName, actor),
 					}
 				})(),
@@ -1506,7 +1524,7 @@ export const makeInstallTask = <
 							}),
 					})
 					const actor = yield* replica.createActor<_SERVICE>({
-                        // canisterName,
+						// canisterName,
 						canisterId,
 						canisterDID,
 						identity,
@@ -1515,7 +1533,7 @@ export const makeInstallTask = <
 						mode,
 						canisterId,
 						canisterName,
-                        // TODO: plugin which transforms upgrade tasks?
+						// TODO: plugin which transforms upgrade tasks?
 						// actor: proxyActor(canisterName, actor),
 						actor,
 						encodedArgs,
@@ -1611,6 +1629,7 @@ export const makeUpgradeTask = <
 	P extends Record<string, Task>,
 	_SERVICE,
 >(
+	builderRuntime: ManagedRuntime.ManagedRuntime<unknown, unknown>,
 	upgradeArgsFn: (args: {
 		ctx: TaskCtxShape
 		deps: ExtractScopeSuccesses<D> & ExtractScopeSuccesses<P>
@@ -1746,7 +1765,9 @@ export const makeUpgradeTask = <
 								canisterDID,
 							)
 
-					yield* Effect.logDebug("Loaded canister ID", { canisterId })
+					yield* Effect.logDebug("Loaded canister ID", {
+						canisterId,
+					})
 					const fs = yield* FileSystem.FileSystem
 
 					const canisterInfo = yield* replica.getCanisterInfo({
@@ -1785,7 +1806,7 @@ export const makeUpgradeTask = <
 						canisterId,
 						canisterName,
 						mode: "upgrade" as const,
-                        // TODO: plugin which transforms upgrade tasks?
+						// TODO: plugin which transforms upgrade tasks?
 						// actor: proxyActor(canisterName, actor),
 						actor,
 					}
@@ -1957,7 +1978,7 @@ export const makeUpgradeTask = <
 						canisterName,
 						mode: "upgrade" as const,
 						actor,
-                        // TODO: plugin which transforms upgrade tasks?
+						// TODO: plugin which transforms upgrade tasks?
 						// actor: proxyActor(canisterName, actor),
 						encodedArgs,
 						args: upgradeArgs,

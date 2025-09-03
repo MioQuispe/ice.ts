@@ -1,4 +1,4 @@
-import { Effect, Record } from "effect"
+import { Effect, ManagedRuntime, Record } from "effect"
 import type { CachedTask, Task } from "../types/types.js"
 // import mo from "motoko"
 import { FileSystem, Path } from "@effect/platform"
@@ -20,7 +20,7 @@ import {
 	StopTask,
 	UpgradeTask,
 	ValidProvidedDeps,
-	builderRuntime,
+	defaultBuilderRuntime,
 } from "./lib.js"
 import { type TaskCtxShape } from "../services/taskCtx.js"
 import { getNodeByPath } from "../tasks/lib.js"
@@ -169,14 +169,13 @@ export type MotokoDeployTaskArgs = ParamsToArgs<typeof motokoDeployParams>
 
 export const makeMotokoDeployTask = <
 	_SERVICE,
-	P extends Record<string, unknown>,
 >(
+	builderRuntime: ManagedRuntime.ManagedRuntime<unknown, unknown>,
 	canisterConfigOrFn:
 		| ((args: {
 				ctx: TaskCtxShape
-				deps: P
 		  }) => Promise<MotokoCanisterConfig>)
-		| ((args: { ctx: TaskCtxShape; deps: P }) => MotokoCanisterConfig)
+		| ((args: { ctx: TaskCtxShape }) => MotokoCanisterConfig)
 		| MotokoCanisterConfig,
 ): MotokoDeployTask<_SERVICE> => {
 	return {
@@ -223,8 +222,8 @@ export const makeMotokoDeployTask = <
 									yield* Effect.logDebug(
 										"Now running create task",
 									)
-									const canisterId =
-										yield* Effect.tryPromise({
+									const canisterId = yield* Effect.tryPromise(
+										{
 											try: () =>
 												runTask(
 													parentScope.children.create,
@@ -235,7 +234,8 @@ export const makeMotokoDeployTask = <
 													message: String(error),
 												})
 											},
-										})
+										},
+									)
 									yield* Effect.logDebug(
 										"Finished running create task",
 									)
@@ -246,40 +246,37 @@ export const makeMotokoDeployTask = <
 									yield* Effect.logDebug(
 										"Now running build task",
 									)
-									const {
-										wasmPath,
-										candidPath,
-									} = yield* Effect.tryPromise({
-										try: () =>
-											runTask(
-												parentScope.children.build,
-												{},
-											),
-										catch: (error) => {
-											return new TaskError({
-												message: String(error),
-											})
-										},
-									})
+									const { wasmPath, candidPath } =
+										yield* Effect.tryPromise({
+											try: () =>
+												runTask(
+													parentScope.children.build,
+													{},
+												),
+											catch: (error) => {
+												return new TaskError({
+													message: String(error),
+												})
+											},
+										})
 									yield* Effect.logDebug(
 										"Now running bindings task",
 									)
-									const {
-										didJSPath,
-										didTSPath,
-									} = yield* Effect.tryPromise({
-										try: () =>
-											runTask(
-												parentScope.children.bindings,
-												{},
-											),
-										catch: (error) => {
-											return new TaskError({
-												message: String(error),
-											})
-										},
-									})
-                                    // TODO:!!!!!
+									const { didJSPath, didTSPath } =
+										yield* Effect.tryPromise({
+											try: () =>
+												runTask(
+													parentScope.children
+														.bindings,
+													{},
+												),
+											catch: (error) => {
+												return new TaskError({
+													message: String(error),
+												})
+											},
+										})
+									// TODO:!!!!!
 									return {
 										wasmPath,
 										candidPath,
@@ -364,7 +361,9 @@ const motokoBindingsParams = {
 		description: "Path to the candid file",
 	},
 }
-export const makeMotokoBindingsTask = (): MotokoBindingsTask => {
+export const makeMotokoBindingsTask = (
+	builderRuntime: ManagedRuntime.ManagedRuntime<unknown, unknown>,
+): MotokoBindingsTask => {
 	return {
 		_tag: "task",
 		id: Symbol("motokoCanister/bindings"),
@@ -484,6 +483,7 @@ export type MotokoBuildTask = CachedTask<
 >
 
 const makeMotokoBuildTask = <P extends Record<string, unknown>>(
+	builderRuntime: ManagedRuntime.ManagedRuntime<unknown, unknown>,
 	canisterConfigOrFn:
 		| ((args: {
 				ctx: TaskCtxShape
@@ -504,8 +504,10 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 					const path = yield* Path.Path
 					const fs = yield* FileSystem.FileSystem
 					const { appDir, iceDir, taskPath } = taskCtx
-					const canisterConfig =
-						yield* resolveConfig(taskCtx, canisterConfigOrFn)
+					const canisterConfig = yield* resolveConfig(
+						taskCtx,
+						canisterConfigOrFn,
+					)
 					const canisterName = taskPath
 						.split(":")
 						.slice(0, -1)
@@ -578,8 +580,10 @@ const makeMotokoBuildTask = <P extends Record<string, unknown>>(
 						dependencies,
 						(dep) => dep.cacheKey,
 					)
-					const canisterConfig =
-						yield* resolveConfig(taskCtx, canisterConfigOrFn)
+					const canisterConfig = yield* resolveConfig(
+						taskCtx,
+						canisterConfigOrFn,
+					)
 					const path = yield* Path.Path
 					const fs = yield* FileSystem.FileSystem
 					const srcDir = path.dirname(canisterConfig.src)
@@ -645,7 +649,12 @@ export class MotokoCanisterBuilder<
 	_SERVICE = unknown,
 > {
 	#scope: S
-	constructor(scope: S) {
+	#builderRuntime: ManagedRuntime.ManagedRuntime<unknown, unknown>
+	constructor(
+		builderRuntime: ManagedRuntime.ManagedRuntime<unknown, unknown>,
+		scope: S,
+	) {
+		this.#builderRuntime = builderRuntime
 		this.#scope = scope
 	}
 	create(
@@ -666,10 +675,14 @@ export class MotokoCanisterBuilder<
 			...this.#scope,
 			children: {
 				...this.#scope.children,
-				create: makeCreateTask<P>(canisterConfigOrFn, [Tags.MOTOKO]),
+				create: makeCreateTask<P>(
+					this.#builderRuntime,
+					canisterConfigOrFn,
+					[Tags.MOTOKO],
+				),
 			},
 		} satisfies MotokoCanisterScope<_SERVICE, I, U, D, P>
-		return new MotokoCanisterBuilder(updatedScope)
+		return new MotokoCanisterBuilder(this.#builderRuntime, updatedScope)
 	}
 
 	build(
@@ -690,10 +703,13 @@ export class MotokoCanisterBuilder<
 			...this.#scope,
 			children: {
 				...this.#scope.children,
-				build: makeMotokoBuildTask<P>(canisterConfigOrFn),
+				build: makeMotokoBuildTask<P>(
+					this.#builderRuntime,
+					canisterConfigOrFn,
+				),
 			},
 		} satisfies MotokoCanisterScope<_SERVICE, I, U, D, P>
-		return new MotokoCanisterBuilder(updatedScope)
+		return new MotokoCanisterBuilder(this.#builderRuntime, updatedScope)
 	}
 
 	installArgs(
@@ -732,7 +748,7 @@ export class MotokoCanisterBuilder<
 				D,
 				P,
 				_SERVICE
-			>(installArgsFn, { customEncode }),
+			>(this.#builderRuntime, installArgsFn, { customEncode }),
 			dependsOn,
 			dependencies: {
 				...dependencies,
@@ -748,9 +764,13 @@ export class MotokoCanisterBuilder<
 
 				// TODO: check in make instead?
 				upgrade: {
-					...makeUpgradeTask<I, D, P, _SERVICE>(installArgsFn, {
-						customEncode,
-					}),
+					...makeUpgradeTask<I, D, P, _SERVICE>(
+						this.#builderRuntime,
+						installArgsFn,
+						{
+							customEncode,
+						},
+					),
 					// TODO: ...?
 					dependsOn: this.#scope.children.install.dependsOn,
 					dependencies: this.#scope.children.install.dependencies,
@@ -758,7 +778,7 @@ export class MotokoCanisterBuilder<
 			},
 		} satisfies MotokoCanisterScope<_SERVICE, I, I, D, P>
 
-		return new MotokoCanisterBuilder(updatedScope)
+		return new MotokoCanisterBuilder(this.#builderRuntime, updatedScope)
 	}
 
 	upgradeArgs(
@@ -794,9 +814,13 @@ export class MotokoCanisterBuilder<
 				// TODO: add these to the task type
 				upgrade: {
 					// TODO: makeUpgradeTask
-					...makeUpgradeTask<U, D, P, _SERVICE>(upgradeArgsFn, {
-						customEncode,
-					}),
+					...makeUpgradeTask<U, D, P, _SERVICE>(
+						this.#builderRuntime,
+						upgradeArgsFn,
+						{
+							customEncode,
+						},
+					),
 					// TODO: ...?
 					dependsOn: this.#scope.children.install.dependsOn,
 					dependencies: this.#scope.children.install.dependencies,
@@ -804,7 +828,7 @@ export class MotokoCanisterBuilder<
 			},
 		} satisfies MotokoCanisterScope<_SERVICE, I, U, D, P>
 
-		return new MotokoCanisterBuilder(updatedScope)
+		return new MotokoCanisterBuilder(this.#builderRuntime, updatedScope)
 	}
 
 	deps<UP extends Record<string, AllowedDep>, NP extends NormalizeDeps<UP>>(
@@ -839,7 +863,7 @@ export class MotokoCanisterBuilder<
 			...this.#scope,
 			children: updatedChildren,
 		} satisfies MotokoCanisterScope<_SERVICE, I, U, D, NP>
-		return new MotokoCanisterBuilder(updatedScope)
+		return new MotokoCanisterBuilder(this.#builderRuntime, updatedScope)
 	}
 
 	dependsOn<
@@ -875,7 +899,7 @@ export class MotokoCanisterBuilder<
 			...this.#scope,
 			children: updatedChildren,
 		} satisfies MotokoCanisterScope<_SERVICE, I, U, ND, P>
-		return new MotokoCanisterBuilder(updatedScope)
+		return new MotokoCanisterBuilder(this.#builderRuntime, updatedScope)
 	}
 
 	make(
@@ -907,19 +931,16 @@ export class MotokoCanisterBuilder<
 	}
 }
 
-export const motokoCanister = <
+export const makeMotokoCanister = <
 	_SERVICE = unknown,
 	I extends unknown[] = unknown[],
 	U extends unknown[] = unknown[],
-	P extends Record<string, unknown> = Record<string, unknown>,
 >(
+	builderRuntime: ManagedRuntime.ManagedRuntime<unknown, unknown>,
 	canisterConfigOrFn:
 		| MotokoCanisterConfig
-		| ((args: { ctx: TaskCtxShape; deps: P }) => MotokoCanisterConfig)
-		| ((args: {
-				ctx: TaskCtxShape
-				deps: P
-		  }) => Promise<MotokoCanisterConfig>),
+		| ((args: { ctx: TaskCtxShape }) => MotokoCanisterConfig)
+		| ((args: { ctx: TaskCtxShape }) => Promise<MotokoCanisterConfig>),
 ) => {
 	const initialScope = {
 		_tag: "scope",
@@ -928,15 +949,17 @@ export const motokoCanister = <
 		description: "Motoko canister scope",
 		defaultTask: "deploy",
 		children: {
-			create: makeCreateTask(canisterConfigOrFn, [Tags.MOTOKO]),
-			build: makeMotokoBuildTask(canisterConfigOrFn),
-			bindings: makeMotokoBindingsTask(),
-			stop: makeStopTask(),
-			remove: makeRemoveTask(),
-			install: makeInstallTask<I, {}, {}, _SERVICE>(),
-			upgrade: makeUpgradeTask<U, {}, {}, _SERVICE>(),
-			deploy: makeMotokoDeployTask<_SERVICE, P>(canisterConfigOrFn),
-			status: makeCanisterStatusTask([Tags.MOTOKO]),
+			create: makeCreateTask(builderRuntime, canisterConfigOrFn, [
+				Tags.MOTOKO,
+			]),
+			build: makeMotokoBuildTask(builderRuntime, canisterConfigOrFn),
+			bindings: makeMotokoBindingsTask(builderRuntime),
+			stop: makeStopTask(builderRuntime),
+			remove: makeRemoveTask(builderRuntime),
+			install: makeInstallTask<I, {}, {}, _SERVICE>(builderRuntime),
+			upgrade: makeUpgradeTask<U, {}, {}, _SERVICE>(builderRuntime),
+			deploy: makeMotokoDeployTask<_SERVICE>(builderRuntime, canisterConfigOrFn),
+			status: makeCanisterStatusTask(builderRuntime, [Tags.MOTOKO]),
 		},
 	} satisfies MotokoCanisterScope<_SERVICE, I, U, {}, {}>
 
@@ -948,5 +971,52 @@ export const motokoCanister = <
 		{},
 		MotokoCanisterConfig,
 		_SERVICE
-	>(initialScope)
+	>(builderRuntime, initialScope)
+}
+
+export const motokoCanister = <
+	_SERVICE = unknown,
+	I extends unknown[] = unknown[],
+	U extends unknown[] = unknown[],
+>(
+	canisterConfigOrFn:
+		| MotokoCanisterConfig
+		| ((args: { ctx: TaskCtxShape }) => MotokoCanisterConfig)
+		| ((args: { ctx: TaskCtxShape }) => Promise<MotokoCanisterConfig>),
+) => {
+	return makeMotokoCanister<_SERVICE, I, U>(
+		defaultBuilderRuntime as ManagedRuntime.ManagedRuntime<
+			unknown,
+			unknown
+		>,
+		canisterConfigOrFn,
+	)
+	// const initialScope = {
+	// 	_tag: "scope",
+	// 	id: Symbol("scope"),
+	// 	tags: [Tags.CANISTER, Tags.MOTOKO],
+	// 	description: "Motoko canister scope",
+	// 	defaultTask: "deploy",
+	// 	children: {
+	// 		create: makeCreateTask(canisterConfigOrFn, [Tags.MOTOKO]),
+	// 		build: makeMotokoBuildTask(canisterConfigOrFn),
+	// 		bindings: makeMotokoBindingsTask(),
+	// 		stop: makeStopTask(),
+	// 		remove: makeRemoveTask(),
+	// 		install: makeInstallTask<I, {}, {}, _SERVICE>(),
+	// 		upgrade: makeUpgradeTask<U, {}, {}, _SERVICE>(),
+	// 		deploy: makeMotokoDeployTask<_SERVICE, P>(canisterConfigOrFn),
+	// 		status: makeCanisterStatusTask([Tags.MOTOKO]),
+	// 	},
+	// } satisfies MotokoCanisterScope<_SERVICE, I, U, {}, {}>
+
+	// return new MotokoCanisterBuilder<
+	// 	I,
+	// 	U,
+	// 	MotokoCanisterScope<_SERVICE, I, U, {}, {}>,
+	// 	{},
+	// 	{},
+	// 	MotokoCanisterConfig,
+	// 	_SERVICE
+	// >(initialScope)
 }

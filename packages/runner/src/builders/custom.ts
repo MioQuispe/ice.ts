@@ -1,4 +1,4 @@
-import { Effect, Record } from "effect"
+import { Effect, Record, ManagedRuntime } from "effect"
 import type { CachedTask, Scope, Task, TaskTree } from "../types/types.js"
 // import mo from "motoko"
 import { FileSystem, Path } from "@effect/platform"
@@ -14,12 +14,12 @@ import {
 	IsValid,
 	UpgradeTask,
 	TaskError,
-	builderRuntime,
 	CreateTask,
 	StopTask,
 	RemoveTask,
 	StatusTask,
 	FileDigest,
+	defaultBuilderRuntime,
 } from "./lib.js"
 import { getNodeByPath, ParamsToArgs, TaskParamsToArgs } from "../tasks/lib.js"
 import {
@@ -150,6 +150,7 @@ export const deployParams = {
 export type DeployTaskArgs = ParamsToArgs<typeof deployParams>
 
 export const makeCustomDeployTask = <_SERVICE>(
+	builderRuntime: ManagedRuntime.ManagedRuntime<unknown, unknown>,
 	canisterConfigOrFn:
 		| ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)
 		| ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)
@@ -344,6 +345,7 @@ export const makeCustomDeployTask = <_SERVICE>(
 }
 
 export const makeBindingsTask = (
+	builderRuntime: ManagedRuntime.ManagedRuntime<unknown, unknown>,
 	canisterConfigOrFn:
 		| ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)
 		| ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)
@@ -452,6 +454,7 @@ const customBuildParams = {}
 
 // TODO: pass in wasm and candid as task params instead?
 export const makeCustomBuildTask = <P extends Record<string, unknown>>(
+	builderRuntime: ManagedRuntime.ManagedRuntime<unknown, unknown>,
 	canisterConfigOrFn:
 		| ((args: {
 				ctx: TaskCtxShape
@@ -565,6 +568,7 @@ export const makeCustomBuildTask = <P extends Record<string, unknown>>(
 					)
 					const wasmPath = canisterConfig.wasm
 					const candidPath = canisterConfig.candid
+
 					// TODO: we need a separate cache for this?
 					const prevWasmDigest = undefined
 					const { fresh, digest: wasmDigest } =
@@ -626,7 +630,12 @@ export class CustomCanisterBuilder<
 	_SERVICE = unknown,
 > {
 	#scope: S
-	constructor(scope: S) {
+	#builderRuntime: ManagedRuntime.ManagedRuntime<unknown, unknown>
+	constructor(
+		builderRuntime: ManagedRuntime.ManagedRuntime<unknown, unknown>,
+		scope: S,
+	) {
+		this.#builderRuntime = builderRuntime
 		this.#scope = scope
 	}
 
@@ -648,10 +657,14 @@ export class CustomCanisterBuilder<
 			...this.#scope,
 			children: {
 				...this.#scope.children,
-				create: makeCreateTask<P>(canisterConfigOrFn, [Tags.CUSTOM]),
+				create: makeCreateTask<P>(
+					this.#builderRuntime,
+					canisterConfigOrFn,
+					[Tags.CUSTOM],
+				),
 			},
 		} satisfies CustomCanisterScope<_SERVICE, I, U, D, P>
-		return new CustomCanisterBuilder(updatedScope)
+		return new CustomCanisterBuilder(this.#builderRuntime, updatedScope)
 	}
 
 	build(
@@ -672,10 +685,13 @@ export class CustomCanisterBuilder<
 			...this.#scope,
 			children: {
 				...this.#scope.children,
-				build: makeCustomBuildTask<P>(canisterConfigOrFn),
+				build: makeCustomBuildTask<P>(
+					this.#builderRuntime,
+					canisterConfigOrFn,
+				),
 			},
 		} satisfies CustomCanisterScope<_SERVICE, I, U, D, P>
-		return new CustomCanisterBuilder(updatedScope)
+		return new CustomCanisterBuilder(this.#builderRuntime, updatedScope)
 	}
 
 	installArgs(
@@ -710,9 +726,13 @@ export class CustomCanisterBuilder<
 				...this.#scope.children,
 				// TODO: add these to the task type
 				install: {
-					...makeInstallTask<I, D, P, _SERVICE>(installArgsFn, {
-						customEncode,
-					}),
+					...makeInstallTask<I, D, P, _SERVICE>(
+						this.#builderRuntime,
+						installArgsFn,
+						{
+							customEncode,
+						},
+					),
 					dependsOn: this.#scope.children.install.dependsOn,
 					dependencies: this.#scope.children.install.dependencies,
 				} as InstallTask<_SERVICE, I, D, P>,
@@ -722,9 +742,13 @@ export class CustomCanisterBuilder<
 				// TODO: check in make instead?
 				upgrade: {
 					// TODO: makeUpgradeTask
-					...makeUpgradeTask<I, D, P, _SERVICE>(installArgsFn, {
-						customEncode,
-					}),
+					...makeUpgradeTask<I, D, P, _SERVICE>(
+						this.#builderRuntime,
+						installArgsFn,
+						{
+							customEncode,
+						},
+					),
 					// TODO: ...?
 					dependsOn: this.#scope.children.install.dependsOn,
 					dependencies: this.#scope.children.install.dependencies,
@@ -732,7 +756,7 @@ export class CustomCanisterBuilder<
 			},
 		} satisfies CustomCanisterScope<_SERVICE, I, I, D, P>
 
-		return new CustomCanisterBuilder(updatedScope)
+		return new CustomCanisterBuilder(this.#builderRuntime, updatedScope)
 	}
 
 	upgradeArgs(
@@ -766,9 +790,13 @@ export class CustomCanisterBuilder<
 			children: {
 				...this.#scope.children,
 				upgrade: {
-					...makeUpgradeTask<U, D, P, _SERVICE>(upgradeArgsFn, {
-						customEncode,
-					}),
+					...makeUpgradeTask<U, D, P, _SERVICE>(
+						this.#builderRuntime,
+						upgradeArgsFn,
+						{
+							customEncode,
+						},
+					),
 					// TODO: ...?
 					dependsOn: this.#scope.children.install.dependsOn,
 					dependencies: this.#scope.children.install.dependencies,
@@ -776,7 +804,7 @@ export class CustomCanisterBuilder<
 			},
 		} satisfies CustomCanisterScope<_SERVICE, I, U, D, P>
 
-		return new CustomCanisterBuilder(updatedScope)
+		return new CustomCanisterBuilder(this.#builderRuntime, updatedScope)
 	}
 
 	deps<UP extends Record<string, AllowedDep>, NP extends NormalizeDeps<UP>>(
@@ -805,7 +833,7 @@ export class CustomCanisterBuilder<
 				} as UpgradeTask<_SERVICE, U, D, NP>,
 			},
 		} satisfies CustomCanisterScope<_SERVICE, I, U, D, NP>
-		return new CustomCanisterBuilder(updatedScope)
+		return new CustomCanisterBuilder(this.#builderRuntime, updatedScope)
 	}
 
 	dependsOn<
@@ -837,7 +865,7 @@ export class CustomCanisterBuilder<
 				} as UpgradeTask<_SERVICE, U, ND, P>,
 			},
 		} satisfies CustomCanisterScope<_SERVICE, I, U, ND, P>
-		return new CustomCanisterBuilder(updatedScope)
+		return new CustomCanisterBuilder(this.#builderRuntime, updatedScope)
 	}
 
 	make(
@@ -874,9 +902,12 @@ export class CustomCanisterBuilder<
 	}
 }
 
-// TODO: some kind of metadata?
-// TODO: warn about context if not provided
-export const customCanister = <_SERVICE = unknown, I = unknown, U = unknown>(
+export const makeCustomCanister = <
+	_SERVICE = unknown,
+	I = unknown,
+	U = unknown,
+>(
+	builderRuntime: ManagedRuntime.ManagedRuntime<unknown, unknown>,
 	canisterConfigOrFn:
 		| ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)
 		| ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)
@@ -898,15 +929,20 @@ export const customCanister = <_SERVICE = unknown, I = unknown, U = unknown>(
 		defaultTask: "deploy",
 		// TODO: default implementations
 		children: {
-			create: makeCreateTask(canisterConfigOrFn, [Tags.CUSTOM]),
-			bindings: makeBindingsTask(canisterConfigOrFn),
-			build: makeCustomBuildTask(canisterConfigOrFn),
-			install: makeInstallTask<I, {}, {}, _SERVICE>(),
-			upgrade: makeUpgradeTask<U, {}, {}, _SERVICE>(),
-			stop: makeStopTask(),
-			remove: makeRemoveTask(),
-			deploy: makeCustomDeployTask<_SERVICE>(canisterConfigOrFn),
-			status: makeCanisterStatusTask([Tags.CUSTOM]),
+			create: makeCreateTask(builderRuntime, canisterConfigOrFn, [
+				Tags.CUSTOM,
+			]),
+			bindings: makeBindingsTask(builderRuntime, canisterConfigOrFn),
+			build: makeCustomBuildTask(builderRuntime, canisterConfigOrFn),
+			install: makeInstallTask<I, {}, {}, _SERVICE>(builderRuntime),
+			upgrade: makeUpgradeTask<U, {}, {}, _SERVICE>(builderRuntime),
+			stop: makeStopTask(builderRuntime),
+			remove: makeRemoveTask(builderRuntime),
+			deploy: makeCustomDeployTask<_SERVICE>(
+				builderRuntime,
+				canisterConfigOrFn,
+			),
+			status: makeCanisterStatusTask(builderRuntime, [Tags.CUSTOM]),
 		},
 	} satisfies CustomCanisterScope<_SERVICE, I, U, {}, {}>
 
@@ -918,5 +954,30 @@ export const customCanister = <_SERVICE = unknown, I = unknown, U = unknown>(
 		{},
 		CustomCanisterConfig,
 		_SERVICE
-	>(initialScope)
+	>(builderRuntime, initialScope)
+}
+
+// TODO: some kind of metadata?
+// TODO: warn about context if not provided
+export const customCanister = <_SERVICE = unknown, I = unknown, U = unknown>(
+	canisterConfigOrFn:
+		| ((args: { ctx: TaskCtxShape }) => Promise<CustomCanisterConfig>)
+		| ((args: { ctx: TaskCtxShape }) => CustomCanisterConfig)
+		| CustomCanisterConfig,
+): CustomCanisterBuilder<
+	I,
+	U,
+	CustomCanisterScope<_SERVICE, I, U, {}, {}>,
+	{},
+	{},
+	CustomCanisterConfig,
+	_SERVICE
+> => {
+	return makeCustomCanister(
+		defaultBuilderRuntime as ManagedRuntime.ManagedRuntime<
+			unknown,
+			unknown
+		>,
+		canisterConfigOrFn,
+	)
 }

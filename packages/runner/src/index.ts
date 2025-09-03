@@ -1,3 +1,4 @@
+import { makeCliRuntime } from "./cli/index.js"
 import type { ICEConfig, ICECtx } from "./types/types.js"
 import type { Scope, TaskTree } from "./types/types.js"
 export { Opt } from "./types/types.js"
@@ -26,6 +27,14 @@ export const scope = <T extends TaskTree>(description: string, children: T) => {
 	} satisfies Scope
 }
 
+// TODO: figure out programmatic use & API
+// export const publicRuntime = (globalArgs: { network: string; logLevel: string }) => {
+//     const runtime = makeCliRuntime({ globalArgs })
+//     return {
+//         runTask: (task: Task) => runtime.runPromise(task)
+//         runTaskByPath: (path: string) => runtime.runPromise(runTaskByPath(path))
+//     }
+// }
 
 export { runCli } from "./cli/index.js"
 export type { TaskCtxShape } from "./services/taskCtx.js"

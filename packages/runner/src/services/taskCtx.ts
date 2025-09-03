@@ -18,7 +18,7 @@ import {
 import type { ICEUser, Task, TaskTree } from "../types/types.js"
 import { DefaultConfig, InitializedDefaultConfig } from "./defaultConfig.js"
 import { ICEConfigService } from "./iceConfig.js"
-import { TaskRunner, TaskRunnerContext } from "./taskRunner.js"
+import { TaskRuntime } from "./taskRuntime.js"
 import { runTask } from "../tasks/run.js"
 import { IceDir } from "./iceDir.js"
 
@@ -161,7 +161,7 @@ export const makeTaskCtx = Effect.fn("taskCtx_make")(function* (
 	>,
 	progressCb: (update: ProgressUpdate<unknown>) => void,
 ) {
-	const { runtime } = yield* TaskRunner
+	const { runtime } = yield* TaskRuntime
 	const defaultConfig = yield* DefaultConfig
 	const appDir = yield* Config.string("APP_DIR")
 	const { path: iceDir } = yield* IceDir
@@ -203,11 +203,8 @@ export const makeTaskCtx = Effect.fn("taskCtx_make")(function* (
 
 	// TODO: telemetry
 	// Pass down the same runtime to the child task
-	const ChildTaskRunner = Layer.succeed(TaskRunner, {
+	const ChildTaskRuntimeLayer = Layer.succeed(TaskRuntime, {
 		runtime,
-	})
-	const taskRunnerContext = Layer.succeed(TaskRunnerContext, {
-		isRootTask: false,
 	})
 	return {
 		...defaultConfig,
@@ -224,8 +221,7 @@ export const makeTaskCtx = Effect.fn("taskCtx_make")(function* (
 			// console.log("resolvedArgs:", resolvedArgs, args)
 			const result = await runtime.runPromise(
 				runTask(task, args, progressCb).pipe(
-					Effect.provide(ChildTaskRunner),
-					Effect.provide(taskRunnerContext),
+					Effect.provide(ChildTaskRuntimeLayer),
 					Effect.annotateLogs("caller", "taskCtx.runTask"),
 					Effect.annotateLogs("taskPath", taskPath),
 				),

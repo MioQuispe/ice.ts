@@ -34,7 +34,6 @@ import type {
 	TaskTreeNode,
 } from "../types/types.js"
 import { makeTaskCtx, type TaskCtxShape } from "../services/taskCtx.js"
-import { TaskRunnerContext } from "../services/taskRunner.js"
 import { InFlight } from "../services/inFlight.js"
 
 export type ParamsToArgs<
@@ -226,10 +225,6 @@ export const resolveArgsMap = (
 ) =>
 	Effect.gen(function* () {
 		let argsMap: Record<string, unknown> = {}
-		const { isRootTask } = yield* TaskRunnerContext
-		// if (isRootTask && cliTaskArgs) {
-
-		// }
 		// breaks if dynamic call with empty args
 
 		// const hasCliTaskArgs =

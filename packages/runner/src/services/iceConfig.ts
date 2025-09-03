@@ -1,4 +1,4 @@
-import { Data, Effect, Context, Layer } from "effect"
+import { Data, Effect, Context, Layer, Ref } from "effect"
 import type {
 	ICEConfig,
 	ICEConfigFile,
@@ -57,6 +57,7 @@ export class ICEConfigError extends Data.TaggedError("ICEConfigError")<{
 
 const createService = (globalArgs: { network: string; logLevel: LogLevel }) =>
 	Effect.gen(function* () {
+		// TODO: service?
 		const { network, logLevel } = globalArgs
 		const path = yield* Path.Path
 		const fs = yield* FileSystem.FileSystem
@@ -117,6 +118,26 @@ const createService = (globalArgs: { network: string; logLevel: LogLevel }) =>
 		}
 	})
 
+export class ICEConfigInject extends Context.Tag("ICEConfigInject")<
+	ICEConfigInject,
+	{
+		readonly configRef: Ref.Ref<Partial<ICEConfig>>
+		readonly taskTreeRef: Ref.Ref<TaskTree>
+	}
+>() {
+	static readonly Test = Layer.effect(
+		ICEConfigInject,
+		Effect.gen(function* () {
+            let configRef = yield* Ref.make({})
+            let taskTreeRef = yield* Ref.make({})
+            return {
+                configRef,
+                taskTreeRef,
+            }
+        }),
+	)
+}
+
 /**
  * Service to load and process the ICE configuration.
  */
@@ -135,4 +156,23 @@ export class ICEConfigService extends Context.Tag("ICEConfigService")<
 		network: string
 		logLevel: LogLevel
 	}) => Layer.effect(ICEConfigService, createService(globalArgs))
+
+	static readonly Test = (
+		globalArgs: {
+			network: string
+			logLevel: LogLevel
+		},
+        taskTree: TaskTree,
+        config: Partial<ICEConfig>,
+	) =>
+		Layer.effect(
+			ICEConfigService,
+			Effect.gen(function* () {
+				return {
+					taskTree,
+					config,
+					globalArgs,
+				}
+			}),
+		)
 }

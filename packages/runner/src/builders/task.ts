@@ -22,7 +22,7 @@ import {
 	normalizeDepsMap,
 	ValidProvidedDeps,
 	TaskError,
-	builderRuntime,
+	defaultBuilderRuntime,
 } from "./lib.js"
 
 type MergeTaskParams<
@@ -285,7 +285,7 @@ class TaskBuilder<
 			...this.#task,
 
 			effect: (taskCtx) =>
-				builderRuntime.runPromise(
+				defaultBuilderRuntime.runPromise(
 					Effect.fn("task_effect")(function* () {
 						const deps = Record.map(
 							taskCtx.depResults,

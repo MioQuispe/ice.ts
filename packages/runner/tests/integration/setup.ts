@@ -13,7 +13,6 @@ import {
 	Tracer,
 	ConfigProvider,
 } from "effect"
-import { task } from "../../src/builders/task.js"
 import { CanisterIdsService } from "../../src/services/canisterIds.js"
 import { DefaultConfig } from "../../src/services/defaultConfig.js"
 import { ICEConfigService } from "../../src/services/iceConfig.js"
@@ -21,13 +20,28 @@ import { Moc } from "../../src/services/moc.js"
 import { picReplicaImpl } from "../../src/services/pic/pic.js"
 import { DefaultReplica } from "../../src/services/replica.js"
 import { TaskRegistry } from "../../src/services/taskRegistry.js"
-import { makeTaskEffects, topologicalSortTasks } from "../../src/tasks/lib.js"
+import {
+	ProgressUpdate,
+	TaskSuccess,
+	makeTaskEffects,
+	TaskParamsToArgs,
+	TaskRuntimeError,
+	topologicalSortTasks,
+} from "../../src/tasks/lib.js"
 import { CachedTask, ICEConfig, Task, TaskTree } from "../../src/types/types.js"
 import { NodeSdk as OpenTelemetryNodeSdk } from "@effect/opentelemetry"
 import {
-	TaskRunnerContext,
-	TaskRunnerLive,
-} from "../../src/services/taskRunner.js"
+	customCanister,
+	CustomCanisterConfig,
+	makeCustomCanister,
+	makeMotokoCanister,
+	motokoCanister,
+} from "../../src/builders/index.js"
+import {
+	makeTaskRuntime,
+	TaskRuntime,
+	TaskRuntimeLive,
+} from "../../src/services/taskRuntime.js"
 import {
 	InMemorySpanExporter,
 	BatchSpanProcessor,
@@ -41,6 +55,7 @@ import {
 import fs from "node:fs"
 import { IceDir } from "../../src/services/iceDir.js"
 import { InFlight } from "../../src/services/inFlight.js"
+import { runTask, runTasks } from "../../src/tasks/run.js"
 
 const DefaultReplicaService = Layer.effect(DefaultReplica, picReplicaImpl).pipe(
 	Layer.provide(NodeContext.layer),
@@ -48,22 +63,24 @@ const DefaultReplicaService = Layer.effect(DefaultReplica, picReplicaImpl).pipe(
 )
 
 // TODO: this should use a separate pocket-ic / .ice instance for each test.
-export const makeTestRuntime = (
-	taskTree: TaskTree = {},
-	iceDirName: string = ".ice_test",
-) => {
+export const makeTestEnv = (iceDirName: string = ".ice_test") => {
 	const globalArgs = { network: "local", logLevel: LogLevel.Debug } as const
 	const config = {} satisfies Partial<ICEConfig>
-	const testICEConfigService = ICEConfigService.of({
-		config,
-		taskTree,
-		globalArgs,
-	})
+
+	// const ICEConfigLayer = ICEConfigService.Test(
+	// 	globalArgs,
+	// 	// taskTree,
+	// 	// config,
+	// )
+	// const ICEConfigLayer = ICEConfigService.Live(
+	// 	globalArgs,
+	// 	// taskTree,
+	// 	// config,
+	// ).pipe(Layer.provide(NodeContext.layer))
 
 	const DefaultConfigLayer = DefaultConfig.Live.pipe(
 		Layer.provide(DefaultReplicaService),
 	)
-	const ICEConfigLayer = Layer.succeed(ICEConfigService, testICEConfigService)
 	const telemetryExporter = new InMemorySpanExporter()
 	const telemetryConfig = {
 		resource: { serviceName: "ice" },
@@ -85,10 +102,6 @@ export const makeTestRuntime = (
 	const configLayer = Layer.setConfigProvider(
 		ConfigProvider.fromMap(configMap),
 	)
-	const taskRunnerLayer = TaskRunnerLive()
-	const taskRunnerContext = Layer.succeed(TaskRunnerContext, {
-		isRootTask: true,
-	})
 
 	const iceDirLayer = IceDir.Test({ iceDirName: iceDirName }).pipe(
 		Layer.provide(NodeContext.layer),
@@ -96,33 +109,6 @@ export const makeTestRuntime = (
 	)
 
 	const InFlightLayer = InFlight.Live.pipe(Layer.provide(NodeContext.layer))
-
-	// const testLayer = Layer.provideMerge(
-	// 	Layer.mergeAll(
-	// 		DefaultConfigLayer,
-	// 		TaskRegistry.Live,
-	// 		taskRunnerLayer,
-	// 		DefaultReplicaService,
-	// 		Moc.Live,
-	// 		Logger.pretty,
-	// 		Logger.minimumLogLevel(LogLevel.Debug),
-	// 	),
-	// 	Layer.provideMerge(
-	// 		Layer.mergeAll(
-	// 			configLayer,
-	// 			CanisterIdsService.Test,
-	// 			KVStorageLayer,
-	// 			NodeContext.layer,
-	// 			ICEConfigLayer,
-	// 			telemetryLayer,
-	// 			telemetryConfigLayer,
-	// 			taskRunnerContext,
-	// 		),
-	//         Layer.mergeAll(
-	//             iceDirLayer,
-	//         )
-	// 	),
-	// )
 
 	const CanisterIdsLayer = CanisterIdsService.Test.pipe(
 		Layer.provide(NodeContext.layer),
@@ -134,15 +120,15 @@ export const makeTestRuntime = (
 			Layer.provide(NodeContext.layer),
 			Layer.provide(KVStorageLayer),
 		),
-		taskRunnerLayer.pipe(
-			Layer.provide(NodeContext.layer),
-			Layer.provide(iceDirLayer),
-			Layer.provide(CanisterIdsLayer),
-			Layer.provide(ICEConfigLayer),
-			Layer.provide(telemetryConfigLayer),
-			Layer.provide(KVStorageLayer),
-			Layer.provide(InFlightLayer),
-		),
+		// TaskRuntimeLayer.pipe(
+		// 	Layer.provide(NodeContext.layer),
+		// 	Layer.provide(iceDirLayer),
+		// 	Layer.provide(CanisterIdsLayer),
+		// 	Layer.provide(ICEConfigLayer),
+		// 	Layer.provide(telemetryConfigLayer),
+		// 	Layer.provide(KVStorageLayer),
+		// 	Layer.provide(InFlightLayer),
+		// ),
 		InFlightLayer,
 		iceDirLayer,
 		DefaultReplicaService,
@@ -153,27 +139,109 @@ export const makeTestRuntime = (
 		configLayer,
 		KVStorageLayer,
 		NodeContext.layer,
-		ICEConfigLayer,
+		// ICEConfigLayer,
 		telemetryLayer,
 		telemetryConfigLayer,
-		taskRunnerContext,
 	)
+
+	const builderLayer = Layer.mergeAll(
+		NodeContext.layer,
+		Moc.Live.pipe(Layer.provide(NodeContext.layer)),
+		// taskLayer,
+		// TODO: generic storage?
+		CanisterIdsLayer,
+		configLayer,
+		telemetryLayer,
+		Logger.pretty,
+		Logger.minimumLogLevel(LogLevel.Debug),
+	)
+	const builderRuntime = ManagedRuntime.make(builderLayer)
+
+	const custom = ((...args) =>
+		makeCustomCanister(
+			builderRuntime,
+			...args,
+		)) as unknown as typeof customCanister
+	const motoko = ((...args) =>
+		makeMotokoCanister(
+			builderRuntime,
+			...args,
+		)) as unknown as typeof motokoCanister
 
 	return {
 		runtime: ManagedRuntime.make(testLayer),
+		builderRuntime,
 		telemetryExporter,
+		customCanister: custom,
+		motokoCanister: motoko,
 	}
 }
 
-export const getTasks = () =>
+export interface TaskRunnerShape {
+	readonly runTask: <T extends Task>(
+		task: T,
+		args?: TaskParamsToArgs<T>,
+		progressCb?: (update: ProgressUpdate<unknown>) => void,
+	) => Effect.Effect<TaskSuccess<T>, TaskRuntimeError>
+	readonly runTasks: (
+		tasks: Array<Task & { args: TaskParamsToArgs<Task> }>,
+		progressCb?: (update: ProgressUpdate<unknown>) => void,
+		concurrency?: "unbounded" | number,
+	) => Effect.Effect<Array<TaskSuccess<Task>>, TaskRuntimeError>
+}
+export const makeTaskRunner = (taskTree: TaskTree) =>
 	Effect.gen(function* () {
-		const { taskTree } = yield* ICEConfigService
-		const tasks = Object.values(taskTree).filter(
-			(node) => node._tag === "task",
+		const globalArgs = {
+			network: "local",
+			logLevel: LogLevel.Debug,
+		} as const
+		const config = {} satisfies Partial<ICEConfig>
+		const ICEConfig = ICEConfigService.Test(globalArgs, taskTree, config)
+		const { runtime } = yield* makeTaskRuntime().pipe(
+			Effect.provide(ICEConfig),
 		)
-		return tasks
+		const ChildTaskRunner = Layer.succeed(TaskRuntime, {
+			runtime,
+		})
+
+		const impl: TaskRunnerShape = {
+			runTask: (task, args, progressCb = () => {}) =>
+				Effect.tryPromise({
+					try: () =>
+						runtime.runPromise(
+							runTask(task, args, progressCb).pipe(
+								Effect.provide(ChildTaskRunner),
+								// Effect.annotateLogs("caller", "taskCtx.runTask"),
+								// Effect.annotateLogs("taskPath", taskPath),
+							),
+						),
+					catch: (error) => {
+						return new TaskRuntimeError({
+							message: String(error),
+						})
+					},
+				}),
+			runTasks: (tasks, progressCb = () => {}, concurrency = "unbounded") =>
+				Effect.tryPromise({
+					try: () =>
+						runtime.runPromise(
+							runTasks(tasks, progressCb).pipe(
+								Effect.provide(ChildTaskRunner),
+								// Effect.annotateLogs("caller", "taskCtx.runTask"),
+								// Effect.annotateLogs("taskPath", taskPath),
+							).pipe(Effect.withConcurrency(concurrency)),
+						),
+					catch: (error) => {
+						return new TaskRuntimeError({
+							message: String(error),
+						})
+					},
+				}),
+		}
+		return impl
 	})
 
+// TODO: add to builder instead
 export const makeCachedTask = (task: Task, key: string) => {
 	const cachedTask = {
 		...task,

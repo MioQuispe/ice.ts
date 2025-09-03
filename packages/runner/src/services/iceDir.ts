@@ -45,7 +45,7 @@ export class IceDir extends Context.Tag("IceDir")<
 				// }
 				yield* Effect.addFinalizer(() =>
 					fs
-						.remove(iceDirPath)
+						.remove(iceDirPath, { recursive: true, force: true })
 						.pipe(
 							Effect.catchAll((error) =>
 								Effect.logError(

@@ -1,12 +1,18 @@
-import { Effect, ManagedRuntime, Ref } from "effect"
+import { Effect, Layer, ManagedRuntime, Ref } from "effect"
 import { describe, expect, it } from "vitest"
 import { layer } from "@effect/vitest"
 import { task } from "../../src/builders/task.js"
 import { ICEConfigService } from "../../src/services/iceConfig.js"
-import { makeTaskEffects, topologicalSortTasks } from "../../src/tasks/lib.js"
+import {
+	makeTaskEffects,
+	TaskRuntimeError,
+	topologicalSortTasks,
+} from "../../src/tasks/lib.js"
 import { CachedTask, ICEConfig, Task, TaskTree } from "../../src/types/types.js"
-import { getTasks, makeCachedTask, makeTestRuntime } from "./setup.js"
+import { makeCachedTask, makeTaskRunner, makeTestEnv } from "./setup.js"
 import { runTask, runTasks } from "../../src/tasks/run.js"
+import { TaskRuntime, TaskRuntimeLive } from "../../src/services/taskRuntime.js"
+import { TaskRunner, TaskRunnerLive } from "../../src/services/taskRunner.js"
 
 describe("executeTasks", () => {
 	// const testLayer = (() => {
@@ -32,16 +38,17 @@ describe("executeTasks", () => {
 		const b = task().make()
 		const c = task().deps({ one: a, two: b }).make()
 		const tasks = [a, b, c]
-		const { runtime, telemetryExporter } = makeTestRuntime(
-			{
-				a: a,
-				b: b,
-				c: c,
-			},
-		)
+		const { runtime, telemetryExporter } = makeTestEnv(".ice_test_2")
+		const taskTree = {
+			a,
+			b,
+			c,
+		}
 		let progress: Array<string> = []
 		await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTask, runTasks } = yield* makeTaskRunner(taskTree)
+
 				yield* runTasks(
 					tasks.map((t) => ({ ...t, args: {} })),
 					(update) => {
@@ -114,10 +121,11 @@ describe("executeTasks", () => {
 			t4: tasks[3]!,
 			t5: tasks[4]!,
 		}
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 		const max = await runtime.runPromise(
 			Effect.gen(function* () {
-				yield* runTasks(tasks.map((t) => ({ ...t, args: {} })))
+				const { runTask, runTasks } = yield* makeTaskRunner(taskTree)
+				yield* runTasks(tasks.map((t) => ({ ...t, args: {} })), undefined, 2)
 				const max = yield* Ref.get(maxSeen)
 				return max
 			}),
@@ -174,9 +182,10 @@ describe("executeTasks", () => {
 			root: trackingTasks[3]!,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 		await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTasks } = yield* makeTaskRunner(taskTree)
 				const results = yield* runTasks(
 					trackingTasks.map((t) => ({ ...t, args: {} })),
 				)
@@ -225,10 +234,11 @@ describe("executeTasks", () => {
 			bottom: trackingTasks[3]!,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTasks } = yield* makeTaskRunner(taskTree)
 				const results = yield* runTasks(
 					trackingTasks.map((t) => ({ ...t, args: {} })),
 				)
@@ -264,12 +274,13 @@ describe("executeTasks", () => {
 		}
 		const tasks = [failingTask, dependentTask]
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		// The execution should fail when the dependency fails
 		await expect(
 			runtime.runPromise(
 				Effect.gen(function* () {
+					const { runTasks } = yield* makeTaskRunner(taskTree)
 					const results = yield* runTasks(
 						tasks.map((t) => ({
 							...t,
@@ -329,11 +340,12 @@ describe("executeTasks", () => {
 
 		const tasks = [cachedRoot, trackingNonCached, cachedLeaf]
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		// First run - all should execute
 		const firstResults = await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTasks } = yield* makeTaskRunner(taskTree)
 				const results = yield* runTasks(
 					tasks.map((t) => ({ ...t, args: {} })),
 				)
@@ -350,6 +362,7 @@ describe("executeTasks", () => {
 		// Second run - cached tasks should use cache, non-cached should run again
 		const secondResults = await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTasks } = yield* makeTaskRunner(taskTree)
 				const results = yield* runTasks(
 					tasks.map((t) => ({ ...t, args: {} })),
 				)
@@ -386,11 +399,12 @@ describe("executeTasks", () => {
 		}
 		const tasks = [dynamicCachedTask]
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		// First run with cacheKeyCounter = 0
 		const firstResults = await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTasks } = yield* makeTaskRunner(taskTree)
 				const results = yield* runTasks(
 					tasks.map((t) => ({ ...t, args: {} })),
 				)
@@ -406,6 +420,7 @@ describe("executeTasks", () => {
 		// Second run with different cache key should re-execute
 		const secondResults = await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTasks } = yield* makeTaskRunner(taskTree)
 				const results = yield* runTasks(
 					tasks.map((t) => ({ ...t, args: {} })),
 				)
@@ -456,10 +471,11 @@ describe("executeTasks", () => {
 		}
 		const tasks = [root, branch1, branch2, leaf]
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTasks } = yield* makeTaskRunner(taskTree)
 				const results = yield* runTasks(
 					tasks.map((t) => ({ ...t, args: {} })),
 				).pipe(Effect.withConcurrency(2))
@@ -501,10 +517,11 @@ describe("executeTasks", () => {
 			tasks.map((task) => [task.description, task]),
 		)
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTasks } = yield* makeTaskRunner(taskTree)
 				const results = yield* runTasks(
 					tasks.map((t) => ({ ...t, args: {} })),
 				).pipe(Effect.withConcurrency(3))
@@ -573,10 +590,11 @@ describe("executeTasks", () => {
 			trackingTasks.map((task) => [task.description, task]),
 		)
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTasks } = yield* makeTaskRunner(taskTree)
 				const results = yield* runTasks(
 					trackingTasks.map((t) => ({ ...t, args: {} })),
 				)
@@ -630,10 +648,11 @@ describe("executeTasks", () => {
 			dependent_task: dependentTask,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		const results = await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTasks } = yield* makeTaskRunner(taskTree)
 				const results = yield* runTasks(
 					tasks.map((t) => ({ ...t, args: {} })),
 				)
@@ -689,10 +708,11 @@ describe("executeTasks", () => {
 			dynamic_caller: dynamicTask,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		const results = await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTasks } = yield* makeTaskRunner(taskTree)
 				const results = yield* runTasks(
 					tasks.map((t) => ({ ...t, args: {} })),
 				)
@@ -744,12 +764,13 @@ describe("executeTasks", () => {
 			binary_cached: binaryCachedTask,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 		const tasks = [stringCachedTask, binaryCachedTask]
 
 		// First run - should cache both
 		const firstResults = await runtime.runPromise(
 			Effect.gen(function* () {
+				const { runTasks } = yield* makeTaskRunner(taskTree)
 				const results = yield* runTasks(
 					tasks.map((t) => ({ ...t, args: {} })),
 				)
@@ -773,7 +794,10 @@ describe("executeTasks", () => {
 		// Second run - should use cache
 		const secondResults = await runtime.runPromise(
 			Effect.gen(function* () {
-				const results = yield* runTasks(tasks.map((t) => ({ ...t, args: {} })))
+				const { runTasks } = yield* makeTaskRunner(taskTree)
+				const results = yield* runTasks(
+					tasks.map((t) => ({ ...t, args: {} })),
+				)
 				return results
 			}),
 		)
@@ -827,12 +851,15 @@ describe("executeTasks", () => {
 			level6,
 		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		await expect(
 			runtime.runPromise(
 				Effect.gen(function* () {
-					const results = yield* runTasks(tasks.map((t) => ({ ...t, args: {} })))
+					const { runTasks } = yield* makeTaskRunner(taskTree)
+					const results = yield* runTasks(
+						tasks.map((t) => ({ ...t, args: {} })),
+					)
 					return results
 				}),
 			),
@@ -901,14 +928,17 @@ describe("executeTasks", () => {
 			chain2Root,
 			chain2Middle,
 			chain2Leaf,
-        }
+		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		// First run - all should execute
 		const firstResults = await runtime.runPromise(
 			Effect.gen(function* () {
-				const results = yield* runTasks(tasks.map((t) => ({ ...t, args: {} })))
+				const { runTasks } = yield* makeTaskRunner(taskTree)
+				const results = yield* runTasks(
+					tasks.map((t) => ({ ...t, args: {} })),
+				)
 				return results
 			}),
 		)
@@ -925,7 +955,10 @@ describe("executeTasks", () => {
 		// Second run - should use cache for all
 		const secondResults = await runtime.runPromise(
 			Effect.gen(function* () {
-				const results = yield* runTasks(tasks.map((t) => ({ ...t, args: {} })))
+				const { runTasks } = yield* makeTaskRunner(taskTree)
+				const results = yield* runTasks(
+					tasks.map((t) => ({ ...t, args: {} })),
+				)
 				return results
 			}),
 		)
@@ -1025,17 +1058,20 @@ describe("executeTasks", () => {
 		]
 
 		const taskTree = {
-            root,
+			root,
 			fastBranch,
 			slowBranch,
 			convergence,
-        }
+		}
 
-		const { runtime, telemetryExporter } = makeTestRuntime(taskTree)
+		const { runtime, telemetryExporter } = makeTestEnv()
 
 		await runtime.runPromise(
 			Effect.gen(function* () {
-				const results = yield* runTasks(tasks.map((t) => ({ ...t, args: {} })))
+				const { runTasks } = yield* makeTaskRunner(taskTree)
+				const results = yield* runTasks(
+					tasks.map((t) => ({ ...t, args: {} })),
+				)
 				return results
 			}),
 		)
