@@ -32,6 +32,8 @@ import {
 	CanisterStopError,
 	CanisterStatus,
 	Replica,
+	CanisterInfo,
+	CanisterStatusResult,
 } from "../replica.js"
 import { sha256 } from "js-sha256"
 import type { log_visibility } from "@dfinity/agent/lib/cjs/canisters/management_service.js"
@@ -262,7 +264,7 @@ export const picReplicaImpl = Effect.gen(function* () {
 	}: {
 		canisterId: string
 		identity: SignIdentity
-	}) =>
+	}): Effect.Effect<CanisterStatusResult, CanisterStatusError> =>
 		Effect.gen(function* () {
 			const mgmt = yield* getMgmt(identity)
 
@@ -271,39 +273,59 @@ export const picReplicaImpl = Effect.gen(function* () {
 					status: CanisterStatus.NOT_FOUND,
 				} as const
 			}
-			const canisterStatusResult = yield* Effect.tryPromise({
-				try: () => {
-					// TODO: throw error instead? not sure
-					const result = mgmt.canister_status({
-						canister_id: Principal.fromText(canisterId),
-					})
-					return result
+			const canisterInfo = yield* Effect.tryPromise<
+				CanisterStatusResult,
+				CanisterStatusError
+			>({
+				try: async () => {
+					if (!canisterId) {
+						return { status: CanisterStatus.NOT_FOUND }
+					}
+					try {
+						const result = await mgmt.canister_status({
+							canister_id: Principal.fromText(canisterId),
+						})
+						switch (Object.keys(result.status)[0]) {
+							case CanisterStatus.NOT_FOUND:
+								return {
+									// ...result,
+									status: CanisterStatus.NOT_FOUND,
+								} satisfies CanisterStatusResult
+							case CanisterStatus.STOPPED:
+								// canisterInfo
+								return {
+									...result,
+									status: CanisterStatus.STOPPED,
+								} satisfies CanisterStatusResult
+							case CanisterStatus.RUNNING:
+								return {
+									...result,
+									status: CanisterStatus.RUNNING,
+								} satisfies CanisterStatusResult
+							default:
+								throw new Error("Unknown canister status")
+						}
+					} catch (error) {
+						console.log("pic.ts status error", error)
+						if (
+							error instanceof Error &&
+							(error.message.includes(
+								"does not belong to any subnet",
+							) ||
+								error.message.includes("CanisterNotFound"))
+						) {
+							return { status: CanisterStatus.NOT_FOUND }
+						}
+						throw error
+					}
 				},
 				catch: (error) => {
 					return new CanisterStatusError({
-						message: `Failed to get canister info: ${error instanceof Error ? error.message : String(error)}`,
+						message: `Failed to get canister status: ${error instanceof Error ? error.message : String(error)}`,
 					})
 				},
-			}).pipe(
-				Effect.catchAll((error) => {
-					return new CanisterStatusError({
-						message: `Failed to get canister info: ${error instanceof Error ? error.message : String(error)}`,
-					})
-					// return Effect.succeed({
-					// 	status: CanisterStatus.NOT_FOUND,
-					// } as const)
-				}),
-			)
-			// TODO: maybe catch errors and return:
-			// return {
-			// 	status: CanisterStatus.NOT_FOUND,
-			// } as const
-			const canisterInfo = {
-				...canisterStatusResult,
-				status: Object.keys(
-					canisterStatusResult.status,
-				)[0] as CanisterStatus,
-			}
+			})
+
 			return canisterInfo
 		})
 

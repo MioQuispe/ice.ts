@@ -651,7 +651,7 @@ export const makeTaskEffects = Effect.fn("make_task_effects")(function* (
 						>()
 						yield* inflightTasks.set(cacheKey, inFlightDef)
 
-						const isCacheValid =
+						const revalidate =
 							"revalidate" in cachedTask
 								? yield* Effect.tryPromise({
 										try: () =>
@@ -666,10 +666,10 @@ export const makeTaskEffects = Effect.fn("make_task_effects")(function* (
 											})
 										},
 									})
-								: true
+								: false
 
 						const cacheHit =
-							isCacheValid && (yield* taskRegistry.has(cacheKey))
+							!revalidate && (yield* taskRegistry.has(cacheKey))
 
 						yield* Effect.annotateCurrentSpan({
 							cacheHit: cacheHit,

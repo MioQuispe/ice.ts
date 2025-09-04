@@ -147,7 +147,7 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 						.join(":")
 					const storedCanisterIds =
 						yield* canisterIdsService.getCanisterIds()
-					const storedCanisterId: string | undefined =
+					const storedCanisterId =
 						storedCanisterIds[canisterName]?.[currentNetwork]
 					yield* Effect.logDebug("makeCreateTask", {
 						storedCanisterId,
@@ -224,6 +224,93 @@ export const makeCreateTask = <P extends Record<string, unknown>>(
 					)
 					yield* fs.makeDirectory(outDir, { recursive: true })
 					return canisterId
+				})(),
+			),
+		encode: (taskCtx, value) =>
+			runtime.runPromise(
+				Effect.fn("task_encode")(function* () {
+					return JSON.stringify(value)
+				})(),
+			),
+		decode: (taskCtx, value) =>
+			runtime.runPromise(
+				Effect.fn("task_decode")(function* () {
+					return JSON.parse(value as string)
+				})(),
+			),
+		encodingFormat: "string",
+		computeCacheKey: (input) => {
+			return hashJson({
+				canisterName: input.canisterName,
+				// canisterId: input.canisterId,
+				network: input.network,
+			})
+		},
+		input: (taskCtx) =>
+			runtime.runPromise(
+				Effect.fn("task_input")(function* () {
+					const {
+						taskPath,
+						roles: {
+							deployer: { identity },
+						},
+					} = taskCtx
+					const canisterName = taskPath
+						.split(":")
+						.slice(0, -1)
+						.join(":")
+					const input = {
+						canisterName,
+						network: taskCtx.currentNetwork,
+					}
+					return input
+				})(),
+			),
+		revalidate: (taskCtx, { input }) =>
+			runtime.runPromise(
+				Effect.fn("task_revalidate")(function* () {
+					const {
+						replica,
+						roles: { deployer },
+						currentNetwork,
+						taskPath,
+					} = taskCtx
+					const canisterName = taskPath
+						.split(":")
+						.slice(0, -1)
+						.join(":")
+					const canisterConfig = yield* resolveConfig(
+						taskCtx,
+						canisterConfigOrFn,
+					)
+					const canisterIdsService = yield* CanisterIdsService
+					const configCanisterId = canisterConfig?.canisterId
+					const storedCanisterIds =
+						yield* canisterIdsService.getCanisterIds()
+					const storedCanisterId =
+						storedCanisterIds[canisterName]?.[currentNetwork]
+					// TODO: handle changes to configCanisterId
+					// Prefer an existing/stored id; fallback to config-provided id; may be undefined on first run
+					const resolvedCanisterId =
+						storedCanisterId ?? configCanisterId
+
+					if (!resolvedCanisterId) {
+						return true
+					}
+
+					const info = yield* replica.getCanisterInfo({
+						canisterId: resolvedCanisterId,
+						identity: deployer.identity,
+					})
+					if (info.status === CanisterStatus.NOT_FOUND) {
+						return true
+					}
+					const moduleHash = info.module_hash ?? []
+					if (moduleHash.length === 0) {
+						return true
+					}
+
+					return false
 				})(),
 			),
 		description: "Create custom canister",
@@ -429,7 +516,15 @@ export type ExtractScopeSuccesses<T extends Record<string, Task>> = {
 }
 
 // TODO: create types
-export type CreateTask = Task<string>
+export type CreateTask = CachedTask<
+	string,
+	{},
+	{},
+	{
+		network: string
+		canisterName: string
+	}
+>
 export type BindingsTask = CachedTask<
 	{
 		didJSPath: string
@@ -469,7 +564,7 @@ export type InstallTask<
 			canisterId: string
 			canisterName: string
 			actor: ActorSubclass<_SERVICE>
-			mode: "install" | "reinstall"
+			mode: InstallModes
 			args: I
 			encodedArgs: Uint8Array<ArrayBufferLike>
 		},
@@ -480,7 +575,7 @@ export type InstallTask<
 			canisterId: string
 			canisterName: string
 			taskPath: string
-			mode: string
+			mode: InstallModes
 			depCacheKeys: Record<string, string | undefined>
 			installArgsFn: Function
 		}
@@ -501,7 +596,7 @@ export type UpgradeTask<
 			canisterId: string
 			canisterName: string
 			actor: ActorSubclass<_SERVICE>
-			mode: "upgrade"
+			mode: InstallModes
 			args: U
 			encodedArgs: Uint8Array<ArrayBufferLike>
 		},
@@ -1369,7 +1464,7 @@ export const makeInstallTask = <
 				depsHash: hashJson(input.depCacheKeys),
 				canisterId: input.canisterId,
 				network: input.network,
-				mode: input.mode,
+				// mode: input.mode,
 			}
 			const cacheKey = hashJson(installInput)
 			return cacheKey
@@ -1445,12 +1540,12 @@ export const makeInstallTask = <
 						identity: deployer.identity,
 					})
 					if (
-						info.status === "not_found" ||
+						info.status === CanisterStatus.NOT_FOUND ||
 						info.module_hash.length === 0
 					) {
-						return false
+						return true
 					}
-					return true
+					return false
 				})(),
 			),
 		encodingFormat: "string",
@@ -1491,7 +1586,7 @@ export const makeInstallTask = <
 					} = (yield* decodeWithBigInt(value as string)) as {
 						canisterId: string
 						canisterName: string
-						mode: "install" | "reinstall"
+						mode: InstallModes
 						encodedArgs: string
 						args: I
 					}
@@ -1897,9 +1992,9 @@ export const makeUpgradeTask = <
 						info.status === "not_found" ||
 						info.module_hash.length === 0
 					) {
-						return false
+						return true
 					}
-					return true
+					return false
 				})(),
 			),
 		encodingFormat: "string",
@@ -1912,6 +2007,7 @@ export const makeUpgradeTask = <
 						return yield* encodeWithBigInt({
 							canisterId: result.canisterId,
 							canisterName: result.canisterName,
+							mode: result.mode,
 							encodedArgs: uint8ArrayToJsonString(
 								result.encodedArgs,
 							),
@@ -1932,11 +2028,13 @@ export const makeUpgradeTask = <
 					const {
 						canisterId,
 						canisterName,
+						mode,
 						encodedArgs: encodedArgsString,
 						args: upgradeArgs,
 					} = (yield* decodeWithBigInt(value as string)) as {
 						canisterId: string
 						canisterName: string
+						mode: InstallModes
 						encodedArgs: string
 						args: U
 					}
@@ -1976,7 +2074,7 @@ export const makeUpgradeTask = <
 					const decoded = {
 						canisterId,
 						canisterName,
-						mode: "upgrade" as const,
+						mode,
 						actor,
 						// TODO: plugin which transforms upgrade tasks?
 						// actor: proxyActor(canisterName, actor),

@@ -260,8 +260,6 @@ export const makeCustomDeployTask = <_SERVICE>(
 						},
 					)
 					const [canisterId, [{ wasmPath, candidPath }]] = result
-					// TODO: this requires create, because some have canisterId hardcoded?
-					// nope, what about dynamic canister ids? these arent checked?
 					// TODO: canister installed, but cache deleted. should use reinstall, not install
 					const mode =
 						taskArgs.mode === "auto"
